@@ -71,7 +71,7 @@ The Go runtime multiplexes on port 8000:
 3. **Docker-First Distribution**: Single ~50MB container with baked databases.
 4. **Build vs Runtime**: Data ingestion at `build` time; runtime only serves queries.
 5. **BYOM (Bring Your Own Model)**: Runtime requires user-provided API keys; no bundled inference.
-6. **Single Binary**: One `agentforge` binary handles CLI (`init`, `build`) and server (`serve`). Agent Dockerfiles download this binary from GitHub Releases during `docker build`; no separate server binary or base image exists.
+6. **Single Binary**: One `agentforge` binary handles CLI (`init`, `build`) and server (`serve`). A multi-arch base image (`ghcr.io/agent-forge/agentforge`) is published to GHCR. Agent Dockerfiles use it as base so users can build cross-platform images with `docker buildx`.
 
 ## Configuration
 
@@ -127,6 +127,7 @@ agent-forge/
 ├── docs/                  # Documentation
 ├── test/                  # Integration test fixtures
 ├── Makefile
+├── Dockerfile
 └── .golangci.yml
 ```
 

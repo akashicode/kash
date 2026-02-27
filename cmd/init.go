@@ -128,25 +128,19 @@ func generateDockerfile() string {
 	return `# Agent-Forge Runtime Dockerfile
 # Packages compiled databases with the agentforge binary (~50MB)
 #
-# The agentforge binary is downloaded from GitHub Releases during docker build.
+# Uses the multi-arch base image (amd64 + arm64) published to GHCR.
 # At runtime it executes "agentforge serve" which starts the HTTP server
 # exposing REST, MCP, and A2A interfaces on port 8000.
+#
+# Build for current architecture:
+#   docker build -t my-agent:latest .
+#
+# Build multi-arch and push (share with the world):
+#   docker buildx build --platform linux/amd64,linux/arm64 -t my-registry/my-agent:v1 --push .
 
-FROM alpine:3.19
-
-# Install CA certificates for HTTPS calls to LLM APIs
-RUN apk add --no-cache ca-certificates tzdata curl
+FROM ghcr.io/agent-forge/agentforge:latest
 
 WORKDIR /app
-
-# Download the agentforge binary from the latest GitHub Release.
-# Docker resolves TARGETARCH automatically (amd64/arm64) for multi-arch builds.
-# This is the same single binary used for CLI commands (init, build)
-# and for serving (agentforge serve).
-ARG TARGETARCH=amd64
-RUN curl -fsSL "https://github.com/agent-forge/agent-forge/releases/latest/download/agent-forge_linux_${TARGETARCH}.tar.gz" \
-    | tar -xz -C /app/ \
- && chmod +x /app/agentforge
 
 # Copy the compiled database artifacts from 'agentforge build'
 COPY data/memory.chromem/ /app/data/memory.chromem/
@@ -230,6 +224,7 @@ An expert AI agent built with [Agent-Forge](https://github.com/agent-forge/agent
 ### Prerequisites
 - [Agent-Forge CLI](https://github.com/agent-forge/agent-forge) installed
 - OpenAI-compatible LLM and embedding API access
+- Docker (with buildx for multi-arch)
 
 ### Build
 
@@ -246,9 +241,14 @@ An expert AI agent built with [Agent-Forge](https://github.com/agent-forge/agent
    agentforge build
    `+"```"+`
 
-4. Build the Docker image:
+4. Build the Docker image (current architecture):
    `+"```"+`bash
    docker build -t %s:latest .
+   `+"```"+`
+
+5. Or build multi-arch and push (share with the world):
+   `+"```"+`bash
+   docker buildx build --platform linux/amd64,linux/arm64 -t my-registry/%s:v1 --push .
    `+"```"+`
 
 ### Run
@@ -272,5 +272,5 @@ docker run -p 8000:8000 \
 - **REST API**: `+"`POST http://localhost:8000/v1/chat/completions`"+` (OpenAI-compatible)
 - **MCP Server**: `+"`GET http://localhost:8000/mcp`"+` (for Cursor, Windsurf)
 - **A2A Protocol**: `+"`POST http://localhost:8000/rpc/agent`"+` (for AutoGen, CrewAI)
-`, name, name, name)
+`, name, name, name, name)
 }

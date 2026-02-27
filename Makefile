@@ -75,6 +75,16 @@ tidy:
 clean:
 	rm -rf bin/ coverage.out coverage.html
 
+## Build Docker base image locally
+docker-build:
+	docker build -t agentforge:latest .
+
+## Build multi-arch Docker base image and push to registry
+## Usage: make docker-push REGISTRY=ghcr.io/agent-forge
+docker-push:
+	docker buildx build --platform linux/amd64,linux/arm64 \
+		-t $(REGISTRY)/agentforge:latest --push .
+
 ## Show help
 help:
 	@grep -E '^## ' Makefile | sed 's/## //'
