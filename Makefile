@@ -75,14 +75,6 @@ tidy:
 clean:
 	rm -rf bin/ coverage.out coverage.html
 
-## Build Docker image (for development)
-docker-build:
-	docker build -t agent-forge:latest .
-
-## Run Docker container (development)
-docker-run:
-	docker run -p 8000:8000 agent-forge:latest
-
 ## Show help
 help:
 	@grep -E '^## ' Makefile | sed 's/## //'

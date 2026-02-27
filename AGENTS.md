@@ -94,7 +94,6 @@ agent-forge/
 ├── go.mod
 ├── go.sum
 ├── Makefile
-├── Dockerfile
 └── .golangci.yml
 ```
 
@@ -411,4 +410,4 @@ RERANK_MODEL=      # Optional
 3. **Docker-First Distribution**: Single ~50MB container with baked databases.
 4. **Three Interfaces**: REST (`/v1/chat/completions`), MCP (`/mcp`), A2A (`/rpc/agent`).
 5. **Build vs Runtime**: Data ingestion happens at `build` time. Runtime only serves queries.
-6. **Single Binary**: One `agentforge` binary acts as both CLI (`init`, `build`) and server (`serve`). Agent Dockerfiles pull this binary from `ghcr.io/agent-forge/agent-forge:latest` via `COPY --from` — no separate server binary exists.
+6. **Single Binary**: One `agentforge` binary acts as both CLI (`init`, `build`) and server (`serve`). Agent Dockerfiles download this binary from GitHub Releases during `docker build` — no separate server binary or base image exists.

@@ -128,21 +128,25 @@ func generateDockerfile() string {
 	return `# Agent-Forge Runtime Dockerfile
 # Packages compiled databases with the agentforge binary (~50MB)
 #
-# The agentforge binary is a single binary that acts as both CLI and server.
+# The agentforge binary is downloaded from GitHub Releases during docker build.
 # At runtime it executes "agentforge serve" which starts the HTTP server
 # exposing REST, MCP, and A2A interfaces on port 8000.
 
 FROM alpine:3.19
 
 # Install CA certificates for HTTPS calls to LLM APIs
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata curl
 
 WORKDIR /app
 
-# Copy the agentforge binary from the published container image.
+# Download the agentforge binary from the latest GitHub Release.
+# Docker resolves TARGETARCH automatically (amd64/arm64) for multi-arch builds.
 # This is the same single binary used for CLI commands (init, build)
 # and for serving (agentforge serve).
-COPY --from=ghcr.io/agent-forge/agent-forge:latest /app/agentforge /app/agentforge
+ARG TARGETARCH=amd64
+RUN curl -fsSL "https://github.com/agent-forge/agent-forge/releases/latest/download/agent-forge_linux_${TARGETARCH}.tar.gz" \
+    | tar -xz -C /app/ \
+ && chmod +x /app/agentforge
 
 # Copy the compiled database artifacts from 'agentforge build'
 COPY data/memory.chromem/ /app/data/memory.chromem/
