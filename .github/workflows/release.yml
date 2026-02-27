@@ -121,57 +121,62 @@ jobs:
           mv dist/checksums_all.txt dist/checksums.txt
 
       - name: Generate release notes
-        id: release_notes
+        env:
+          REPO: ${{ github.repository }}
         run: |
           VERSION="${GITHUB_REF_NAME}"
           PREV_TAG=$(git tag --sort=-version:refname | sed -n '2p')
-          REPO="https://github.com/${{ github.repository }}"
+          REPO_URL="https://github.com/${REPO}"
+          DOWNLOAD_URL="${REPO_URL}/releases/download/${VERSION}"
 
           echo "## What's Changed" > release_notes.md
           echo "" >> release_notes.md
           if [ -n "$PREV_TAG" ]; then
             git log --oneline "${PREV_TAG}..HEAD" \
-              --pretty=format:"- %s ([%h](${REPO}/commit/%H))" \
+              --pretty=format:"- %s ([%h](${REPO_URL}/commit/%H))" \
               >> release_notes.md
           else
             echo "- Initial release" >> release_notes.md
           fi
 
-          cat >> release_notes.md << EOF
+          cat >> release_notes.md << 'NOTES'
 
-## Installation
+          ## Installation
 
-### Linux (amd64)
-\`\`\`bash
-curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_linux_amd64.tar.gz | tar -xz
-sudo mv kash /usr/local/bin/
-\`\`\`
+          ### Linux (amd64)
+          ```bash
+          curl -L __DOWNLOAD__/kash_linux_amd64.tar.gz | tar -xz
+          sudo mv kash /usr/local/bin/
+          ```
 
-### Linux (arm64)
-\`\`\`bash
-curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_linux_arm64.tar.gz | tar -xz
-sudo mv kash /usr/local/bin/
-\`\`\`
+          ### Linux (arm64)
+          ```bash
+          curl -L __DOWNLOAD__/kash_linux_arm64.tar.gz | tar -xz
+          sudo mv kash /usr/local/bin/
+          ```
 
-### macOS (Apple Silicon)
-\`\`\`bash
-curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_darwin_arm64.tar.gz | tar -xz
-sudo mv kash /usr/local/bin/
-\`\`\`
+          ### macOS (Apple Silicon)
+          ```bash
+          curl -L __DOWNLOAD__/kash_darwin_arm64.tar.gz | tar -xz
+          sudo mv kash /usr/local/bin/
+          ```
 
-### macOS (Intel)
-\`\`\`bash
-curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_darwin_amd64.tar.gz | tar -xz
-sudo mv kash /usr/local/bin/
-\`\`\`
+          ### macOS (Intel)
+          ```bash
+          curl -L __DOWNLOAD__/kash_darwin_amd64.tar.gz | tar -xz
+          sudo mv kash /usr/local/bin/
+          ```
 
-### Windows (amd64)
-Download [\`kash_windows_amd64.zip\`](https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_windows_amd64.zip), extract, and add \`kash.exe\` to a directory on your \`PATH\`.
+          ### Windows (amd64)
+          Download [`kash_windows_amd64.zip`](__DOWNLOAD__/kash_windows_amd64.zip), extract, and add `kash.exe` to a directory on your `PATH`.
 
----
+          ---
 
-> For full usage instructions, configuration options, and examples, see the [README](https://github.com/${{ github.repository }}/blob/main/README.md).
-EOF
+          > For full usage instructions, configuration options, and examples, see the [README](__REPO__/blob/main/README.md).
+          NOTES
+
+          sed -i "s|__DOWNLOAD__|${DOWNLOAD_URL}|g" release_notes.md
+          sed -i "s|__REPO__|${REPO_URL}|g" release_notes.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
