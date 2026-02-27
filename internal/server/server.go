@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -51,6 +52,7 @@ type Server struct {
 	agentCfg    *AgentConfig
 	appCfg      *agentconfig.Config
 	mux         *http.ServeMux
+	log         *slog.Logger
 }
 
 // Config holds the runtime server configuration.
@@ -100,6 +102,8 @@ func New(cfg Config) (*Server, error) {
 		}
 	}
 
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
 	s := &Server{
 		vectorStore: vs,
 		graphDB:     gdb,
@@ -108,7 +112,16 @@ func New(cfg Config) (*Server, error) {
 		agentCfg:    agentCfg,
 		appCfg:      cfg.AppCfg,
 		mux:         http.NewServeMux(),
+		log:         logger,
 	}
+
+	logger.Info("server initialized",
+		"agent", agentCfg.Agent.Name,
+		"vectors", vs.Count(),
+		"triples", gdb.Count(),
+		"llm_model", cfg.AppCfg.LLM.Model,
+		"embed_model", cfg.AppCfg.Embedder.Model,
+	)
 
 	s.registerRoutes()
 	return s, nil
@@ -116,7 +129,41 @@ func New(cfg Config) (*Server, error) {
 
 // Handler returns the HTTP handler for the server.
 func (s *Server) Handler() http.Handler {
-	return corsMiddleware(s.mux)
+	return s.loggingMiddleware(corsMiddleware(s.mux))
+}
+
+// loggingMiddleware logs every inbound HTTP request and its response status.
+func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		wrapped := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+		s.log.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", wrapped.status,
+			"duration", time.Since(start).String(),
+			"remote", r.RemoteAddr,
+		)
+	})
+}
+
+// statusWriter wraps http.ResponseWriter to capture the status code.
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// Flush implements http.Flusher so streaming responses work through the wrapper.
+func (w *statusWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func (s *Server) registerRoutes() {
@@ -135,17 +182,23 @@ func (s *Server) registerRoutes() {
 
 // hybridSearch performs both vector and graph search, then merges results.
 func (s *Server) hybridSearch(ctx context.Context, query string) (string, error) {
+	s.log.Debug("hybrid search starting", "query", query)
+
 	// Vector search
 	vectorResults, err := s.vectorStore.Query(ctx, query, 5)
 	if err != nil {
+		s.log.Error("vector search failed", "error", err, "query", query)
 		return "", fmt.Errorf("vector search: %w", err)
 	}
+	s.log.Info("vector search completed", "results", len(vectorResults), "query", query)
 
 	// Graph search
 	graphResults, err := s.graphDB.Search(ctx, query, 10)
 	if err != nil {
-		// Graph search failure is non-fatal
+		s.log.Warn("graph search failed (non-fatal)", "error", err, "query", query)
 		graphResults = nil
+	} else {
+		s.log.Info("graph search completed", "results", len(graphResults), "query", query)
 	}
 
 	var sb strings.Builder
@@ -200,12 +253,19 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	// Extract user query for retrieval
 	userQuery := extractLastUserMessage(req.Messages)
+	s.log.Info("chat completion request", "query", userQuery, "stream", req.Stream)
 
 	// Run hybrid search
 	retrievedCtx, err := s.hybridSearch(ctx, userQuery)
 	if err != nil {
-		// Non-fatal: continue without retrieved context
+		s.log.Error("hybrid search failed, proceeding without RAG context", "error", err)
 		retrievedCtx = ""
+	}
+
+	if retrievedCtx == "" {
+		s.log.Warn("no RAG context retrieved for query", "query", userQuery)
+	} else {
+		s.log.Debug("RAG context injected", "context_length", len(retrievedCtx))
 	}
 
 	// Build augmented messages with system prompt and context
@@ -217,11 +277,14 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Non-streaming response
+	s.log.Debug("calling LLM", "messages", len(augmented))
 	response, err := s.llmClient.ChatWithContext(ctx, augmented, "")
 	if err != nil {
+		s.log.Error("LLM call failed", "error", err)
 		http.Error(w, "LLM error: "+err.Error(), http.StatusBadGateway)
 		return
 	}
+	s.log.Info("LLM response received", "length", len(response))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(openai.ChatCompletionResponse{

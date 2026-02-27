@@ -33,9 +33,10 @@ func ConfigFilePath() (string, error) {
 
 // ProviderConfig holds connection details for a single AI provider.
 type ProviderConfig struct {
-	BaseURL string `mapstructure:"base_url" yaml:"base_url"`
-	APIKey  string `mapstructure:"api_key" yaml:"api_key"`
-	Model   string `mapstructure:"model"   yaml:"model"`
+	BaseURL    string `mapstructure:"base_url"    yaml:"base_url"`
+	APIKey     string `mapstructure:"api_key"     yaml:"api_key"`
+	Model      string `mapstructure:"model"       yaml:"model"`
+	Dimensions int    `mapstructure:"dimensions"  yaml:"dimensions,omitempty"`
 }
 
 // Config holds the unified application configuration.
@@ -66,6 +67,12 @@ func Load() (*Config, error) {
 	applyEnv(&cfg.Embedder.BaseURL, "EMBED_BASE_URL")
 	applyEnv(&cfg.Embedder.APIKey, "EMBED_API_KEY")
 	applyEnv(&cfg.Embedder.Model, "EMBED_MODEL")
+	applyEnvInt(&cfg.Embedder.Dimensions, "EMBED_DIMENSIONS")
+
+	// Default embedding dimensions
+	if cfg.Embedder.Dimensions == 0 {
+		cfg.Embedder.Dimensions = 1024
+	}
 
 	applyEnv(&cfg.Reranker.BaseURL, "RERANK_BASE_URL")
 	applyEnv(&cfg.Reranker.APIKey, "RERANK_API_KEY")
@@ -90,6 +97,16 @@ func Load() (*Config, error) {
 func applyEnv(dst *string, envKey string) {
 	if v := os.Getenv(envKey); v != "" {
 		*dst = v
+	}
+}
+
+// applyEnvInt overwrites dst with the int value of the environment variable if set.
+func applyEnvInt(dst *int, envKey string) {
+	if v := os.Getenv(envKey); v != "" {
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
+			*dst = n
+		}
 	}
 }
 
@@ -120,11 +137,12 @@ func ValidateEmbedder(cfg *Config) error {
 	if cfg.Embedder.APIKey == "" {
 		missing = append(missing, "embedder.api_key / EMBED_API_KEY")
 	}
-	if cfg.Embedder.Model == "" {
-		missing = append(missing, "embedder.model / EMBED_MODEL")
-	}
+	// Model is optional when using an embedding router
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required config:\n  %s\n\nSet these in ~/.agentforge/config.yaml or as environment variables", strings.Join(missing, "\n  "))
+	}
+	if cfg.Embedder.Dimensions <= 0 {
+		return fmt.Errorf("embedder dimensions must be > 0 (got %d), set via embedder.dimensions or EMBED_DIMENSIONS", cfg.Embedder.Dimensions)
 	}
 	return nil
 }
