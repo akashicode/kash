@@ -498,10 +498,10 @@ build_providers:
     base_url: "https://api.voyageai.com/v1"
     api_key: "pa-..."
     model: "voyage-3"                          # optional if using a router
-  # reranker:        # optional
-  #   base_url: ""
-  #   api_key: ""
-  #   model: ""
+  # reranker:        # optional — must be Cohere-compatible (/rerank endpoint)
+  #   base_url: "https://api.cohere.ai/v1"  # Cohere, Jina, Voyage, or a LiteLLM proxy
+  #   api_key: "..."
+  #   model: "rerank-english-v3.0"           # or jina-reranker-v2-base-en, rerank-1, etc.
 ```
 
 > **Provider agnostic** — works with any OpenAI-compatible endpoint. Use [LiteLLM](https://github.com/BerriAI/litellm), [Ollama](https://ollama.com), or [TrueFoundry](https://truefoundry.com) as a proxy.
@@ -518,9 +518,10 @@ Used by `kash serve` and Docker containers.
 | `EMBED_BASE_URL` | ✅ | Embedding API endpoint |
 | `EMBED_API_KEY` | ✅ | Embedding API key |
 | `EMBED_MODEL` | ❌ | Embedding model (optional if using a router) |
-| `RERANK_BASE_URL` | ❌ | Reranker endpoint |
+| `RERANK_BASE_URL` | ❌ | Reranker base URL — must expose a Cohere-compatible `/rerank` endpoint |
 | `RERANK_API_KEY` | ❌ | Reranker API key |
-| `RERANK_MODEL` | ❌ | Reranker model name |
+| `RERANK_MODEL` | ❌ | Reranker model name (e.g. `rerank-english-v3.0`) |
+| `RERANK_ENDPOINT` | ❌ | Full rerank URL override (e.g. `https://gateway.example.com/v1/rerank`) — takes priority over `RERANK_BASE_URL` |
 | `AGENT_API_KEY` | ❌ | Enable auth — all endpoints (except `/health`) require `Authorization: Bearer <key>` |
 | `PORT` | ❌ | Override listen port (default: `8000`) |
 
@@ -654,7 +655,7 @@ Kash/
 | MCP Server | ✅ Tested | Works with Cursor & Windsurf |
 | A2A Protocol | 🧪 In Progress | Implementation done, testing pending |
 | Hybrid RAG | ✅ Stable | Vector + Graph search |
-| Reranker | ✅ Optional | Plug in any OpenAI-compatible reranker |
+| Reranker | ✅ Optional | Cohere-compatible rerank API (`/rerank` endpoint) |
 | Multi-arch Docker | ✅ Stable | amd64 + arm64 |
 | Streaming responses | ✅ Stable | SSE streaming for REST API |
 

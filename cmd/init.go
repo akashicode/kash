@@ -263,7 +263,7 @@ EMBED_BASE_URL=https://api.voyageai.com/v1
 EMBED_API_KEY=pa-your-key-here
 EMBED_MODEL=
 
-# Reranking Provider (optional) - must be OpenAI-compatible
+# Reranking Provider (optional) - must be Cohere V2-compatible
 # RERANK_BASE_URL=
 # RERANK_API_KEY=
 # RERANK_MODEL=

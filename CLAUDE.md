@@ -94,7 +94,10 @@ build_providers:
 ```bash
 LLM_BASE_URL, LLM_API_KEY, LLM_MODEL
 EMBED_BASE_URL, EMBED_API_KEY, EMBED_MODEL
+# Reranker is optional — must expose a Cohere-compatible POST /rerank endpoint
+# Compatible: Cohere, Jina AI, Voyage AI, LiteLLM proxy
 RERANK_BASE_URL, RERANK_API_KEY, RERANK_MODEL  # optional
+RERANK_ENDPOINT  # optional: full URL override, takes priority over RERANK_BASE_URL
 ```
 
 ## Developer Workflow

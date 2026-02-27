@@ -251,6 +251,7 @@ func (s *Server) registerRoutes() {
 }
 
 // hybridSearch performs both vector and graph search, then merges results.
+// If a reranker is configured, vector results are reranked before inclusion.
 func (s *Server) hybridSearch(ctx context.Context, query string) (string, error) {
 	s.log.Debug("hybrid search starting", "query", query)
 
@@ -271,15 +272,43 @@ func (s *Server) hybridSearch(ctx context.Context, query string) (string, error)
 		s.log.Info("graph search completed", "results", len(graphResults), "query", query)
 	}
 
+	// Rerank vector results if reranker is configured
+	var rerankedDocs []string
+	if s.reranker != nil && len(vectorResults) > 0 {
+		docs := make([]string, len(vectorResults))
+		for i, r := range vectorResults {
+			docs[i] = r.Content
+		}
+		rerankResults, rerankErr := s.reranker.Rerank(ctx, query, docs)
+		if rerankErr != nil {
+			s.log.Warn("reranker failed (using original order)", "error", rerankErr)
+		} else {
+			s.log.Info("reranker completed", "results", len(rerankResults),
+				"top_score", fmt.Sprintf("%.3f", rerankResults[0].RelevanceScore))
+			rerankedDocs = make([]string, len(rerankResults))
+			for i, r := range rerankResults {
+				rerankedDocs[i] = r.Content
+			}
+		}
+	}
+
 	var sb strings.Builder
 
-	// Add vector results
+	// Add vector results (reranked if available, original order otherwise)
 	if len(vectorResults) > 0 {
 		sb.WriteString("## Relevant Knowledge\n\n")
-		for i, r := range vectorResults {
-			sb.WriteString(fmt.Sprintf("**[%d] Source: %s** (similarity: %.2f)\n", i+1, r.Source, r.Similarity))
-			sb.WriteString(r.Content)
-			sb.WriteString("\n\n")
+		if len(rerankedDocs) > 0 {
+			for i, content := range rerankedDocs {
+				sb.WriteString(fmt.Sprintf("**[%d]**\n", i+1))
+				sb.WriteString(content)
+				sb.WriteString("\n\n")
+			}
+		} else {
+			for i, r := range vectorResults {
+				sb.WriteString(fmt.Sprintf("**[%d] Source: %s** (similarity: %.2f)\n", i+1, r.Source, r.Similarity))
+				sb.WriteString(r.Content)
+				sb.WriteString("\n\n")
+			}
 		}
 	}
 

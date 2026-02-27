@@ -397,16 +397,19 @@ LLM_MODEL=gpt-4o
 EMBED_BASE_URL=https://api.voyageai.com/v1
 EMBED_API_KEY=pa-xxx
 EMBED_MODEL=voyage-3
-RERANK_BASE_URL=   # Optional
-RERANK_API_KEY=    # Optional
-RERANK_MODEL=      # Optional
+# Reranker is optional. Must expose a Cohere-compatible POST /rerank endpoint.
+# Compatible providers: Cohere, Jina AI, Voyage AI, or a LiteLLM proxy.
+RERANK_BASE_URL=https://api.cohere.ai/v1   # Optional
+RERANK_API_KEY=                             # Optional
+RERANK_MODEL=rerank-english-v3.0            # Optional
+RERANK_ENDPOINT=                            # Optional: full URL override, e.g. https://gateway.example.com/v1/rerank
 ```
 
 ---
 
 ## 8. Key Architectural Decisions
 
-1. **Provider Agnostic**: Only OpenAI-compatible APIs. Users provide their own proxies.
+1. **Provider Agnostic**: OpenAI-compatible APIs for LLM and Embedding. Reranker uses the **Cohere-compatible `/rerank` endpoint** (Cohere, Jina, Voyage, or LiteLLM proxy).
 2. **Embedded Databases**: No external DB servers. chromem-go and cayley are embedded.
 3. **Docker-First Distribution**: Single ~50MB container with baked databases.
 4. **Three Interfaces**: REST (`/v1/chat/completions`), MCP (`/mcp`), A2A (`/rpc/agent`).

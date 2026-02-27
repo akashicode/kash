@@ -33,9 +33,13 @@ Kash eliminates external database servers and heavy Python runtimes.
 
 ## 3. Configuration & The "BYOM" Stance
 
-Kash is **strictly provider-agnostic** and demands **OpenAI-compatible APIs** for all three core AI functions: Reasoning (LLM), Embedding, and Reranking.
+Kash is **strictly provider-agnostic** and demands **OpenAI-compatible APIs** for Reasoning (LLM) and Embedding. For **Reranking**, Kash uses the **Cohere-compatible `/rerank` endpoint**, which is the de-facto standard supported by Cohere, Jina AI, Voyage AI, and most LiteLLM/gateway proxies.
 
-We do not endorse or bundle any specific proxy. If a user wants to use Cohere for reranking or Anthropic for reasoning, it is *their responsibility* to run an OpenAI-compatible reverse proxy (like LiteLLM, OneAPI, or Ollama) locally or in the cloud. Kash only speaks standard OpenAI JSON.
+We do not endorse or bundle any specific proxy. If a user wants to use Cohere for reranking or Anthropic for reasoning, it is *their responsibility* to provide compatible endpoints. For reranking, the endpoint must accept:
+```json
+{"model": "...", "query": "...", "documents": [...], "top_n": N}
+```
+and return `{"results": [{"index": 0, "relevance_score": 0.95}, ...]}`.
 
 ### Global CLI Configuration (Build-Time)
 
@@ -122,10 +126,10 @@ docker run -p 8000:8000 \
   -e EMBED_BASE_URL="..." \
   -e EMBED_API_KEY="..." \
   -e EMBED_MODEL="..." \
-  # optionally openai compatible reranker
-  -e RERANK_BASE_URL="..." \
+  # optionally cohere-compatible reranker (Cohere, Jina, Voyage, or LiteLLM proxy)
+  -e RERANK_BASE_URL="https://api.cohere.ai/v1" \  # must expose POST /rerank
   -e RERANK_API_KEY="..." \
-  -e RERANK_MODEL="..." \
+  -e RERANK_MODEL="rerank-english-v3.0" \
   my-registry/expert-agent:v1
 
 ```
