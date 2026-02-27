@@ -62,9 +62,9 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          BINARY_NAME=agent-forge
+          BINARY_NAME=agentforge
           if [ "${{ matrix.goos }}" = "windows" ]; then
-            BINARY_NAME=agent-forge.exe
+            BINARY_NAME=agentforge.exe
           fi
           go build \
             -trimpath \
@@ -79,14 +79,14 @@ jobs:
         if: matrix.archive == 'tar.gz'
         run: |
           cd dist
-          tar -czf "agent-forge_${{ matrix.suffix }}.tar.gz" agent-forge
+          tar -czf "agent-forge_${{ matrix.suffix }}.tar.gz" agentforge
           sha256sum "agent-forge_${{ matrix.suffix }}.tar.gz" >> checksums.txt
 
       - name: Package archive (zip)
         if: matrix.archive == 'zip'
         run: |
           cd dist
-          zip "agent-forge_${{ matrix.suffix }}.zip" agent-forge.exe
+          zip "agent-forge_${{ matrix.suffix }}.zip" agentforge.exe
           sha256sum "agent-forge_${{ matrix.suffix }}.zip" >> checksums.txt
 
       - name: Upload artifacts
@@ -138,7 +138,7 @@ jobs:
           echo '```bash' >> release_notes.md
           echo "# Linux / macOS" >> release_notes.md
           echo "curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/agent-forge_linux_amd64.tar.gz | tar -xz" >> release_notes.md
-          echo "sudo mv agent-forge /usr/local/bin/" >> release_notes.md
+          echo "sudo mv agentforge /usr/local/bin/" >> release_notes.md
           echo '```' >> release_notes.md
 
       - name: Create GitHub Release

@@ -12,7 +12,7 @@ Agent-Forge is a Go-based CLI that compiles raw documents (PDFs, Markdown, text)
 Documents (PDF/MD/TXT)
         │
         ▼
-  agent-forge build
+  agentforge build
         │
         ├── Chunks text
         ├── Calls Embedder API  ──► data/memory.chromem/   (vector index)
@@ -98,21 +98,21 @@ go build \
     -X github.com/agent-forge/agent-forge/cmd.version=$(git describe --tags --always) \
     -X github.com/agent-forge/agent-forge/cmd.commit=$(git rev-parse --short HEAD) \
     -X github.com/agent-forge/agent-forge/cmd.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -o bin/agent-forge \
+  -o bin/agentforge \
   ./cmd/agent-forge
 ```
 
 #### Install system-wide
 
 ```bash
-sudo mv bin/agent-forge /usr/local/bin/
-agent-forge --help
+sudo mv bin/agentforge /usr/local/bin/
+agentforge --help
 ```
 
 #### Build using Make
 
 ```bash
-make build          # builds for current OS/arch → bin/agent-forge
+make build          # builds for current OS/arch → bin/agentforge
 make build-linux    # explicitly targets linux/amd64
 make build-all      # builds linux + macOS + windows
 ```
@@ -138,15 +138,15 @@ go build \
     -X github.com/agent-forge/agent-forge/cmd.version=$(git describe --tags --always) \
     -X github.com/agent-forge/agent-forge/cmd.commit=$(git rev-parse --short HEAD) \
     -X github.com/agent-forge/agent-forge/cmd.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -o bin/agent-forge \
+  -o bin/agentforge \
   ./cmd/agent-forge
 ```
 
 #### Install system-wide
 
 ```bash
-sudo mv bin/agent-forge /usr/local/bin/
-agent-forge --help
+sudo mv bin/agentforge /usr/local/bin/
+agentforge --help
 ```
 
 #### Build for Apple Silicon (arm64) explicitly
@@ -155,7 +155,7 @@ agent-forge --help
 GOOS=darwin GOARCH=arm64 go build \
   -trimpath \
   -ldflags "-s -w" \
-  -o bin/agent-forge-darwin-arm64 \
+  -o bin/agentforge-darwin-arm64 \
   ./cmd/agent-forge
 ```
 
@@ -165,14 +165,14 @@ GOOS=darwin GOARCH=arm64 go build \
 GOOS=darwin GOARCH=amd64 go build \
   -trimpath \
   -ldflags "-s -w" \
-  -o bin/agent-forge-darwin-amd64 \
+  -o bin/agentforge-darwin-amd64 \
   ./cmd/agent-forge
 ```
 
 #### Build using Make
 
 ```bash
-make build          # builds for current OS/arch → bin/agent-forge
+make build          # builds for current OS/arch → bin/agentforge
 make build-darwin   # explicitly targets darwin/amd64
 ```
 
@@ -202,11 +202,11 @@ New-Item -ItemType Directory -Force -Path bin | Out-Null
 go build `
   -trimpath `
   -ldflags "-s -w -X github.com/agent-forge/agent-forge/cmd.version=$VERSION -X github.com/agent-forge/agent-forge/cmd.commit=$COMMIT -X github.com/agent-forge/agent-forge/cmd.buildDate=$DATE" `
-  -o bin\agent-forge.exe `
+  -o bin\agentforge.exe `
   .\cmd\agent-forge
 
 # Test it
-.\bin\agent-forge.exe --help
+.\bin\agentforge.exe --help
 ```
 
 #### Build in Command Prompt (cmd.exe)
@@ -217,23 +217,23 @@ mkdir bin
 go build ^
   -trimpath ^
   -ldflags "-s -w" ^
-  -o bin\agent-forge.exe ^
+  -o bin\agentforge.exe ^
   .\cmd\agent-forge
 
-bin\agent-forge.exe --help
+bin\agentforge.exe --help
 ```
 
 #### Install system-wide (PowerShell, as Administrator)
 
 ```powershell
-Copy-Item bin\agent-forge.exe C:\Windows\System32\agent-forge.exe
+Copy-Item bin\agentforge.exe C:\Windows\System32\agentforge.exe
 # or add the bin\ directory to your PATH
 ```
 
 #### Build using Make (requires GNU Make, e.g. via Git Bash or Chocolatey)
 
 ```bash
-make build-windows   # produces bin/agent-forge.exe
+make build-windows   # produces bin/agentforge.exe
 ```
 
 ---
@@ -262,7 +262,7 @@ for OS in linux darwin windows; do
     GOOS=$OS GOARCH=$ARCH go build \
       -trimpath \
       -ldflags "-s -w" \
-      -o "dist/agent-forge_${OS}_${ARCH}${EXT}" \
+      -o "dist/agentforge_${OS}_${ARCH}${EXT}" \
       ./cmd/agent-forge
   done
 done
@@ -318,7 +318,7 @@ EOF
 ### Step 2 — Scaffold a new agent project
 
 ```bash
-agent-forge init my-expert-agent
+agentforge init my-expert-agent
 cd my-expert-agent
 ```
 
@@ -332,7 +332,7 @@ cp ~/my-notes/*.md data/
 ### Step 4 — Compile
 
 ```bash
-agent-forge build
+agentforge build
 ```
 
 This produces `data/memory.chromem/` (vector index) and `data/knowledge.cayley/` (knowledge graph), and injects optimized MCP tool descriptions into `agent.yaml`.
@@ -365,7 +365,7 @@ Your agent is now live at `http://localhost:8000`.
 
 ### Build-time: `~/.agent-forge/config.yaml`
 
-Used by `agent-forge build` to call LLM and embedding APIs.
+Used by `agentforge build` to call LLM and embedding APIs.
 
 ```yaml
 build_providers:
@@ -388,7 +388,7 @@ All fields accept any **OpenAI-compatible** endpoint. Use [LiteLLM](https://gith
 
 ### Runtime: environment variables
 
-Used by `agent-forge serve` (and the Docker container).
+Used by `agentforge serve` (and the Docker container).
 
 | Variable         | Required | Description                         |
 |------------------|----------|-------------------------------------|
@@ -407,7 +407,7 @@ Used by `agent-forge serve` (and the Docker container).
 
 ## CLI Reference
 
-### `agent-forge init <name>`
+### `agentforge init <name>`
 
 Scaffolds a new agent project directory.
 
@@ -420,7 +420,7 @@ my-expert-agent/
 └── .dockerignore
 ```
 
-### `agent-forge build`
+### `agentforge build`
 
 Reads `data/`, calls configured APIs, and writes compiled databases.
 
@@ -432,18 +432,18 @@ Reads `data/`, calls configured APIs, and writes compiled databases.
 [5/5] Generating MCP tool descriptions → agent.yaml
 ```
 
-### `agent-forge serve`
+### `agentforge serve`
 
 Starts the runtime HTTP server (requires compiled databases).
 
 ```bash
-agent-forge serve --port 8000 --agent agent.yaml
+agentforge serve --port 8000 --agent agent.yaml
 ```
 
-### `agent-forge version`
+### `agentforge version`
 
 ```
-agent-forge v1.2.0
+agentforge v1.2.0
   commit:     a3f9c12
   built:      2026-02-27T10:00:00Z
   go version: go1.22.0
@@ -521,7 +521,7 @@ curl http://localhost:8000/health
 
 ## Docker Deployment
 
-After running `agent-forge build`, the `Dockerfile` in your project is ready to use:
+After running `agentforge build`, the `Dockerfile` in your project is ready to use:
 
 ```bash
 # Build the image
@@ -570,10 +570,10 @@ agent-forge/
 ├── cmd/                      # Cobra CLI commands
 │   ├── agent-forge/main.go   # Entry point
 │   ├── root.go               # Root command + Viper config
-│   ├── init.go               # `agent-forge init`
-│   ├── build.go              # `agent-forge build`
-│   ├── serve.go              # `agent-forge serve`
-│   └── version.go            # `agent-forge version`
+│   ├── init.go               # `agentforge init`
+│   ├── build.go              # `agentforge build`
+│   ├── serve.go              # `agentforge serve`
+│   └── version.go            # `agentforge version`
 ├── internal/
 │   ├── config/               # Build + runtime config structs
 │   ├── chunker/              # Text chunking

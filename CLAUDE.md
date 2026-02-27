@@ -12,12 +12,12 @@ The "compiler" approach: data ingestion happens at build time, runtime only serv
 
 ### Build
 ```bash
-go build -o bin/agent-forge ./cmd/agent-forge
+go build -o bin/agentforge ./cmd/agent-forge
 
 # Cross-platform builds
-GOOS=linux GOARCH=amd64 go build -o bin/agent-forge-linux ./cmd/agent-forge
-GOOS=darwin GOARCH=amd64 go build -o bin/agent-forge-darwin ./cmd/agent-forge
-GOOS=windows GOARCH=amd64 go build -o bin/agent-forge.exe ./cmd/agent-forge
+GOOS=linux GOARCH=amd64 go build -o bin/agentforge-linux ./cmd/agent-forge
+GOOS=darwin GOARCH=amd64 go build -o bin/agentforge-darwin ./cmd/agent-forge
+GOOS=windows GOARCH=amd64 go build -o bin/agentforge.exe ./cmd/agent-forge
 ```
 
 ### Lint
@@ -98,9 +98,9 @@ RERANK_BASE_URL, RERANK_API_KEY, RERANK_MODEL  # optional
 
 ## Developer Workflow
 
-1. **`agent-forge init <name>`** - Scaffold project with `data/`, `agent.yaml`, `Dockerfile`
+1. **`agentforge init <name>`** - Scaffold project with `data/`, `agent.yaml`, `Dockerfile`
 2. **Add documents** to `data/` directory (PDFs, Markdown, etc.)
-3. **`agent-forge build`** - Chunk documents, call embedder API, extract graph triples via LLM, generate MCP tool descriptions
+3. **`agentforge build`** - Chunk documents, call embedder API, extract graph triples via LLM, generate MCP tool descriptions
 4. **`docker build`** - Package into ~50MB container with baked databases
 5. **`docker run`** with user's runtime API keys
 
@@ -110,8 +110,8 @@ RERANK_BASE_URL, RERANK_API_KEY, RERANK_MODEL  # optional
 agent-forge/
 ├── cmd/                    # Cobra commands
 │   ├── root.go            # Root command, Viper config
-│   ├── init.go            # `agent-forge init`
-│   └── build.go           # `agent-forge build`
+│   ├── init.go            # `agentforge init`
+│   └── build.go           # `agentforge build`
 ├── internal/              # Private application code
 │   ├── config/            # Viper configuration
 │   ├── vector/            # chromem-go operations

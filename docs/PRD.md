@@ -59,9 +59,9 @@ build_providers:
 
 ## 4. Step-by-Step Developer Workflow
 
-### Step 1: Initialization (`agent-forge init`)
+### Step 1: Initialization (`agentforge init`)
 
-**Command:** `agent-forge init my-expert-agent`
+**Command:** `agentforge init my-expert-agent`
 **Action:** The CLI creates a new project directory and scaffolds the necessary boilerplate to define the agent and prepare it for Dockerization.
 
 **Output Artifacts:**
@@ -80,9 +80,9 @@ my-expert-agent/
 
 **Action:** The user manually places their raw knowledge files (e.g., `book_1.pdf`, `architecture.md`) into the `data/` directory. They edit `agent.yaml` to define the system prompt and MCP tool names.
 
-### Step 3: Compilation (`agent-forge build`)
+### Step 3: Compilation (`agentforge build`)
 
-**Command:** `cd my-expert-agent && agent-forge build`
+**Command:** `cd my-expert-agent && agentforge build`
 **Action:** 1. The CLI reads the raw files in `data/`.
 2. It connects to the APIs defined in `~/.agent-forge/config.yaml`.
 3. It chunks the text, calls the Embedder API, and writes the vector index.

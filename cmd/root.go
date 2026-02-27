@@ -12,7 +12,7 @@ import (
 var cfgFile string
 
 var rootCmd = &cobra.Command{
-	Use:   "agent-forge",
+	Use:   "agentforge",
 	Short: "The Static Site Generator for AI Minds",
 	Long: `Agent-Forge compiles raw documents into embedded, pure-Go GraphRAG databases,
 packaged into ultra-lightweight (~50MB) Docker containers.

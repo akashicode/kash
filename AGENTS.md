@@ -7,12 +7,12 @@
 ### Build
 ```bash
 # Build the CLI binary
-go build -o bin/agent-forge ./cmd/agent-forge
+go build -o bin/agentforge ./cmd/agent-forge
 
 # Build for multiple platforms
-GOOS=linux GOARCH=amd64 go build -o bin/agent-forge-linux ./cmd/agent-forge
-GOOS=darwin GOARCH=amd64 go build -o bin/agent-forge-darwin ./cmd/agent-forge
-GOOS=windows GOARCH=amd64 go build -o bin/agent-forge.exe ./cmd/agent-forge
+GOOS=linux GOARCH=amd64 go build -o bin/agentforge-linux ./cmd/agent-forge
+GOOS=darwin GOARCH=amd64 go build -o bin/agentforge-darwin ./cmd/agent-forge
+GOOS=windows GOARCH=amd64 go build -o bin/agentforge.exe ./cmd/agent-forge
 ```
 
 ### Lint
@@ -77,8 +77,8 @@ agent-forge/
 │       └── main.go           # Imports and invokes cmd/root.go
 ├── cmd/                      # Cobra command definitions
 │   ├── root.go               # Root command (Execute(), initConfig)
-│   ├── init.go               # `agent-forge init` subcommand
-│   └── build.go              # `agent-forge build` subcommand
+│   ├── init.go               # `agentforge init` subcommand
+│   └── build.go              # `agentforge build` subcommand
 ├── internal/                 # Private application code
 │   ├── config/               # Configuration handling (Viper)
 │   ├── vector/               # chromem-go vector store operations
