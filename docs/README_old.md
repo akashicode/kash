@@ -1,8 +1,8 @@
-# Agent-Forge
+# Kash
 
 > **The Static Site Generator for AI Minds. Compile your knowledge into a microchip.**
 
-Agent-Forge is a Go-based CLI that compiles raw documents (PDFs, Markdown, text) into embedded, pure-Go **GraphRAG** databases and packages them into ultra-lightweight (~50 MB) Docker containers. Ship expert AI agents as Docker images — no Python, no external vector databases, no infrastructure.
+Kash is a Go-based CLI that compiles raw documents (PDFs, Markdown, text) into embedded, pure-Go **GraphRAG** databases and packages them into ultra-lightweight (~50 MB) Docker containers. Ship expert AI agents as Docker images — no Python, no external vector databases, no infrastructure.
 
 ---
 
@@ -12,7 +12,7 @@ Agent-Forge is a Go-based CLI that compiles raw documents (PDFs, Markdown, text)
 Documents (PDF/MD/TXT)
         │
         ▼
-  agentforge build
+  kash build
         │
         ├── Chunks text
         ├── Calls Embedder API  ──► data/memory.chromem/   (vector index)
@@ -57,20 +57,20 @@ Documents (PDF/MD/TXT)
 
 ## Architecture: Single Binary
 
-Agent-Forge ships as a **single binary** called `agentforge` that handles everything:
+Kash ships as a **single binary** called `kash` that handles everything:
 
 | Command | Purpose |
 |---------|--------|
-| `agentforge init <name>` | Scaffold a new agent project |
-| `agentforge build` | Compile documents into vector + graph databases |
-| `agentforge serve` | Start the runtime HTTP server (REST, MCP, A2A) |
-| `agentforge version` | Print version info |
+| `kash init <name>` | Scaffold a new agent project |
+| `kash build` | Compile documents into vector + graph databases |
+| `kash serve` | Start the runtime HTTP server (REST, MCP, A2A) |
+| `kash version` | Print version info |
 
 There is **no separate server binary**. The `serve` subcommand starts the HTTP server that exposes all three interfaces (REST, MCP, A2A) on port 8000.
 
 **How agent Docker images work:**
 
-When you run `agentforge init`, the generated `Dockerfile` uses `FROM ghcr.io/agent-forge/agentforge:latest` as its base image. This multi-arch base image (amd64 + arm64) contains the `agentforge` binary and is published automatically by the release workflow. During `docker build`, Docker pulls the variant matching the target platform. Your compiled databases and config are layered on top, producing an agent image of ~50 MB.
+When you run `kash init`, the generated `Dockerfile` uses `FROM ghcr.io/akashicode/kash:latest` as its base image. This multi-arch base image (amd64 + arm64) contains the `kash` binary and is published automatically by the release workflow. During `docker build`, Docker pulls the variant matching the target platform. Your compiled databases and config are layered on top, producing an agent image of ~50 MB.
 
 To publish a cross-platform agent that runs on both x86 and ARM (e.g., Raspberry Pi):
 
@@ -78,7 +78,7 @@ To publish a cross-platform agent that runs on both x86 and ARM (e.g., Raspberry
 docker buildx build --platform linux/amd64,linux/arm64 -t my-registry/my-agent:v1 --push .
 ```
 
-You can also download the binary directly from [GitHub Releases](https://github.com/agent-forge/agent-forge/releases/latest) to use as a local CLI tool — just add it to your `PATH`.
+You can also download the binary directly from [GitHub Releases](https://github.com/akashicode/kash/releases/latest) to use as a local CLI tool — just add it to your `PATH`.
 
 ---
 
@@ -103,8 +103,8 @@ To **run a built agent**, you need:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/agent-forge/agent-forge.git
-cd agent-forge
+git clone https://github.com/akashicode/kash.git
+cd Kash
 ```
 
 ### 2. Download Dependencies
@@ -123,24 +123,24 @@ go mod download
 go build \
   -trimpath \
   -ldflags "-s -w \
-    -X github.com/agent-forge/agent-forge/cmd.version=$(git describe --tags --always) \
-    -X github.com/agent-forge/agent-forge/cmd.commit=$(git rev-parse --short HEAD) \
-    -X github.com/agent-forge/agent-forge/cmd.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -o bin/agentforge \
-  ./cmd/agent-forge
+    -X github.com/akashicode/kash/cmd.version=$(git describe --tags --always) \
+    -X github.com/akashicode/kash/cmd.commit=$(git rev-parse --short HEAD) \
+    -X github.com/akashicode/kash/cmd.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -o bin/kash \
+  ./cmd/Kash
 ```
 
 #### Install system-wide
 
 ```bash
-sudo mv bin/agentforge /usr/local/bin/
-agentforge --help
+sudo mv bin/kash /usr/local/bin/
+kash --help
 ```
 
 #### Build using Make
 
 ```bash
-make build          # builds for current OS/arch → bin/agentforge
+make build          # builds for current OS/arch → bin/kash
 make build-linux    # explicitly targets linux/amd64
 make build-all      # builds linux + macOS + windows
 ```
@@ -163,18 +163,18 @@ brew install go
 go build \
   -trimpath \
   -ldflags "-s -w \
-    -X github.com/agent-forge/agent-forge/cmd.version=$(git describe --tags --always) \
-    -X github.com/agent-forge/agent-forge/cmd.commit=$(git rev-parse --short HEAD) \
-    -X github.com/agent-forge/agent-forge/cmd.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -o bin/agentforge \
-  ./cmd/agent-forge
+    -X github.com/akashicode/kash/cmd.version=$(git describe --tags --always) \
+    -X github.com/akashicode/kash/cmd.commit=$(git rev-parse --short HEAD) \
+    -X github.com/akashicode/kash/cmd.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -o bin/kash \
+  ./cmd/Kash
 ```
 
 #### Install system-wide
 
 ```bash
-sudo mv bin/agentforge /usr/local/bin/
-agentforge --help
+sudo mv bin/kash /usr/local/bin/
+kash --help
 ```
 
 #### Build for Apple Silicon (arm64) explicitly
@@ -183,8 +183,8 @@ agentforge --help
 GOOS=darwin GOARCH=arm64 go build \
   -trimpath \
   -ldflags "-s -w" \
-  -o bin/agentforge-darwin-arm64 \
-  ./cmd/agent-forge
+  -o bin/kash-darwin-arm64 \
+  ./cmd/Kash
 ```
 
 #### Build for Intel Mac (amd64) explicitly
@@ -193,14 +193,14 @@ GOOS=darwin GOARCH=arm64 go build \
 GOOS=darwin GOARCH=amd64 go build \
   -trimpath \
   -ldflags "-s -w" \
-  -o bin/agentforge-darwin-amd64 \
-  ./cmd/agent-forge
+  -o bin/kash-darwin-amd64 \
+  ./cmd/Kash
 ```
 
 #### Build using Make
 
 ```bash
-make build          # builds for current OS/arch → bin/agentforge
+make build          # builds for current OS/arch → bin/kash
 make build-darwin   # explicitly targets darwin/amd64
 ```
 
@@ -229,12 +229,12 @@ New-Item -ItemType Directory -Force -Path bin | Out-Null
 # Build
 go build `
   -trimpath `
-  -ldflags "-s -w -X github.com/agent-forge/agent-forge/cmd.version=$VERSION -X github.com/agent-forge/agent-forge/cmd.commit=$COMMIT -X github.com/agent-forge/agent-forge/cmd.buildDate=$DATE" `
-  -o bin\agentforge.exe `
-  .\cmd\agent-forge
+  -ldflags "-s -w -X github.com/akashicode/kash/cmd.version=$VERSION -X github.com/akashicode/kash/cmd.commit=$COMMIT -X github.com/akashicode/kash/cmd.buildDate=$DATE" `
+  -o bin\kash.exe `
+  .\cmd\Kash
 
 # Test it
-.\bin\agentforge.exe --help
+.\bin\kash.exe --help
 ```
 
 #### Build in Command Prompt (cmd.exe)
@@ -245,23 +245,23 @@ mkdir bin
 go build ^
   -trimpath ^
   -ldflags "-s -w" ^
-  -o bin\agentforge.exe ^
-  .\cmd\agent-forge
+  -o bin\kash.exe ^
+  .\cmd\Kash
 
-bin\agentforge.exe --help
+bin\kash.exe --help
 ```
 
 #### Install system-wide (PowerShell, as Administrator)
 
 ```powershell
-Copy-Item bin\agentforge.exe C:\Windows\System32\agentforge.exe
+Copy-Item bin\kash.exe C:\Windows\System32\kash.exe
 # or add the bin\ directory to your PATH
 ```
 
 #### Build using Make (requires GNU Make, e.g. via Git Bash or Chocolatey)
 
 ```bash
-make build-windows   # produces bin/agentforge.exe
+make build-windows   # produces bin/kash.exe
 ```
 
 ---
@@ -290,8 +290,8 @@ for OS in linux darwin windows; do
     GOOS=$OS GOARCH=$ARCH go build \
       -trimpath \
       -ldflags "-s -w" \
-      -o "dist/agentforge_${OS}_${ARCH}${EXT}" \
-      ./cmd/agent-forge
+      -o "dist/kash_${OS}_${ARCH}${EXT}" \
+      ./cmd/Kash
   done
 done
 ```
@@ -306,15 +306,15 @@ make build-all
 
 ## Pre-built Binaries
 
-Download the latest release for your platform from the [GitHub Releases page](https://github.com/agent-forge/agent-forge/releases/latest).
+Download the latest release for your platform from the [GitHub Releases page](https://github.com/akashicode/kash/releases/latest).
 
 | Platform            | File                                  |
 |---------------------|----------------------------------------|
-| Linux amd64         | `agent-forge_linux_amd64.tar.gz`      |
-| Linux arm64         | `agent-forge_linux_arm64.tar.gz`      |
-| macOS Intel         | `agent-forge_darwin_amd64.tar.gz`     |
-| macOS Apple Silicon | `agent-forge_darwin_arm64.tar.gz`     |
-| Windows 64-bit      | `agent-forge_windows_amd64.zip`       |
+| Linux amd64         | `Kash_linux_amd64.tar.gz`      |
+| Linux arm64         | `Kash_linux_arm64.tar.gz`      |
+| macOS Intel         | `Kash_darwin_amd64.tar.gz`     |
+| macOS Apple Silicon | `Kash_darwin_arm64.tar.gz`     |
+| Windows 64-bit      | `Kash_windows_amd64.zip`       |
 
 Verify your download with `checksums.txt` (SHA-256):
 
@@ -329,8 +329,8 @@ sha256sum -c checksums.txt
 ### Step 1 — Configure build providers
 
 ```bash
-mkdir -p ~/.agent-forge
-cat > ~/.agent-forge/config.yaml << 'EOF'
+mkdir -p ~/.Kash
+cat > ~/.Kash/config.yaml << 'EOF'
 build_providers:
   llm:
     base_url: "http://localhost:4000/v1"   # or https://api.openai.com/v1
@@ -346,7 +346,7 @@ EOF
 ### Step 2 — Scaffold a new agent project
 
 ```bash
-agentforge init my-expert-agent
+kash init my-expert-agent
 cd my-expert-agent
 ```
 
@@ -360,7 +360,7 @@ cp ~/my-notes/*.md data/
 ### Step 4 — Compile
 
 ```bash
-agentforge build
+kash build
 ```
 
 This produces `data/memory.chromem/` (vector index) and `data/knowledge.cayley/` (knowledge graph), and injects optimized MCP tool descriptions into `agent.yaml`.
@@ -395,9 +395,9 @@ Your agent is now live at `http://localhost:8000`.
 
 ## Configuration
 
-### Build-time: `~/.agent-forge/config.yaml`
+### Build-time: `~/.Kash/config.yaml`
 
-Used by `agentforge build` to call LLM and embedding APIs.
+Used by `kash build` to call LLM and embedding APIs.
 
 ```yaml
 build_providers:
@@ -422,7 +422,7 @@ All fields accept any **OpenAI-compatible** endpoint. Use [LiteLLM](https://gith
 
 ### Runtime: environment variables
 
-Used by `agentforge serve` (and the Docker container).
+Used by `kash serve` (and the Docker container).
 
 | Variable           | Required | Description                                             |
 |--------------------|----------|---------------------------------------------------------|
@@ -442,7 +442,7 @@ Used by `agentforge serve` (and the Docker container).
 
 ## CLI Reference
 
-### `agentforge init <name>`
+### `kash init <name>`
 
 Scaffolds a new agent project directory.
 
@@ -455,13 +455,13 @@ my-expert-agent/
 └── .dockerignore
 ```
 
-### `agentforge build`
+### `kash build`
 
 Reads `data/`, calls configured APIs, and writes compiled databases.
 
 ```bash
-agentforge build             # run in current directory
-agentforge build --dir ./my-agent   # run in a specific project directory
+kash build             # run in current directory
+kash build --dir ./my-agent   # run in a specific project directory
 ```
 
 ```
@@ -476,13 +476,13 @@ agentforge build --dir ./my-agent   # run in a specific project directory
 |------|-------|-------------|
 | `--dir` | `-d` | Change to the given directory before running (default: current directory) |
 
-### `agentforge serve`
+### `kash serve`
 
 Starts the runtime HTTP server (requires compiled databases).
 
 ```bash
-agentforge serve --port 8000 --agent agent.yaml
-agentforge serve --dir ./my-agent    # run from a specific project directory
+kash serve --port 8000 --agent agent.yaml
+kash serve --dir ./my-agent    # run from a specific project directory
 ```
 
 | Flag | Short | Description |
@@ -491,10 +491,10 @@ agentforge serve --dir ./my-agent    # run from a specific project directory
 | `--agent` | `-a` | Path to agent.yaml (default: `agent.yaml`) |
 | `--dir` | `-d` | Change to the given directory before running (default: current directory) |
 
-### `agentforge version`
+### `kash version`
 
 ```
-agentforge v1.2.0
+kash v1.2.0
   commit:     a3f9c12
   built:      2026-02-27T10:00:00Z
   go version: go1.25.0
@@ -503,7 +503,7 @@ agentforge v1.2.0
 
 ### `agent.yaml` — Embedding Dimensions
 
-The `agent.yaml` file (generated by `agentforge init`) includes a `dimensions` field under `runtime.embedder`:
+The `agent.yaml` file (generated by `kash init`) includes a `dimensions` field under `runtime.embedder`:
 
 ```yaml
 runtime:
@@ -513,7 +513,7 @@ runtime:
 
 This value controls the expected vector length. It is used at both **build time** and **serve time** to ensure consistent vector sizes. If the embedding API returns vectors longer than the configured dimensions, they are truncated locally.
 
-> **Important:** The `dimensions` value is **not** sent to the embedding API. Some providers (e.g. TrueFoundry) do not support the `dimensions` parameter in API requests. Agent-Forge handles truncation locally instead.
+> **Important:** The `dimensions` value is **not** sent to the embedding API. Some providers (e.g. TrueFoundry) do not support the `dimensions` parameter in API requests. Kash handles truncation locally instead.
 
 You can override this at runtime via the `EMBED_DIMENSIONS` environment variable.
 
@@ -588,7 +588,7 @@ curl http://localhost:8000/health
 
 ## Docker Deployment
 
-After running `agentforge build`, the `Dockerfile` in your project is ready to use:
+After running `kash build`, the `Dockerfile` in your project is ready to use:
 
 ```bash
 # Build for current architecture
@@ -611,7 +611,7 @@ The resulting image is ~50 MB and starts in under 50 ms. No external databases, 
 
 ### How it works under the hood
 
-The generated `Dockerfile` uses `FROM ghcr.io/agent-forge/agentforge:latest` as a multi-arch base image that already contains the `agentforge` binary (for both `amd64` and `arm64`). Your compiled databases and `agent.yaml` are layered on top via `COPY`. The entrypoint runs `agentforge serve`. No Go toolchain, no `curl` — just your data on top of the base image.
+The generated `Dockerfile` uses `FROM ghcr.io/akashicode/kash:latest` as a multi-arch base image that already contains the `kash` binary (for both `amd64` and `arm64`). Your compiled databases and `agent.yaml` are layered on top via `COPY`. The entrypoint runs `kash serve`. No Go toolchain, no `curl` — just your data on top of the base image.
 
 Because the base image is multi-arch, you can build a single agent image that runs on both x86 servers and ARM devices like Raspberry Pi using `docker buildx`.
 
@@ -643,14 +643,14 @@ make build-all
 ### Project Layout
 
 ```
-agent-forge/
+Kash/
 ├── cmd/                      # Cobra CLI commands
-│   ├── agent-forge/main.go   # Entry point
+│   ├── Kash/main.go   # Entry point
 │   ├── root.go               # Root command + Viper config
-│   ├── init.go               # `agentforge init`
-│   ├── build.go              # `agentforge build`
-│   ├── serve.go              # `agentforge serve`
-│   └── version.go            # `agentforge version`
+│   ├── init.go               # `kash init`
+│   ├── build.go              # `kash build`
+│   ├── serve.go              # `kash serve`
+│   └── version.go            # `kash version`
 ├── internal/
 │   ├── config/               # Build + runtime config structs
 │   ├── chunker/              # Text chunking
@@ -704,10 +704,10 @@ git push origin :refs/tags/v0.1.0
 - Windows amd64
 
 **Docker base image** is published to:
-- `ghcr.io/agent-forge/agentforge:latest`
-- `ghcr.io/agent-forge/agentforge:<version>`
+- `ghcr.io/akashicode/kash:latest`
+- `ghcr.io/akashicode/kash:<version>`
 
-The CLI binaries are for local use (add to `PATH`). The Docker base image is used by agent Dockerfiles (generated by `agentforge init`) to produce cross-platform agent containers.
+The CLI binaries are for local use (add to `PATH`). The Docker base image is used by agent Dockerfiles (generated by `kash init`) to produce cross-platform agent containers.
 
 ---
 

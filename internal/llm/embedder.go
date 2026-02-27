@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/agent-forge/agent-forge/internal/config"
+	"github.com/akashicode/kash/internal/config"
 )
 
 // ErrNilEmbedConfig is returned when nil embed config is provided.

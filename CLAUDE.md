@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Agent-Forge is a Go-based CLI framework that compiles raw documents into embedded, pure-Go GraphRAG databases, packaged into ultra-lightweight Docker containers (~50MB).
+Kash is a Go-based CLI framework that compiles raw documents into embedded, pure-Go GraphRAG databases, packaged into ultra-lightweight Docker containers (~50MB).
 
 The "compiler" approach: data ingestion happens at build time, runtime only serves queries. This allows sharing expert AI agents as Docker images without complex infrastructure.
 
@@ -12,12 +12,12 @@ The "compiler" approach: data ingestion happens at build time, runtime only serv
 
 ### Build
 ```bash
-go build -o bin/agentforge ./cmd/agent-forge
+go build -o bin/kash ./cmd/Kash
 
 # Cross-platform builds
-GOOS=linux GOARCH=amd64 go build -o bin/agentforge-linux ./cmd/agent-forge
-GOOS=darwin GOARCH=amd64 go build -o bin/agentforge-darwin ./cmd/agent-forge
-GOOS=windows GOARCH=amd64 go build -o bin/agentforge.exe ./cmd/agent-forge
+GOOS=linux GOARCH=amd64 go build -o bin/kash-linux ./cmd/Kash
+GOOS=darwin GOARCH=amd64 go build -o bin/kash-darwin ./cmd/Kash
+GOOS=windows GOARCH=amd64 go build -o bin/kash.exe ./cmd/Kash
 ```
 
 ### Lint
@@ -40,8 +40,8 @@ go test -bench=. ./...               # benchmarks
 
 ### Docker
 ```bash
-docker build -t agent-forge:latest .
-docker run -p 8000:8000 agent-forge:latest
+docker build -t Kash:latest .
+docker run -p 8000:8000 Kash:latest
 ```
 
 ## Architecture
@@ -71,12 +71,12 @@ The Go runtime multiplexes on port 8000:
 3. **Docker-First Distribution**: Single ~50MB container with baked databases.
 4. **Build vs Runtime**: Data ingestion at `build` time; runtime only serves queries.
 5. **BYOM (Bring Your Own Model)**: Runtime requires user-provided API keys; no bundled inference.
-6. **Single Binary**: One `agentforge` binary handles CLI (`init`, `build`) and server (`serve`). A multi-arch base image (`ghcr.io/agent-forge/agentforge`) is published to GHCR. Agent Dockerfiles use it as base so users can build cross-platform images with `docker buildx`.
+6. **Single Binary**: One `kash` binary handles CLI (`init`, `build`) and server (`serve`). A multi-arch base image (`ghcr.io/akashicode/kash`) is published to GHCR. Agent Dockerfiles use it as base so users can build cross-platform images with `docker buildx`.
 
 ## Configuration
 
 ### Global CLI Config (Build-Time)
-Location: `~/.agent-forge/config.yaml`
+Location: `~/.Kash/config.yaml`
 
 ```yaml
 build_providers:
@@ -99,22 +99,22 @@ RERANK_BASE_URL, RERANK_API_KEY, RERANK_MODEL  # optional
 
 ## Developer Workflow
 
-1. **`agentforge init <name>`** - Scaffold project with `data/`, `agent.yaml`, `Dockerfile`
+1. **`kash init <name>`** - Scaffold project with `data/`, `agent.yaml`, `Dockerfile`
 2. **Add documents** to `data/` directory (PDFs, Markdown, etc.)
-3. **`agentforge build`** - Chunk documents, call embedder API, extract graph triples via LLM, generate MCP tool descriptions
+3. **`kash build`** - Chunk documents, call embedder API, extract graph triples via LLM, generate MCP tool descriptions
 4. **`docker build`** - Package into ~50MB container with baked databases
 5. **`docker run`** with user's runtime API keys
 
 ## Project Structure
 
 ```
-agent-forge/
+Kash/
 ├── cmd/                    # Cobra commands
 │   ├── root.go            # Root command, Viper config
-│   ├── init.go            # `agentforge init`
-│   ├── build.go           # `agentforge build`
-│   ├── serve.go           # `agentforge serve` (runtime server)
-│   └── version.go         # `agentforge version`
+│   ├── init.go            # `kash init`
+│   ├── build.go           # `kash build`
+│   ├── serve.go           # `kash serve` (runtime server)
+│   └── version.go         # `kash version`
 ├── internal/              # Private application code
 │   ├── config/            # Viper configuration
 │   ├── vector/            # chromem-go operations

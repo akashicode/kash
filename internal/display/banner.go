@@ -75,7 +75,7 @@ func PrintBanner(info ServerInfo) {
 
 	// Header
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "  %s%s⚡ Agent-Forge Runtime Server%s\n", bold, brightCyan, reset)
+	fmt.Fprintf(w, "  %s%s⚡ Kash Runtime Server%s\n", bold, brightCyan, reset)
 	fmt.Fprintf(w, "  %s%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", dim, cyan, reset)
 	fmt.Fprintln(w)
 

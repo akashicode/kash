@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/agent-forge/agent-forge/cmd"
+	"github.com/akashicode/kash/cmd"
 )
 
 func main() {

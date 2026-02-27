@@ -12,8 +12,8 @@ import (
 
 	chromem "github.com/philippgille/chromem-go"
 
-	"github.com/agent-forge/agent-forge/internal/chunker"
-	"github.com/agent-forge/agent-forge/internal/config"
+	"github.com/akashicode/kash/internal/chunker"
+	"github.com/akashicode/kash/internal/config"
 )
 
 // ErrNilConfig is returned when a nil config is provided.

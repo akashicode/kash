@@ -11,34 +11,39 @@
   <img src="https://img.shields.io/badge/A2A_Protocol-🧪_Testing-yellow?style=flat-square" alt="A2A Testing" />
 </p>
 
-<h1 align="center">⚡ Agent-Forge</h1>
+<h1 align="center">⚡ Kash</h1>
 
 <p align="center">
-  <strong>The Static Site Generator for AI Minds</strong><br/>
-  <em>Compile your knowledge into a microchip. Ship AI agents as Docker images.</em>
+  <strong>Cache your knowledge. Channel the Akashic.</strong><br/>
+  <em>Compile your documents into an embedded GraphRAG brain. Ship AI agents as Docker images.</em>
 </p>
 
 <p align="center">
   <code>Agent as a Service</code> · <code>Knowledge as a Service</code>
 </p>
 
+> **Kash** /kæʃ/ — A double-entendre by design.
+> Like a **cache**, it compiles your heavy knowledge into a fast, local binary you can ship anywhere.
+> Like the **Akashic** records, it holds a complete, queryable record of everything you've fed it.
+> One word. Two meanings. Zero infrastructure.
+
 ---
 
-## 💡 What is Agent-Forge?
+## 💡 What is Kash?
 
-Agent-Forge is a **Go CLI** that turns your raw documents (PDFs, Markdown, text files) into a **self-contained AI agent** packaged in a **lightweight Docker container**.
+Kash is a **Go CLI** that turns your raw documents (PDFs, Markdown, text files) into a **self-contained AI agent** packaged in a **lightweight Docker container** (~50MB).
 
 No Python runtime. No external vector databases. No infrastructure headaches.
 
 ```
-Your Documents  →  agentforge build  →  Docker Image  →  Ship Anywhere 🚀
+Your Documents  →  kash build  →  Docker Image  →  Ship Anywhere 🚀
 ```
 
 Think of it like a **static site generator, but for AI brains**. You compile knowledge at build time, and the runtime only serves queries — fast, lightweight, and portable.
 
 ### The "Compiler" Approach
 
-| Traditional RAG Stack | Agent-Forge |
+| Traditional RAG Stack | Kash |
 |---|---|
 | Python app + Pinecone + Redis + FastAPI | **Single Go binary + lightweight Docker image** |
 | Runtime document ingestion | **Build-time compilation** |
@@ -96,12 +101,12 @@ Spin up multiple specialized agents (legal, finance, engineering) and wire them 
 ### 5-Minute Setup
 
 ```bash
-# 1. Install Agent-Forge (build from source — see "Building from Source" below)
-go install github.com/agent-forge/agent-forge/cmd/agent-forge@latest
+# 1. Install Kash (build from source — see "Building from Source" below)
+go install github.com/akashicode/kash/cmd/kash@latest
 
 # 2. Configure your API providers
-mkdir -p ~/.agentforge
-cat > ~/.agentforge/config.yaml << 'EOF'
+mkdir -p ~/.kash
+cat > ~/.kash/config.yaml << 'EOF'
 build_providers:
   llm:
     base_url: "https://api.openai.com/v1"
@@ -114,7 +119,7 @@ build_providers:
 EOF
 
 # 3. Scaffold a new agent
-agentforge init my-expert
+kash init my-expert
 
 # 4. Add your knowledge
 cp ~/docs/*.pdf my-expert/data/
@@ -122,10 +127,10 @@ cp ~/notes/*.md my-expert/data/
 
 # 5. Compile the knowledge base
 cd my-expert
-agentforge build --dir /path/to/my-expert
+kash build --dir /path/to/my-expert
 
 # 6. Serve locally (no Docker needed!)
-agentforge serve -d /path/to/my-expert
+kash serve -d /path/to/my-expert
 ```
 
 Your agent is now live at **http://localhost:8000** with three interfaces ready to go.
@@ -134,33 +139,28 @@ Your agent is now live at **http://localhost:8000** with three interfaces ready 
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        BUILD TIME                               │
-│                                                                 │
-│   Documents    ──►  Chunker  ──►  Embedder API  ──►  Vector DB │
-│   (PDF/MD/TXT)       │                                (chromem) │
-│                       └──►  LLM API  ──►  Graph DB              │
-│                          (triple extraction)    (cayley)         │
-│                                                                 │
-│   Output: data/memory.chromem/ + data/knowledge.cayley/         │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                        docker build
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         RUNTIME                                 │
-│                                                                 │
-│   Query ──► Hybrid Search (Vector + Graph) ──► Rerank ──► LLM  │
-│                                                                 │
-│   ┌─────────────────┬──────────────────┬──────────────────┐     │
-│   │  REST API       │  MCP Server      │  A2A Protocol    │     │
-│   │  /v1/chat/...   │  /mcp            │  /rpc/agent      │     │
-│   │  (OpenAI-compat)│  (Cursor/IDEs)   │  (Multi-agent)   │     │
-│   └─────────────────┴──────────────────┴──────────────────┘     │
-│                  All on port 8000                                │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph BUILD["🔨 Build Time"]
+        direction LR
+        D["📄 Documents\nPDF / MD / TXT"] --> CK["Chunker"]
+        CK --> EMB["Embedder API"]
+        CK --> LLM1["LLM API\ntriple extraction"]
+        EMB --> VDB["Vector DB\ndata/memory.chromem"]
+        LLM1 --> GDB["Graph DB\ndata/knowledge.cayley"]
+    end
+
+    BUILD -- "docker build" --> RUNTIME
+
+    subgraph RUNTIME["⚡ Runtime — port 8000"]
+        direction LR
+        Q["Query"] --> HS["Hybrid Search\nVector + Graph"]
+        HS --> RR["Rerank\noptional"]
+        RR --> LLM2["LLM"]
+        LLM2 --> REST["REST API\nPOST /v1/chat/completions"]
+        LLM2 --> MCP["MCP Server\nGET /mcp"]
+        LLM2 --> A2A["A2A Protocol\nPOST /rpc/agent"]
+    end
 ```
 
 ### Core Stack
@@ -178,22 +178,28 @@ Your agent is now live at **http://localhost:8000** with three interfaces ready 
 
 Every query (REST, MCP, A2A) runs through the same pipeline:
 
-```
-Query → Embed → Vector Search (chromem-go)  ─┐
-                                               ├─► Merge → Rerank (optional) → Context
-Query → Keywords → Graph Traversal (cayley) ─┘
+```mermaid
+flowchart LR
+    Q["Query"] --> E["Embed"]
+    Q --> K["Keywords"]
+    E --> VS["Vector Search\nchromem-go"]
+    K --> GT["Graph Traversal\ncayley"]
+    VS --> M["Merge"]
+    GT --> M
+    M --> R["Rerank\noptional"]
+    R --> C["Context → LLM"]
 ```
 
 ---
 
 ## 🖥️ CLI Reference
 
-### `agentforge init <name>`
+### `kash init <name>`
 
 Scaffolds a new agent project.
 
 ```bash
-agentforge init my-agent
+kash init my-agent
 ```
 
 Creates:
@@ -208,13 +214,13 @@ my-agent/
 └── README.md           # Auto-generated docs
 ```
 
-### `agentforge build`
+### `kash build`
 
 Compiles documents into vector + graph databases.
 
 ```bash
-agentforge build                     # in current directory
-agentforge build --dir ./my-agent    # specify project dir
+kash build                     # in current directory
+kash build --dir ./my-agent    # specify project dir
 ```
 
 | Flag | Short | Default | Description |
@@ -228,15 +234,15 @@ agentforge build --dir ./my-agent    # specify project dir
 4. Extract knowledge graph triples → `data/knowledge.cayley/`
 5. Auto-generate MCP tool descriptions → `agent.yaml`
 
-### `agentforge serve`
+### `kash serve`
 
 Starts the runtime HTTP server.
 
 ```bash
-agentforge serve                          # default: port 8000, ./agent.yaml
-agentforge serve --port 9000              # custom port
-agentforge serve --dir ./my-agent         # serve from specific directory
-agentforge serve --agent custom.yaml      # custom agent config path
+kash serve                          # default: port 8000, ./agent.yaml
+kash serve --port 9000              # custom port
+kash serve --dir ./my-agent         # serve from specific directory
+kash serve --agent custom.yaml      # custom agent config path
 ```
 
 | Flag | Short | Default | Description |
@@ -245,11 +251,11 @@ agentforge serve --agent custom.yaml      # custom agent config path
 | `--agent` | `-a` | `agent.yaml` | Path to agent configuration |
 | `--dir` | `-d` | `.` | Project directory |
 
-### `agentforge version`
+### `kash version`
 
 ```bash
-agentforge version
-# agentforge v1.0.0
+kash version
+# kash v1.0.0
 #   commit:     a3f9c12
 #   built:      2026-02-27T10:00:00Z
 #   go version: go1.25.0
@@ -319,7 +325,7 @@ By default all endpoints are open (ideal for local dev). Set `AGENT_API_KEY` to 
 
 ```bash
 export AGENT_API_KEY="my-secret-key"
-agentforge serve
+kash serve
 ```
 
 The key is passed as a standard Bearer token — compatible with all three interfaces:
@@ -418,10 +424,10 @@ export EMBED_BASE_URL="https://api.voyageai.com/v1"
 export EMBED_API_KEY="pa-..."
 
 # Build the knowledge base
-agentforge build
+kash build
 
 # Serve it
-agentforge serve
+kash serve
 ```
 
 That's it. Hit `http://localhost:8000` and start chatting.
@@ -436,7 +442,7 @@ cp .env.example .env
 # edit .env with your API keys
 
 # Build the knowledge base first
-agentforge build
+kash build
 
 # Build image + run
 docker compose up --build
@@ -478,9 +484,9 @@ Your agent is now a portable Docker image that anyone can pull and run. They jus
 
 ## ⚙️ Configuration
 
-### Build-Time: `~/.agentforge/config.yaml`
+### Build-Time: `~/.kash/config.yaml`
 
-Used by `agentforge build` to call LLM and embedding APIs.
+Used by `kash build` to call LLM and embedding APIs.
 
 ```yaml
 build_providers:
@@ -502,7 +508,7 @@ build_providers:
 
 ### Runtime: Environment Variables
 
-Used by `agentforge serve` and Docker containers.
+Used by `kash serve` and Docker containers.
 
 | Variable | Required | Description |
 |---|---|---|
@@ -526,7 +532,7 @@ Each project has an `agent.yaml` that defines persona, embedding dimensions, and
 agent:
   name: "my-expert"
   version: "1.0.0"
-  description: "An expert AI agent powered by Agent-Forge"
+  description: "An expert AI agent powered by Kash"
   system_prompt: |
     You are a highly knowledgeable expert assistant...
 
@@ -537,14 +543,14 @@ runtime:
 mcp:
   tools:
     - name: "search_my_expert_knowledge"
-      description: "Auto-generated by agentforge build"
+      description: "Auto-generated by kash build"
 
 server:
   port: 8000
   cors_origins: ["*"]
 ```
 
-> **Important:** The `dimensions` value is NOT sent to the embedding API — some providers don't support it. Agent-Forge handles truncation locally.
+> **Important:** The `dimensions` value is NOT sent to the embedding API — some providers don't support it. Kash handles truncation locally.
 
 ---
 
@@ -558,11 +564,11 @@ server:
 ### Build
 
 ```bash
-git clone https://github.com/agent-forge/agent-forge.git
-cd agent-forge
+git clone https://github.com/akashicode/kash.git
+cd Kash
 
 # Build for your platform
-go build -o bin/agentforge ./cmd/agent-forge
+go build -o bin/kash ./cmd/Kash
 
 # Or use Make
 make build
@@ -572,13 +578,13 @@ make build
 
 ```bash
 # Linux
-GOOS=linux GOARCH=amd64 go build -o bin/agentforge-linux ./cmd/agent-forge
+GOOS=linux GOARCH=amd64 go build -o bin/kash-linux ./cmd/Kash
 
 # macOS (Apple Silicon)
-GOOS=darwin GOARCH=arm64 go build -o bin/agentforge-darwin ./cmd/agent-forge
+GOOS=darwin GOARCH=arm64 go build -o bin/kash-darwin ./cmd/Kash
 
 # Windows
-GOOS=windows GOARCH=amd64 go build -o bin/agentforge.exe ./cmd/agent-forge
+GOOS=windows GOARCH=amd64 go build -o bin/kash.exe ./cmd/Kash
 
 # All platforms at once
 make build-all
@@ -589,10 +595,10 @@ make build-all
 ```bash
 # Linux / macOS
 sudo make install
-# → installs to /usr/local/bin/agentforge
+# → installs to /usr/local/bin/kash
 
 # Windows (PowerShell as Admin)
-Copy-Item bin\agentforge.exe C:\Windows\System32\agentforge.exe
+Copy-Item bin\kash.exe C:\Windows\System32\kash.exe
 ```
 
 ---
@@ -613,14 +619,14 @@ make clean        # Remove build artifacts
 ### Project Layout
 
 ```
-agent-forge/
+Kash/
 ├── cmd/                          # CLI commands (Cobra)
-│   ├── agent-forge/main.go       # Entry point
+│   ├── kash/main.go       # Entry point
 │   ├── root.go                   # Root command + Viper config
-│   ├── init.go                   # agentforge init
-│   ├── build.go                  # agentforge build
-│   ├── serve.go                  # agentforge serve
-│   └── version.go                # agentforge version
+│   ├── init.go                   # kash init
+│   ├── build.go                  # kash build
+│   ├── serve.go                  # kash serve
+│   └── version.go                # kash version
 ├── internal/
 │   ├── config/                   # Unified config (env + YAML)
 │   ├── display/                  # Colorful CLI output + banners
@@ -641,9 +647,9 @@ agent-forge/
 
 | Feature | Status | Notes |
 |---|---|---|
-| `agentforge init` | ✅ Stable | Full project scaffolding |
-| `agentforge build` | ✅ Stable | PDF, Markdown, TXT ingestion |
-| `agentforge serve` | ✅ Stable | All three interfaces |
+| `kash init` | ✅ Stable | Full project scaffolding |
+| `kash build` | ✅ Stable | PDF, Markdown, TXT ingestion |
+| `kash serve` | ✅ Stable | All three interfaces |
 | REST API | ✅ Tested | Drop-in OpenAI replacement |
 | MCP Server | ✅ Tested | Works with Cursor & Windsurf |
 | A2A Protocol | 🧪 In Progress | Implementation done, testing pending |
@@ -654,7 +660,7 @@ agent-forge/
 
 ---
 
-## 🌟 Why Agent-Forge?
+## 🌟 Why Kash?
 
 <table>
 <tr>
@@ -692,6 +698,6 @@ MIT — do whatever you want with it.
 ---
 
 <p align="center">
-  <strong>⚡ Agent-Forge</strong><br/>
-  <em>Compile knowledge. Ship agents. No infrastructure required.</em>
+  <strong>⚡ Kash</strong><br/>
+  <em>Cache your knowledge. Channel the Akashic. No infrastructure required.</em>
 </p>

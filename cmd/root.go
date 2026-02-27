@@ -12,12 +12,12 @@ import (
 var cfgFile string
 
 var rootCmd = &cobra.Command{
-	Use:   "agentforge",
-	Short: "The Static Site Generator for AI Minds",
-	Long: `Agent-Forge compiles raw documents into embedded, pure-Go GraphRAG databases,
+	Use:   "kash",
+	Short: "Cache your knowledge. Channel the Akashic.",
+	Long: `Kash compiles raw documents into embedded, pure-Go GraphRAG databases,
 packaged into ultra-lightweight (~50MB) Docker containers.
 
-Compile your knowledge into a microchip.`,
+Cache your knowledge. Channel the Akashic. Ship AI agents anywhere.`,
 }
 
 // Execute is the entry point called from main.
@@ -30,7 +30,7 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.agentforge/config.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.kash/config.yaml)")
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(buildCmd)
@@ -45,7 +45,7 @@ func initConfig() {
 			fmt.Fprintln(os.Stderr, "warning: could not determine home directory:", err)
 			return
 		}
-		viper.AddConfigPath(filepath.Join(home, ".agentforge"))
+		viper.AddConfigPath(filepath.Join(home, ".kash"))
 		viper.SetConfigType("yaml")
 		viper.SetConfigName("config")
 	}

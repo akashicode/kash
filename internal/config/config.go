@@ -14,16 +14,16 @@ import (
 // ErrNilConfig is returned when a nil Config is provided.
 var ErrNilConfig = errors.New("config is nil")
 
-// ConfigDir returns the path to ~/.agentforge/.
+// ConfigDir returns the path to ~/.kash/.
 func ConfigDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("determine home directory: %w", err)
 	}
-	return filepath.Join(home, ".agentforge"), nil
+	return filepath.Join(home, ".kash"), nil
 }
 
-// ConfigFilePath returns the full path to ~/.agentforge/config.yaml.
+// ConfigFilePath returns the full path to ~/.kash/config.yaml.
 func ConfigFilePath() (string, error) {
 	dir, err := ConfigDir()
 	if err != nil {
@@ -124,7 +124,7 @@ func ValidateLLM(cfg *Config) error {
 		missing = append(missing, "llm.model / LLM_MODEL")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("missing required config:\n  %s\n\nSet these in ~/.agentforge/config.yaml or as environment variables", strings.Join(missing, "\n  "))
+		return fmt.Errorf("missing required config:\n  %s\n\nSet these in ~/.kash/config.yaml or as environment variables", strings.Join(missing, "\n  "))
 	}
 	return nil
 }
@@ -140,7 +140,7 @@ func ValidateEmbedder(cfg *Config) error {
 	}
 	// Model is optional when using an embedding router
 	if len(missing) > 0 {
-		return fmt.Errorf("missing required config:\n  %s\n\nSet these in ~/.agentforge/config.yaml or as environment variables", strings.Join(missing, "\n  "))
+		return fmt.Errorf("missing required config:\n  %s\n\nSet these in ~/.kash/config.yaml or as environment variables", strings.Join(missing, "\n  "))
 	}
 	if cfg.Embedder.Dimensions <= 0 {
 		return fmt.Errorf("embedder dimensions must be > 0 (got %d), set via embedder.dimensions or EMBED_DIMENSIONS", cfg.Embedder.Dimensions)
@@ -164,7 +164,7 @@ func ValidateServe(cfg *Config) error {
 	return ValidateEmbedder(cfg)
 }
 
-// EnsureConfigFile creates ~/.agentforge/config.yaml with an empty skeleton
+// EnsureConfigFile creates ~/.kash/config.yaml with an empty skeleton
 // if it does not already exist. Returns (created bool, error).
 func EnsureConfigFile() (bool, error) {
 	cfgPath, err := ConfigFilePath()
@@ -182,10 +182,10 @@ func EnsureConfigFile() (bool, error) {
 		return false, fmt.Errorf("create config directory: %w", err)
 	}
 
-	skeleton := `# Agent-Forge Configuration
-# Docs: https://github.com/agent-forge/agent-forge
+	skeleton := `# Kash Configuration
+# Docs: https://github.com/akashicode/kash
 #
-# These values are used by 'agentforge build' and 'agentforge serve'.
+# These values are used by 'kash build' and 'kash serve'.
 # Environment variables (LLM_BASE_URL, etc.) take priority over this file,
 # so you can leave this empty when running inside a Docker container.
 

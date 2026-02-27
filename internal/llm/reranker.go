@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/agent-forge/agent-forge/internal/config"
+	"github.com/akashicode/kash/internal/config"
 )
 
 // ErrNilRerankConfig is returned when nil rerank config is provided.

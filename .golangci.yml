@@ -1,4 +1,4 @@
-# GolangCI-Lint configuration for Agent-Forge
+# GolangCI-Lint configuration for Kash
 # Install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
 run:
@@ -29,7 +29,7 @@ linters:
 
 linters-settings:
   goimports:
-    local-prefixes: github.com/agent-forge/agent-forge
+    local-prefixes: github.com/akashicode/kash
 
   revive:
     rules:

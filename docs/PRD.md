@@ -1,8 +1,8 @@
-# Product Requirements Document (PRD): Agent-Forge
+# Product Requirements Document (PRD): Kash
 
 **Version:** 2.0 (Final Architecture)
 **Status:** Build Ready
-**Product Name:** Agent-Forge
+**Product Name:** Kash
 **Tagline:** "The Static Site Generator for AI Minds. Compile your knowledge into a microchip."
 
 ---
@@ -11,7 +11,7 @@
 
 **The Problem:** Distributing deep, stateful AI agents is complex. Developers currently have to deploy heavy Python microservices, standalone vector databases, and complex orchestration layers just to share a single expert agent. Furthermore, handling different provider schemas (OpenAI, Anthropic, Cohere) creates massive integration friction.
 
-**The Solution:** **Agent-Forge** is a Go-based CLI framework that compiles raw documents into embedded, pure-Go GraphRAG databases, packaging them into an ultra-lightweight (under 50MB) Docker container.
+**The Solution:** **Kash** is a Go-based CLI framework that compiles raw documents into embedded, pure-Go GraphRAG databases, packaging them into an ultra-lightweight (under 50MB) Docker container.
 
 **The Vision:** We provide the compiler; the user provides the knowledge and the compute. By standardizing exclusively on **OpenAI-compatible endpoints** for reasoning, embedding, and reranking, we decouple the agent's memory from the inference provider. Anyone can build an agent, push it to Docker Hub, and run it anywhere using their preferred local or cloud models.
 
@@ -19,7 +19,7 @@
 
 ## 2. Technology Stack (100% Go-Native)
 
-Agent-Forge eliminates external database servers and heavy Python runtimes.
+Kash eliminates external database servers and heavy Python runtimes.
 
 | Component | Technology | Purpose |
 | --- | --- | --- |
@@ -33,16 +33,16 @@ Agent-Forge eliminates external database servers and heavy Python runtimes.
 
 ## 3. Configuration & The "BYOM" Stance
 
-Agent-Forge is **strictly provider-agnostic** and demands **OpenAI-compatible APIs** for all three core AI functions: Reasoning (LLM), Embedding, and Reranking.
+Kash is **strictly provider-agnostic** and demands **OpenAI-compatible APIs** for all three core AI functions: Reasoning (LLM), Embedding, and Reranking.
 
-We do not endorse or bundle any specific proxy. If a user wants to use Cohere for reranking or Anthropic for reasoning, it is *their responsibility* to run an OpenAI-compatible reverse proxy (like LiteLLM, OneAPI, or Ollama) locally or in the cloud. Agent-Forge only speaks standard OpenAI JSON.
+We do not endorse or bundle any specific proxy. If a user wants to use Cohere for reranking or Anthropic for reasoning, it is *their responsibility* to run an OpenAI-compatible reverse proxy (like LiteLLM, OneAPI, or Ollama) locally or in the cloud. Kash only speaks standard OpenAI JSON.
 
 ### Global CLI Configuration (Build-Time)
 
-Before building, the developer must configure the CLI. Agent-Forge generates a global config file at `~/.agent-forge/config.yaml` to handle the heavy-lifting extraction APIs.
+Before building, the developer must configure the CLI. Kash generates a global config file at `~/.Kash/config.yaml` to handle the heavy-lifting extraction APIs.
 
 ```yaml
-# ~/.agent-forge/config.yaml
+# ~/.Kash/config.yaml
 build_providers:
   llm:
     base_url: "http://localhost:4000/v1" # E.g., user's local proxy or OpenAI direct
@@ -59,9 +59,9 @@ build_providers:
 
 ## 4. Step-by-Step Developer Workflow
 
-### Step 1: Initialization (`agentforge init`)
+### Step 1: Initialization (`kash init`)
 
-**Command:** `agentforge init my-expert-agent`
+**Command:** `kash init my-expert-agent`
 **Action:** The CLI creates a new project directory and scaffolds the necessary boilerplate to define the agent and prepare it for Dockerization.
 
 **Output Artifacts:**
@@ -80,11 +80,11 @@ my-expert-agent/
 
 **Action:** The user manually places their raw knowledge files (e.g., `book_1.pdf`, `architecture.md`) into the `data/` directory. They edit `agent.yaml` to define the system prompt and MCP tool names.
 
-### Step 3: Compilation (`agentforge build`)
+### Step 3: Compilation (`kash build`)
 
-**Command:** `cd my-expert-agent && agentforge build`
+**Command:** `cd my-expert-agent && kash build`
 **Action:** 1. The CLI reads the raw files in `data/`.
-2. It connects to the APIs defined in `~/.agent-forge/config.yaml`.
+2. It connects to the APIs defined in `~/.Kash/config.yaml`.
 3. It chunks the text, calls the Embedder API, and writes the vector index.
 4. It calls the LLM API to extract Knowledge Graph triples (Subject, Predicate, Object).
 5. It uses the LLM to auto-generate highly optimized tool `description` strings inside `agent.yaml` for the MCP interface.

@@ -63,39 +63,39 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          BINARY_NAME=agentforge
+          BINARY_NAME=kash
           if [ "${{ matrix.goos }}" = "windows" ]; then
-            BINARY_NAME=agentforge.exe
+            BINARY_NAME=kash.exe
           fi
           go build \
             -trimpath \
             -ldflags "-s -w \
-              -X github.com/agent-forge/agent-forge/cmd.version=${VERSION} \
-              -X github.com/agent-forge/agent-forge/cmd.commit=${COMMIT} \
-              -X github.com/agent-forge/agent-forge/cmd.buildDate=${BUILD_DATE}" \
+              -X github.com/akashicode/kash/cmd.version=${VERSION} \
+              -X github.com/akashicode/kash/cmd.commit=${COMMIT} \
+              -X github.com/akashicode/kash/cmd.buildDate=${BUILD_DATE}" \
             -o "dist/${BINARY_NAME}" \
-            ./cmd/agent-forge
+            ./cmd/kash
 
       - name: Package archive (tar.gz)
         if: matrix.archive == 'tar.gz'
         run: |
           cd dist
-          tar -czf "agentforge_${{ matrix.suffix }}.tar.gz" agentforge
-          sha256sum "agentforge_${{ matrix.suffix }}.tar.gz" >> checksums.txt
+          tar -czf "kash_${{ matrix.suffix }}.tar.gz" kash
+          sha256sum "kash_${{ matrix.suffix }}.tar.gz" >> checksums.txt
 
       - name: Package archive (zip)
         if: matrix.archive == 'zip'
         run: |
           cd dist
-          zip "agentforge_${{ matrix.suffix }}.zip" agentforge.exe
-          sha256sum "agentforge_${{ matrix.suffix }}.zip" >> checksums.txt
+          zip "kash_${{ matrix.suffix }}.zip" kash.exe
+          sha256sum "kash_${{ matrix.suffix }}.zip" >> checksums.txt
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: agentforge_${{ matrix.suffix }}
+          name: kash_${{ matrix.suffix }}
           path: |
-            dist/agentforge_${{ matrix.suffix }}.*
+            dist/kash_${{ matrix.suffix }}.*
             dist/checksums.txt
 
   release:
@@ -138,23 +138,23 @@ jobs:
           echo "" >> release_notes.md
           echo '```bash' >> release_notes.md
           echo "# Linux / macOS" >> release_notes.md
-          echo "curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/agentforge_linux_amd64.tar.gz | tar -xz" >> release_notes.md
-          echo "sudo mv agentforge /usr/local/bin/" >> release_notes.md
+          echo "curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_linux_amd64.tar.gz | tar -xz" >> release_notes.md
+          echo "sudo mv kash /usr/local/bin/" >> release_notes.md
           echo '```' >> release_notes.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "agentforge ${{ github.ref_name }}"
+          name: "kash ${{ github.ref_name }}"
           body_path: release_notes.md
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
-            dist/agentforge_linux_amd64.tar.gz
-            dist/agentforge_linux_arm64.tar.gz
-            dist/agentforge_darwin_amd64.tar.gz
-            dist/agentforge_darwin_arm64.tar.gz
-            dist/agentforge_windows_amd64.zip
+            dist/kash_linux_amd64.tar.gz
+            dist/kash_linux_arm64.tar.gz
+            dist/kash_darwin_amd64.tar.gz
+            dist/kash_darwin_arm64.tar.gz
+            dist/kash_windows_amd64.zip
             dist/checksums.txt
 
   docker-publish:
@@ -183,7 +183,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/agentforge
+          images: ghcr.io/${{ github.repository_owner }}/kash
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

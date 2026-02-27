@@ -24,7 +24,7 @@ coverage.html
 .env.local
 .env.*.local
 
-# Agent-Forge compiled databases (project-specific, not source code)
+# Kash compiled databases (project-specific, not source code)
 data/memory.chromem/
 data/knowledge.cayley/
 

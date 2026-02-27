@@ -12,7 +12,7 @@ import (
 	_ "github.com/cayleygraph/cayley/graph/memstore"
 	"github.com/cayleygraph/quad"
 
-	"github.com/agent-forge/agent-forge/internal/llm"
+	"github.com/akashicode/kash/internal/llm"
 )
 
 // ErrNotFound is returned when no graph results are found.

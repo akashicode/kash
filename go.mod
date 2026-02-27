@@ -1,4 +1,4 @@
-module github.com/agent-forge/agent-forge
+module github.com/akashicode/kash
 
 go 1.25.0
 

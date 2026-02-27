@@ -76,15 +76,15 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          BINARY_NAME=agentforge
+          BINARY_NAME=kash
           if [ "${{ matrix.goos }}" = "windows" ]; then
-            BINARY_NAME=agentforge.exe
+            BINARY_NAME=kash.exe
           fi
           go build \
             -trimpath \
             -ldflags "-s -w \
-              -X github.com/agent-forge/agent-forge/cmd.version=dev \
-              -X github.com/agent-forge/agent-forge/cmd.commit=$(git rev-parse --short HEAD) \
-              -X github.com/agent-forge/agent-forge/cmd.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              -X github.com/akashicode/kash/cmd.version=dev \
+              -X github.com/akashicode/kash/cmd.commit=$(git rev-parse --short HEAD) \
+              -X github.com/akashicode/kash/cmd.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             -o "bin/${BINARY_NAME}" \
-            ./cmd/agent-forge
+            ./cmd/kash

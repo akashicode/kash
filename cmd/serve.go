@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	agentconfig "github.com/agent-forge/agent-forge/internal/config"
-	"github.com/agent-forge/agent-forge/internal/display"
-	"github.com/agent-forge/agent-forge/internal/server"
+	agentconfig "github.com/akashicode/kash/internal/config"
+	"github.com/akashicode/kash/internal/display"
+	"github.com/akashicode/kash/internal/server"
 )
 
 var (
@@ -20,7 +20,7 @@ var (
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
-	Short: "Start the Agent-Forge runtime server",
+	Short: "Start the Kash runtime server",
 	Long: `Starts the runtime HTTP server on port 8000 (or config/PORT env).
 Requires compiled databases in data/memory.chromem/ and data/knowledge.cayley/.
 
@@ -30,7 +30,7 @@ Exposes three interfaces:
   POST /rpc/agent            - A2A JSON-RPC endpoint
 
 Provider config is resolved from environment variables first,
-then falls back to ~/.agentforge/config.yaml.`,
+then falls back to ~/.kash/config.yaml.`,
 	RunE: runServe,
 }
 

@@ -11,13 +11,13 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	"github.com/agent-forge/agent-forge/internal/chunker"
-	agentconfig "github.com/agent-forge/agent-forge/internal/config"
-	"github.com/agent-forge/agent-forge/internal/display"
-	"github.com/agent-forge/agent-forge/internal/graph"
-	"github.com/agent-forge/agent-forge/internal/llm"
-	"github.com/agent-forge/agent-forge/internal/reader"
-	"github.com/agent-forge/agent-forge/internal/vector"
+	"github.com/akashicode/kash/internal/chunker"
+	agentconfig "github.com/akashicode/kash/internal/config"
+	"github.com/akashicode/kash/internal/display"
+	"github.com/akashicode/kash/internal/graph"
+	"github.com/akashicode/kash/internal/llm"
+	"github.com/akashicode/kash/internal/reader"
+	"github.com/akashicode/kash/internal/vector"
 )
 
 var buildCmd = &cobra.Command{
@@ -63,18 +63,18 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Ensure we're in an agent-forge project
+	// Ensure we're in a Kash agent project
 	if _, err := os.Stat("agent.yaml"); os.IsNotExist(err) {
-		return errors.New("agent.yaml not found — run 'agentforge init <name>' first")
+		return errors.New("agent.yaml not found — run 'kash init <name>' first")
 	}
 	if _, err := os.Stat("data"); os.IsNotExist(err) {
-		return errors.New("data/ directory not found — run 'agentforge init <name>' first")
+		return errors.New("data/ directory not found — run 'kash init <name>' first")
 	}
 
 	// Apply dimensions from agent.yaml (canonical source) if not already set
 	agentconfig.ApplyAgentYAMLDimensions(cfg, "agent.yaml")
 
-	display.Header("⚡ Agent-Forge Build Pipeline")
+	display.Header("⚡ Kash Build Pipeline")
 	fmt.Println()
 	display.KeyValue("Embed Dimensions", cfg.Embedder.Dimensions, display.Bold+display.BrightYellow)
 	display.KeyValue("LLM Model", cfg.LLM.Model, display.BrightMagenta)

@@ -13,11 +13,11 @@ import (
 	"github.com/sashabaranov/go-openai"
 	"gopkg.in/yaml.v3"
 
-	agentconfig "github.com/agent-forge/agent-forge/internal/config"
-	"github.com/agent-forge/agent-forge/internal/display"
-	"github.com/agent-forge/agent-forge/internal/graph"
-	"github.com/agent-forge/agent-forge/internal/llm"
-	"github.com/agent-forge/agent-forge/internal/vector"
+	agentconfig "github.com/akashicode/kash/internal/config"
+	"github.com/akashicode/kash/internal/display"
+	"github.com/akashicode/kash/internal/graph"
+	"github.com/akashicode/kash/internal/llm"
+	"github.com/akashicode/kash/internal/vector"
 )
 
 // AgentConfig represents the runtime agent configuration loaded from agent.yaml.
@@ -45,7 +45,7 @@ type AgentConfig struct {
 	} `yaml:"server"`
 }
 
-// Server is the Agent-Forge runtime HTTP server.
+// Server is the Kash runtime HTTP server.
 type Server struct {
 	vectorStore *vector.Store
 	graphDB     *graph.DB

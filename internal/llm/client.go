@@ -7,7 +7,7 @@ import (
 
 	"github.com/sashabaranov/go-openai"
 
-	"github.com/agent-forge/agent-forge/internal/config"
+	"github.com/akashicode/kash/internal/config"
 )
 
 // ErrNilConfig is returned when a nil config is provided.

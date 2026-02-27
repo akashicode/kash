@@ -1,8 +1,8 @@
-# Agent-Forge Makefile
+# Kash Makefile
 
-BINARY=bin/agentforge
-CMD_DIR=./cmd/agent-forge
-MODULE=github.com/agent-forge/agent-forge
+BINARY=bin/kash
+CMD_DIR=./cmd/kash
+MODULE=github.com/akashicode/kash
 
 # Go build flags
 GOFLAGS=-trimpath
@@ -21,20 +21,20 @@ build:
 ## Build for Linux amd64
 build-linux:
 	@mkdir -p bin
-	GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/agentforge-linux $(CMD_DIR)
-	@echo "Built: bin/agentforge-linux"
+	GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/kash-linux $(CMD_DIR)
+	@echo "Built: bin/kash-linux"
 
 ## Build for macOS amd64
 build-darwin:
 	@mkdir -p bin
-	GOOS=darwin GOARCH=amd64 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/agentforge-darwin $(CMD_DIR)
-	@echo "Built: bin/agentforge-darwin"
+	GOOS=darwin GOARCH=amd64 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/kash-darwin $(CMD_DIR)
+	@echo "Built: bin/kash-darwin"
 
 ## Build for Windows amd64
 build-windows:
 	@mkdir -p bin
-	GOOS=windows GOARCH=amd64 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/agentforge.exe $(CMD_DIR)
-	@echo "Built: bin/agentforge.exe"
+	GOOS=windows GOARCH=amd64 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/kash.exe $(CMD_DIR)
+	@echo "Built: bin/kash.exe"
 
 ## Build all platforms
 build-all: build-linux build-darwin build-windows
@@ -42,8 +42,8 @@ build-all: build-linux build-darwin build-windows
 ## Install to /usr/local/bin (Linux/macOS only)
 install: build
 	@echo "Installing to /usr/local/bin/..."
-	install -m 755 $(BINARY) /usr/local/bin/agentforge
-	@echo "Installed: agentforge"
+	install -m 755 $(BINARY) /usr/local/bin/kash
+	@echo "Installed: kash"
 
 ## Run all tests
 test:
@@ -77,13 +77,13 @@ clean:
 
 ## Build Docker base image locally
 docker-build:
-	docker build -t agentforge:latest .
+	docker build -t kash:latest .
 
 ## Build multi-arch Docker base image and push to registry
-## Usage: make docker-push REGISTRY=ghcr.io/agent-forge
+## Usage: make docker-push REGISTRY=ghcr.io/kash
 docker-push:
 	docker buildx build --platform linux/amd64,linux/arm64 \
-		-t $(REGISTRY)/agentforge:latest --push .
+		-t $(REGISTRY)/kash:latest --push .
 
 ## Show help
 help:

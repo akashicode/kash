@@ -1,4 +1,4 @@
-# Agent-Forge — Local Manual Testing Guide
+# Kash — Local Manual Testing Guide
 
 End-to-end workflow for testing the full pipeline on your own PC.
 
@@ -19,15 +19,15 @@ docker version
 ## Step 1: Build the CLI binary
 
 ```powershell
-cd C:\Users\admin\Desktop\projects\agent-forge
+cd C:\Users\admin\Desktop\projects\Kash
 
-go build -o bin\agentforge.exe .\cmd\agent-forge
+go build -o bin\kash.exe .\cmd\Kash
 
 # Add to PATH for this session
-$env:PATH += ";C:\Users\admin\Desktop\projects\agent-forge\bin"
+$env:PATH += ";C:\Users\admin\Desktop\projects\Kash\bin"
 
 # Verify
-agentforge version
+kash version
 ```
 
 ---
@@ -35,17 +35,17 @@ agentforge version
 ## Step 2: Scaffold a test agent project
 
 ```powershell
-agentforge init my-test-agent
+kash init my-test-agent
 ```
 
-This creates the `my-test-agent/` directory **and** generates `~/.agentforge/config.yaml` with an empty skeleton.
+This creates the `my-test-agent/` directory **and** generates `~/.kash/config.yaml` with an empty skeleton.
 
 ---
 
 ## Step 3: Fill in your API keys
 
 ```powershell
-notepad "$env:USERPROFILE\.agentforge\config.yaml"
+notepad "$env:USERPROFILE\.kash\config.yaml"
 ```
 
 ```yaml
@@ -81,12 +81,12 @@ cd my-test-agent
 echo "# AI Overview`nArtificial intelligence is the simulation of human intelligence in machines." > data\test.md
 
 # Compile the knowledge base
-agentforge build
+kash build
 ```
 
 Expected output:
 ```
-Agent-Forge Build Pipeline
+Kash Build Pipeline
 ==========================
 [1/5] Loading documents from data/...
 [2/5] Chunking documents...
@@ -104,8 +104,8 @@ After this, `data/memory.chromem/` and `data/knowledge.cayley/` will be populate
 ## Step 5: Test serve locally (without Docker)
 
 ```powershell
-# Uses ~/.agentforge/config.yaml
-agentforge serve
+# Uses ~/.kash/config.yaml
+kash serve
 ```
 
 Or override with env vars:
@@ -117,7 +117,7 @@ $env:LLM_MODEL="gpt-4o"
 $env:EMBED_BASE_URL="https://api.voyageai.com/v1"
 $env:EMBED_API_KEY="pa-..."
 $env:EMBED_MODEL="voyage-3"
-agentforge serve
+kash serve
 ```
 
 ### Test the three endpoints
@@ -148,7 +148,7 @@ Set `AGENT_API_KEY` to enable authentication. `/health` always stays public.
 
 ```powershell
 $env:AGENT_API_KEY="my-test-secret"
-agentforge serve
+kash serve
 ```
 
 **Without the key — should get 401:**
@@ -208,14 +208,14 @@ print(resp.choices[0].message.content)
 
 ## Step 6: Build the Docker base image locally
 
-> The generated agent `Dockerfile` uses `FROM ghcr.io/agent-forge/agentforge:latest`.
+> The generated agent `Dockerfile` uses `FROM ghcr.io/akashicode/kash:latest`.
 > Until you publish a release to GHCR, build the base image locally first.
 
 ```powershell
 # Back in the repo root
-cd C:\Users\admin\Desktop\projects\agent-forge
+cd C:\Users\admin\Desktop\projects\Kash
 
-docker build -t ghcr.io/agent-forge/agentforge:latest .
+docker build -t ghcr.io/akashicode/kash:latest .
 ```
 
 ---
@@ -259,10 +259,10 @@ curl -X POST http://localhost:8000/v1/chat/completions `
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `missing required config` on build | `~/.agentforge/config.yaml` is empty and no env vars set | Fill in LLM + embedder fields in config.yaml |
+| `missing required config` on build | `~/.kash/config.yaml` is empty and no env vars set | Fill in LLM + embedder fields in config.yaml |
 | `docker pull` fails for base image | GHCR image not yet published | Build base image locally (Step 6) |
 | `connection refused` on serve | Wrong port or serve not started | Check `port` in config.yaml or set `PORT` env var |
 | Build fails with `no supported documents` | `data/` dir is empty | Add at least one `.md`, `.txt`, or `.pdf` file |
 | Container exits immediately | Missing env vars in `.env` | Copy `.env.example` → `.env` and fill all required keys |
-| `agent.yaml not found` on build | Not in the agent project directory | `cd my-test-agent` before running `agentforge build` |
+| `agent.yaml not found` on build | Not in the agent project directory | `cd my-test-agent` before running `kash build` |
 | `401 unauthorized` on all endpoints | `AGENT_API_KEY` is set but not passed | Add `-H "Authorization: Bearer <key>"` to requests, or unset the env var for local dev |

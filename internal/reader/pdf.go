@@ -12,7 +12,7 @@ import (
 // extractPDFText extracts plain text from a PDF file using pdfcpu.
 func extractPDFText(path string) (string, error) {
 	// Create a temp dir for extraction output
-	tmpDir, err := os.MkdirTemp("", "agent-forge-pdf-*")
+	tmpDir, err := os.MkdirTemp("", "kash-pdf-*")
 	if err != nil {
 		return "", fmt.Errorf("create temp dir: %w", err)
 	}
