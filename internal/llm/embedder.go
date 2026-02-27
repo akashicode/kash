@@ -47,9 +47,8 @@ func NewEmbedder(cfg *config.ProviderConfig) (*Embedder, error) {
 }
 
 type embedRequest struct {
-	Input      []string `json:"input"`
-	Model      string   `json:"model,omitempty"`
-	Dimensions int      `json:"dimensions,omitempty"`
+	Input []string `json:"input"`
+	Model string   `json:"model,omitempty"`
 }
 
 type embedResponse struct {
@@ -71,9 +70,6 @@ func (e *Embedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32,
 	embedReq := embedRequest{Input: texts}
 	if e.model != "" {
 		embedReq.Model = e.model
-	}
-	if e.dimensions > 0 {
-		embedReq.Dimensions = e.dimensions
 	}
 
 	reqBody, err := json.Marshal(embedReq)

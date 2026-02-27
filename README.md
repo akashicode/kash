@@ -339,7 +339,7 @@ build_providers:
   embedder:
     base_url: "https://api.voyageai.com/v1"
     api_key: "pa-..."
-    model: "voyage-3"
+    model: "voyage-3"    # optional if using an embedding router
 EOF
 ```
 
@@ -381,10 +381,11 @@ docker run -p 8000:8000 \
   -e LLM_MODEL="gpt-4o" \
   -e EMBED_BASE_URL="https://api.voyageai.com/v1" \
   -e EMBED_API_KEY="pa-..." \
-  -e EMBED_MODEL="voyage-3" \
-  -e RERANK_BASE_URL=""   `# optional` \
-  -e RERANK_API_KEY=""    `# optional` \
-  -e RERANK_MODEL=""      `# optional` \
+  -e EMBED_MODEL="voyage-3" `# optional if using a router` \
+  -e EMBED_DIMENSIONS=1024  `# must match build-time dimensions` \
+  -e RERANK_BASE_URL=""     `# optional` \
+  -e RERANK_API_KEY=""      `# optional` \
+  -e RERANK_MODEL=""        `# optional` \
   my-registry/my-expert-agent:v1
 ```
 
@@ -407,7 +408,7 @@ build_providers:
   embedder:
     base_url: "https://api.voyageai.com/v1"
     api_key: "pa-..."
-    model: "voyage-3"
+    model: "voyage-3"    # optional — omit if using an embedding router
   # reranker is optional
   # reranker:
   #   base_url: "..."
@@ -417,22 +418,25 @@ build_providers:
 
 All fields accept any **OpenAI-compatible** endpoint. Use [LiteLLM](https://github.com/BerriAI/litellm) or [Ollama](https://ollama.com) as a local proxy for non-OpenAI models.
 
+> **Note:** The `embedder.model` field is optional. If you use an embedding router (e.g. TrueFoundry, LiteLLM) that selects the model server-side, you can leave `model` empty — both in the config file and at runtime (`EMBED_MODEL`).
+
 ### Runtime: environment variables
 
 Used by `agentforge serve` (and the Docker container).
 
-| Variable         | Required | Description                         |
-|------------------|----------|-------------------------------------|
-| `LLM_BASE_URL`   | ✅       | OpenAI-compatible LLM base URL      |
-| `LLM_API_KEY`    | ✅       | API key for the LLM                 |
-| `LLM_MODEL`      | ✅       | Model name (e.g. `gpt-4o`)          |
-| `EMBED_BASE_URL` | ✅       | OpenAI-compatible embedder base URL |
-| `EMBED_API_KEY`  | ✅       | API key for the embedder            |
-| `EMBED_MODEL`    | ✅       | Embedding model name                |
-| `RERANK_BASE_URL`| ❌       | Reranker base URL (optional)        |
-| `RERANK_API_KEY` | ❌       | API key for the reranker (optional) |
-| `RERANK_MODEL`   | ❌       | Reranker model name (optional)      |
-| `PORT`           | ❌       | Override listen port (default 8000) |
+| Variable           | Required | Description                                             |
+|--------------------|----------|---------------------------------------------------------|
+| `LLM_BASE_URL`     | ✅       | OpenAI-compatible LLM base URL                          |
+| `LLM_API_KEY`      | ✅       | API key for the LLM                                     |
+| `LLM_MODEL`        | ✅       | Model name (e.g. `gpt-4o`)                              |
+| `EMBED_BASE_URL`   | ✅       | OpenAI-compatible embedder base URL                     |
+| `EMBED_API_KEY`    | ✅       | API key for the embedder                                |
+| `EMBED_MODEL`      | ❌       | Embedding model name (optional if using a router)       |
+| `EMBED_DIMENSIONS` | ❌       | Embedding dimensions (default from `agent.yaml`, or 1024) |
+| `RERANK_BASE_URL`  | ❌       | Reranker base URL (optional)                            |
+| `RERANK_API_KEY`   | ❌       | API key for the reranker (optional)                     |
+| `RERANK_MODEL`     | ❌       | Reranker model name (optional)                          |
+| `PORT`             | ❌       | Override listen port (default 8000)                     |
 
 ---
 
@@ -455,6 +459,11 @@ my-expert-agent/
 
 Reads `data/`, calls configured APIs, and writes compiled databases.
 
+```bash
+agentforge build             # run in current directory
+agentforge build --dir ./my-agent   # run in a specific project directory
+```
+
 ```
 [1/5] Loading documents from data/
 [2/5] Chunking documents
@@ -463,13 +472,24 @@ Reads `data/`, calls configured APIs, and writes compiled databases.
 [5/5] Generating MCP tool descriptions → agent.yaml
 ```
 
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--dir` | `-d` | Change to the given directory before running (default: current directory) |
+
 ### `agentforge serve`
 
 Starts the runtime HTTP server (requires compiled databases).
 
 ```bash
 agentforge serve --port 8000 --agent agent.yaml
+agentforge serve --dir ./my-agent    # run from a specific project directory
 ```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--port` | `-p` | Listen port (default: `8000`, overridden by `PORT` env var) |
+| `--agent` | `-a` | Path to agent.yaml (default: `agent.yaml`) |
+| `--dir` | `-d` | Change to the given directory before running (default: current directory) |
 
 ### `agentforge version`
 
@@ -480,6 +500,22 @@ agentforge v1.2.0
   go version: go1.25.0
   os/arch:    linux/amd64
 ```
+
+### `agent.yaml` — Embedding Dimensions
+
+The `agent.yaml` file (generated by `agentforge init`) includes a `dimensions` field under `runtime.embedder`:
+
+```yaml
+runtime:
+  embedder:
+    dimensions: 1024   # must match your embedding model's output dimensions
+```
+
+This value controls the expected vector length. It is used at both **build time** and **serve time** to ensure consistent vector sizes. If the embedding API returns vectors longer than the configured dimensions, they are truncated locally.
+
+> **Important:** The `dimensions` value is **not** sent to the embedding API. Some providers (e.g. TrueFoundry) do not support the `dimensions` parameter in API requests. Agent-Forge handles truncation locally instead.
+
+You can override this at runtime via the `EMBED_DIMENSIONS` environment variable.
 
 ---
 

@@ -185,9 +185,8 @@ func (s *Store) Count() int {
 
 // embedRequest is the request body for OpenAI-compatible embeddings.
 type embedRequest struct {
-	Input      string `json:"input"`
-	Model      string `json:"model,omitempty"`
-	Dimensions int    `json:"dimensions,omitempty"`
+	Input string `json:"input"`
+	Model string `json:"model,omitempty"`
 }
 
 // embedResponse is the response body from an OpenAI-compatible embeddings API.
@@ -197,17 +196,17 @@ type embedResponse struct {
 	} `json:"data"`
 }
 
-// newEmbeddingFuncWithDimensions returns a chromem-go EmbeddingFunc that sends
-// the "dimensions" parameter in the embedding API request. This ensures
-// consistent vector sizes regardless of the upstream model's native dimensions.
+// newEmbeddingFuncWithDimensions returns a chromem-go EmbeddingFunc that calls
+// an OpenAI-compatible embeddings API. The configured dimensions are used only
+// for local truncation — not sent in the API request. It is the user's
+// responsibility to pick a model whose native output matches agent.yaml dimensions.
 // If Model is empty it is omitted from the request (router-friendly).
 func newEmbeddingFuncWithDimensions(cfg *config.ProviderConfig) chromem.EmbeddingFunc {
 	client := &http.Client{}
 
 	return func(ctx context.Context, text string) ([]float32, error) {
 		reqBody := embedRequest{
-			Input:      text,
-			Dimensions: cfg.Dimensions,
+			Input: text,
 		}
 		if cfg.Model != "" {
 			reqBody.Model = cfg.Model
