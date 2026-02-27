@@ -262,6 +262,9 @@ docker run -p 8000:8000 \
   -e EMBED_BASE_URL="https://api.voyageai.com/v1" \
   -e EMBED_API_KEY="pa-..." \
   -e EMBED_MODEL="voyage-3" \
+  -e RERANK_BASE_URL=""   `+"`# optional`"+` \
+  -e RERANK_API_KEY=""    `+"`# optional`"+` \
+  -e RERANK_MODEL=""      `+"`# optional`"+` \
   %s:latest
 `+"```"+`
 
