@@ -150,6 +150,9 @@ agent:
 runtime:
   embedder:
     dimensions: 1024  # must match at build AND serve time
+    # max_tokens: 8192  # optional: max token limit for the embedding model
+                        # if set, chunk sizes are auto-tuned to stay within this limit
+                        # check your model docs (e.g. voyage-3: 32000, text-embedding-3-small: 8191)
 
 # MCP tool definitions (auto-populated by 'kash build')
 mcp:

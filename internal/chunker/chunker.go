@@ -2,6 +2,7 @@ package chunker
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 )
@@ -37,6 +38,26 @@ func DefaultOptions() Options {
 	return Options{
 		ChunkSize: 1000,
 		Overlap:   200,
+	}
+}
+
+// OptionsFromMaxTokens computes chunk options from a model's token limit.
+// It uses a conservative estimate of ~4 characters per token and applies a
+// 90% safety margin so chunks stay well under the model's maximum.
+// Returns DefaultOptions if maxTokens is <= 0.
+func OptionsFromMaxTokens(maxTokens int) Options {
+	if maxTokens <= 0 {
+		return DefaultOptions()
+	}
+	// Conservative: ~4 chars/token, use 90% of limit
+	chunkSize := int(float64(maxTokens) * 4 * 0.9)
+	if chunkSize < 200 {
+		chunkSize = 200 // absolute floor
+	}
+	overlap := chunkSize / 5
+	return Options{
+		ChunkSize: chunkSize,
+		Overlap:   overlap,
 	}
 }
 
@@ -120,11 +141,16 @@ func ChunkDocument(text string, chunkSize int) ([]Chunk, error) {
 }
 
 // SplitBySentence splits text into sentence-aware chunks, attempting to break
-// at sentence boundaries when possible.
+// at sentence boundaries when possible. Oversized paragraphs are sub-split
+// at sentence boundaries; truly huge sentences fall back to character-level
+// splitting via ChunkText.
 func (c *Chunker) SplitBySentence(text, source string) ([]Chunk, error) {
 	if !utf8.ValidString(text) {
 		return nil, errors.New("text is not valid UTF-8")
 	}
+
+	// Normalize line endings (\r\n → \n) so paragraph splitting works on all platforms
+	text = strings.ReplaceAll(text, "\r\n", "\n")
 
 	// Split into paragraphs first
 	paragraphs := strings.Split(text, "\n\n")
@@ -147,22 +173,98 @@ func (c *Chunker) SplitBySentence(text, source string) ([]Chunk, error) {
 		builder.Reset()
 	}
 
-	for _, para := range paragraphs {
-		para = strings.TrimSpace(para)
-		if para == "" {
-			continue
+	// addFragment adds a piece of text that is guaranteed to be <= ChunkSize.
+	addFragment := func(frag string) {
+		frag = strings.TrimSpace(frag)
+		if frag == "" {
+			return
 		}
-		if builder.Len()+len(para) > c.opts.ChunkSize {
+		if builder.Len()+len(frag)+2 > c.opts.ChunkSize && builder.Len() > 0 {
 			flush()
 		}
 		if builder.Len() > 0 {
 			builder.WriteString("\n\n")
 		}
-		builder.WriteString(para)
+		builder.WriteString(frag)
+	}
+
+	for _, para := range paragraphs {
+		para = strings.TrimSpace(para)
+		if para == "" {
+			continue
+		}
+
+		// If the paragraph fits, accumulate it normally
+		if len(para) <= c.opts.ChunkSize {
+			addFragment(para)
+			continue
+		}
+
+		// Paragraph is oversized — flush any accumulated text first
+		flush()
+
+		// Try to sub-split at sentence boundaries
+		sentences := splitSentences(para)
+		for _, sent := range sentences {
+			sent = strings.TrimSpace(sent)
+			if sent == "" {
+				continue
+			}
+
+			if len(sent) <= c.opts.ChunkSize {
+				addFragment(sent)
+				continue
+			}
+
+			// Single sentence still exceeds ChunkSize — fall back to
+			// character-level splitting with overlap.
+			flush()
+			subChunks, err := c.ChunkText(sent, source)
+			if err != nil {
+				return nil, fmt.Errorf("sub-split oversized sentence: %w", err)
+			}
+			for _, sc := range subChunks {
+				chunks = append(chunks, Chunk{
+					ID:      buildChunkID(source, idx),
+					Content: sc.Content,
+					Source:  source,
+					Index:   idx,
+				})
+				idx++
+			}
+		}
 	}
 	flush()
 
 	return chunks, nil
+}
+
+// splitSentences splits text at sentence boundaries (. ! ?) followed by a space
+// or end of string. It keeps the delimiter attached to the preceding sentence.
+func splitSentences(text string) []string {
+	var sentences []string
+	var current strings.Builder
+
+	runes := []rune(text)
+	for i := 0; i < len(runes); i++ {
+		current.WriteRune(runes[i])
+
+		// Check for sentence-ending punctuation
+		if runes[i] == '.' || runes[i] == '!' || runes[i] == '?' {
+			// Consider it a sentence boundary if followed by a space, newline, or end of text
+			if i+1 >= len(runes) || runes[i+1] == ' ' || runes[i+1] == '\n' || runes[i+1] == '\t' {
+				sentences = append(sentences, current.String())
+				current.Reset()
+			}
+		}
+	}
+
+	// Remaining text (if any)
+	if current.Len() > 0 {
+		sentences = append(sentences, current.String())
+	}
+
+	return sentences
 }
 
 func buildChunkID(source string, idx int) string {

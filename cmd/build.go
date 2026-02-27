@@ -97,7 +97,18 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	// Step 2: Chunk documents
 	display.Step(2, 5, "Chunking documents...")
-	chunkOpts := chunker.DefaultOptions()
+
+	// If max_tokens is set in agent.yaml, auto-tune chunk size
+	maxTokens := agentconfig.AgentYAMLMaxTokens("agent.yaml")
+	var chunkOpts chunker.Options
+	if maxTokens > 0 {
+		chunkOpts = chunker.OptionsFromMaxTokens(maxTokens)
+		display.KeyValue("Embed Max Tokens", maxTokens, display.BrightYellow)
+		display.KeyValue("Chunk Size (chars)", chunkOpts.ChunkSize, display.Dim+display.White)
+	} else {
+		chunkOpts = chunker.DefaultOptions()
+	}
+
 	ck, err := chunker.NewChunker(chunkOpts)
 	if err != nil {
 		return fmt.Errorf("create chunker: %w", err)

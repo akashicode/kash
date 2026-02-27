@@ -68,12 +68,10 @@ func Load() (*Config, error) {
 	applyEnv(&cfg.Embedder.BaseURL, "EMBED_BASE_URL")
 	applyEnv(&cfg.Embedder.APIKey, "EMBED_API_KEY")
 	applyEnv(&cfg.Embedder.Model, "EMBED_MODEL")
-	applyEnvInt(&cfg.Embedder.Dimensions, "EMBED_DIMENSIONS")
 
-	// Default embedding dimensions
-	if cfg.Embedder.Dimensions == 0 {
-		cfg.Embedder.Dimensions = 1024
-	}
+	// NOTE: Dimensions are NOT set from env vars.
+	// agent.yaml is the canonical source for dimensions. The default of 1024
+	// is applied in ApplyAgentYAMLDimensions() after agent.yaml is consulted.
 
 	applyEnv(&cfg.Reranker.BaseURL, "RERANK_BASE_URL")
 	applyEnv(&cfg.Reranker.APIKey, "RERANK_API_KEY")
@@ -143,7 +141,7 @@ func ValidateEmbedder(cfg *Config) error {
 		return fmt.Errorf("missing required config:\n  %s\n\nSet these in ~/.kash/config.yaml or as environment variables", strings.Join(missing, "\n  "))
 	}
 	if cfg.Embedder.Dimensions <= 0 {
-		return fmt.Errorf("embedder dimensions must be > 0 (got %d), set via embedder.dimensions or EMBED_DIMENSIONS", cfg.Embedder.Dimensions)
+		return fmt.Errorf("embedder dimensions must be > 0 (got %d), set via runtime.embedder.dimensions in agent.yaml", cfg.Embedder.Dimensions)
 	}
 	return nil
 }
@@ -254,13 +252,34 @@ func AgentYAMLDimensions(path string) int {
 	return parsed.Runtime.Embedder.Dimensions
 }
 
+// AgentYAMLMaxTokens reads runtime.embedder.max_tokens from an agent.yaml file.
+// Returns 0 if the file doesn't exist or the field is not set.
+func AgentYAMLMaxTokens(path string) int {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	var parsed struct {
+		Runtime struct {
+			Embedder struct {
+				MaxTokens int `yaml:"max_tokens"`
+			} `yaml:"embedder"`
+		} `yaml:"runtime"`
+	}
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		return 0
+	}
+	return parsed.Runtime.Embedder.MaxTokens
+}
+
 // ApplyAgentYAMLDimensions reads dimensions from agent.yaml and applies them
-// to the config if not already set via env/config.yaml. Ensures a default of 1024.
+// to the config. Priority (highest to lowest):
+//  1. agent.yaml runtime.embedder.dimensions
+//  2. config.yaml embedder.dimensions
+//  3. Default: 1024
 func ApplyAgentYAMLDimensions(cfg *Config, agentYAMLPath string) {
-	if cfg.Embedder.Dimensions == 0 {
-		if d := AgentYAMLDimensions(agentYAMLPath); d > 0 {
-			cfg.Embedder.Dimensions = d
-		}
+	if d := AgentYAMLDimensions(agentYAMLPath); d > 0 {
+		cfg.Embedder.Dimensions = d
 	}
 	// Final default
 	if cfg.Embedder.Dimensions == 0 {
