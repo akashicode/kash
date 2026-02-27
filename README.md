@@ -637,9 +637,29 @@ Releases are automated via GitHub Actions. Push a version tag and the workflow w
 1. Build CLI binaries for all 5 platforms and publish them to GitHub Releases
 2. Build and push a multi-arch Docker base image (`linux/amd64`, `linux/arm64`) to GHCR
 
+> **Note:** The release workflow only fires on tag pushes — it does **not** run on regular commits to `main`.
+> Pushing to `main` only triggers the CI workflow (vet, test, cross-platform build check).
+
 ```bash
-git tag v1.2.0
-git push origin v1.2.0
+# Tag a release and push — this triggers the release workflow
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Use semantic versioning:
+
+```bash
+git tag v1.0.0    # stable release
+git tag v1.1.0    # new features
+git tag v1.1.1    # patch / bugfix
+git tag v2.0.0-rc.1  # pre-release (tagged as pre-release on GitHub)
+```
+
+To delete a tag and re-release if something went wrong:
+
+```bash
+git tag -d v0.1.0
+git push origin :refs/tags/v0.1.0
 ```
 
 **CLI binaries** are published for:
