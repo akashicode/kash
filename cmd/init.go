@@ -153,6 +153,8 @@ runtime:
     # max_tokens: 8192  # optional: max token limit for the embedding model
                         # if set, chunk sizes are auto-tuned to stay within this limit
                         # check your model docs (e.g. voyage-3: 32000, text-embedding-3-small: 8191)
+    # parallel: true    # optional: enable parallel embedding requests (for local embedders)
+                        # default: false (sequential with retry, safe for hosted APIs)
 
 # MCP tool definitions (auto-populated by 'kash build')
 mcp:

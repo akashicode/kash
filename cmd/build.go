@@ -136,7 +136,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create vector store: %w", err)
 	}
 
-	if err := vs.AddChunks(ctx, allChunks); err != nil {
+	if err := vs.AddChunks(ctx, allChunks, agentconfig.AgentYAMLParallelEmbedding("agent.yaml")); err != nil {
 		return fmt.Errorf("add chunks to vector store: %w", err)
 	}
 	display.StepResult("Indexed", fmt.Sprintf("%d vectors", vs.Count()))

@@ -272,6 +272,26 @@ func AgentYAMLMaxTokens(path string) int {
 	return parsed.Runtime.Embedder.MaxTokens
 }
 
+// AgentYAMLParallelEmbedding reads runtime.embedder.parallel from an agent.yaml file.
+// Returns false if the file doesn't exist or the field is not set.
+func AgentYAMLParallelEmbedding(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var parsed struct {
+		Runtime struct {
+			Embedder struct {
+				Parallel bool `yaml:"parallel"`
+			} `yaml:"embedder"`
+		} `yaml:"runtime"`
+	}
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		return false
+	}
+	return parsed.Runtime.Embedder.Parallel
+}
+
 // ApplyAgentYAMLDimensions reads dimensions from agent.yaml and applies them
 // to the config. Priority (highest to lowest):
 //  1. agent.yaml runtime.embedder.dimensions

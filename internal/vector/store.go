@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"runtime"
+	"strings"
+	"time"
 
 	chromem "github.com/philippgille/chromem-go"
 
@@ -128,11 +130,22 @@ func NewPersistentStore(path string, embedCfg *config.ProviderConfig) (*Store, e
 }
 
 // AddChunks adds a batch of document chunks to the vector store.
-func (s *Store) AddChunks(ctx context.Context, chunks []chunker.Chunk) error {
+// When parallel is true, all documents are embedded concurrently using all CPU
+// cores (ideal for local embedders). When false, documents are added in small
+// sequential batches with retry/backoff (safe for hosted APIs with rate limits).
+func (s *Store) AddChunks(ctx context.Context, chunks []chunker.Chunk, parallel bool) error {
 	if len(chunks) == 0 {
 		return nil
 	}
 
+	if parallel {
+		return s.addChunksParallel(ctx, chunks)
+	}
+	return s.addChunksSequential(ctx, chunks)
+}
+
+// addChunksParallel adds all chunks concurrently using runtime.NumCPU().
+func (s *Store) addChunksParallel(ctx context.Context, chunks []chunker.Chunk) error {
 	docs := make([]chromem.Document, len(chunks))
 	for i, ch := range chunks {
 		docs[i] = chromem.Document{
@@ -144,11 +157,67 @@ func (s *Store) AddChunks(ctx context.Context, chunks []chunker.Chunk) error {
 			},
 		}
 	}
-
 	if err := s.collection.AddDocuments(ctx, docs, runtime.NumCPU()); err != nil {
 		return fmt.Errorf("add documents to collection: %w", err)
 	}
 	return nil
+}
+
+// addChunksSequential adds chunks in small batches with concurrency=1 and
+// retries with exponential backoff on 429 rate-limit errors.
+func (s *Store) addChunksSequential(ctx context.Context, chunks []chunker.Chunk) error {
+	const batchSize = 20
+	const maxRetries = 5
+
+	for i := 0; i < len(chunks); i += batchSize {
+		end := i + batchSize
+		if end > len(chunks) {
+			end = len(chunks)
+		}
+
+		docs := make([]chromem.Document, end-i)
+		for j, ch := range chunks[i:end] {
+			docs[j] = chromem.Document{
+				ID:      ch.ID,
+				Content: ch.Content,
+				Metadata: map[string]string{
+					"source": ch.Source,
+					"index":  fmt.Sprintf("%d", ch.Index),
+				},
+			}
+		}
+
+		var err error
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			err = s.collection.AddDocuments(ctx, docs, 1)
+			if err == nil {
+				break
+			}
+			if isRateLimitError(err) {
+				backoff := time.Duration(1<<uint(attempt)) * time.Second
+				select {
+				case <-time.After(backoff):
+					continue
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("add documents to collection: %w", err)
+		}
+	}
+	return nil
+}
+
+// isRateLimitError checks if an error message indicates a 429 rate limit.
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "429") || strings.Contains(msg, "Too Many Requests") || strings.Contains(msg, "rate limit")
 }
 
 // Query performs a semantic similarity search against the vector store.
