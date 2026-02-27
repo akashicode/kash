@@ -253,9 +253,10 @@ func (s *Store) Count() int {
 }
 
 // embedRequest is the request body for OpenAI-compatible embeddings.
+// Input is sent as an array for maximum compatibility across providers/gateways.
 type embedRequest struct {
-	Input string `json:"input"`
-	Model string `json:"model,omitempty"`
+	Input []string `json:"input"`
+	Model string   `json:"model,omitempty"`
 }
 
 // embedResponse is the response body from an OpenAI-compatible embeddings API.
@@ -274,8 +275,15 @@ func newEmbeddingFuncWithDimensions(cfg *config.ProviderConfig) chromem.Embeddin
 	client := &http.Client{}
 
 	return func(ctx context.Context, text string) ([]float32, error) {
+		// Sanitize: trim whitespace, replace null bytes
+		text = strings.TrimSpace(text)
+		text = strings.ReplaceAll(text, "\x00", "")
+		if text == "" {
+			return nil, errors.New("empty text after sanitization")
+		}
+
 		reqBody := embedRequest{
-			Input: text,
+			Input: []string{text}, // array format for broad API compatibility
 		}
 		if cfg.Model != "" {
 			reqBody.Model = cfg.Model
