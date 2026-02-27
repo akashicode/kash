@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	agentconfig "github.com/agent-forge/agent-forge/internal/config"
+	"github.com/agent-forge/agent-forge/internal/display"
 	"github.com/agent-forge/agent-forge/internal/graph"
 	"github.com/agent-forge/agent-forge/internal/llm"
 	"github.com/agent-forge/agent-forge/internal/vector"
@@ -24,6 +25,7 @@ type AgentConfig struct {
 	Agent struct {
 		Name         string `yaml:"name"`
 		Description  string `yaml:"description"`
+		Version      string `yaml:"version"`
 		SystemPrompt string `yaml:"system_prompt"`
 	} `yaml:"agent"`
 	Runtime struct {
@@ -131,24 +133,39 @@ func New(cfg Config) (*Server, error) {
 	return s, nil
 }
 
+// Info returns a ServerInfo struct for displaying the startup banner.
+func (s *Server) Info() display.ServerInfo {
+	info := display.ServerInfo{
+		AgentName:        s.agentCfg.Agent.Name,
+		AgentDescription: s.agentCfg.Agent.Description,
+		AgentVersion:     s.agentCfg.Agent.Version,
+		VectorCount:      s.vectorStore.Count(),
+		TripleCount:      s.graphDB.Count(),
+		MCPTools:         len(s.agentCfg.MCP.Tools),
+		EmbedDimensions:  s.appCfg.Embedder.Dimensions,
+		EmbedModel:       s.appCfg.Embedder.Model,
+		EmbedBaseURL:     s.appCfg.Embedder.BaseURL,
+		LLMModel:         s.appCfg.LLM.Model,
+		LLMBaseURL:       s.appCfg.LLM.BaseURL,
+		RerankModel:      s.appCfg.Reranker.Model,
+		RerankBaseURL:    s.appCfg.Reranker.BaseURL,
+		Port:             s.appCfg.Port,
+	}
+	return info
+}
+
 // Handler returns the HTTP handler for the server.
 func (s *Server) Handler() http.Handler {
 	return s.loggingMiddleware(corsMiddleware(s.mux))
 }
 
-// loggingMiddleware logs every inbound HTTP request and its response status.
+// loggingMiddleware logs every inbound HTTP request with colorful output.
 func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		wrapped := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(wrapped, r)
-		s.log.Info("request",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", wrapped.status,
-			"duration", time.Since(start).String(),
-			"remote", r.RemoteAddr,
-		)
+		display.LogRequest(r.Method, r.URL.Path, wrapped.status, time.Since(start), r.RemoteAddr)
 	})
 }
 
@@ -227,16 +244,29 @@ func (s *Server) hybridSearch(ctx context.Context, query string) (string, error)
 	return sb.String(), nil
 }
 
-// handleHealth returns a simple health status.
+// handleHealth returns a detailed health status including all key metrics.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "ok",
-		"agent":   s.agentCfg.Agent.Name,
-		"vectors": s.vectorStore.Count(),
-		"triples": s.graphDB.Count(),
-		"time":    time.Now().UTC().Format(time.RFC3339),
-	})
+
+	resp := map[string]interface{}{
+		"status":           "ok",
+		"agent":            s.agentCfg.Agent.Name,
+		"version":          s.agentCfg.Agent.Version,
+		"vectors":          s.vectorStore.Count(),
+		"triples":          s.graphDB.Count(),
+		"mcp_tools":        len(s.agentCfg.MCP.Tools),
+		"embed_dimensions": s.appCfg.Embedder.Dimensions,
+		"llm_model":        s.appCfg.LLM.Model,
+		"embed_model":      s.appCfg.Embedder.Model,
+		"reranker_enabled": s.appCfg.Reranker.BaseURL != "",
+		"time":             time.Now().UTC().Format(time.RFC3339),
+	}
+
+	if s.appCfg.Reranker.BaseURL != "" {
+		resp["rerank_model"] = s.appCfg.Reranker.Model
+	}
+
+	json.NewEncoder(w).Encode(resp)
 }
 
 // handleChatCompletions handles POST /v1/chat/completions.

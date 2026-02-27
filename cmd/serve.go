@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	agentconfig "github.com/agent-forge/agent-forge/internal/config"
+	"github.com/agent-forge/agent-forge/internal/display"
 	"github.com/agent-forge/agent-forge/internal/server"
 )
 
@@ -74,22 +75,11 @@ func runServe(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("initialize server: %w", err)
 	}
 
-	addr := fmt.Sprintf(":%d", cfg.Port)
-	fmt.Printf("Agent-Forge Runtime Server\n")
-	fmt.Printf("==========================\n")
-	fmt.Printf("Listening on http://0.0.0.0%s\n\n", addr)
-	fmt.Printf("Endpoints:\n")
-	fmt.Printf("  REST  POST http://0.0.0.0%s/v1/chat/completions\n", addr)
-	fmt.Printf("  MCP   GET  http://0.0.0.0%s/mcp\n", addr)
-	fmt.Printf("  A2A   POST http://0.0.0.0%s/rpc/agent\n", addr)
-	fmt.Printf("  Health GET http://0.0.0.0%s/health\n\n", addr)
-
-	if cfg.Reranker.BaseURL != "" {
-		fmt.Printf("Reranker: enabled (%s)\n\n", cfg.Reranker.Model)
-	}
+	// Print fancy startup banner
+	display.PrintBanner(srv.Info())
 
 	httpServer := &http.Server{
-		Addr:    addr,
+		Addr:    fmt.Sprintf(":%d", cfg.Port),
 		Handler: srv.Handler(),
 	}
 

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	agentconfig "github.com/agent-forge/agent-forge/internal/config"
+	"github.com/agent-forge/agent-forge/internal/display"
 )
 
 var initCmd = &cobra.Command{
@@ -42,7 +43,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create config file: %w", err)
 	}
 
-	fmt.Printf("Initializing new agent project: %s\n", name)
+	display.Header("⚡ Initializing Agent Project: " + name)
+	fmt.Println()
 
 	// Create directory structure
 	dirs := []string{
@@ -60,52 +62,63 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if err := writeFile(filepath.Join(projectDir, "agent.yaml"), agentYAML); err != nil {
 		return fmt.Errorf("write agent.yaml: %w", err)
 	}
+	display.FileCreated("agent.yaml")
 
 	// Write Dockerfile
 	if err := writeFile(filepath.Join(projectDir, "Dockerfile"), generateDockerfile()); err != nil {
 		return fmt.Errorf("write Dockerfile: %w", err)
 	}
+	display.FileCreated("Dockerfile")
 
 	// Write .env.example
 	if err := writeFile(filepath.Join(projectDir, ".env.example"), generateEnvExample()); err != nil {
 		return fmt.Errorf("write .env.example: %w", err)
 	}
+	display.FileCreated(".env.example")
 
 	// Write .dockerignore
 	if err := writeFile(filepath.Join(projectDir, ".dockerignore"), generateDockerIgnore()); err != nil {
 		return fmt.Errorf("write .dockerignore: %w", err)
 	}
+	display.FileCreated(".dockerignore")
 
 	// Write README
 	if err := writeFile(filepath.Join(projectDir, "README.md"), generateReadme(name)); err != nil {
 		return fmt.Errorf("write README.md: %w", err)
 	}
+	display.FileCreated("README.md")
 
 	// Write docker-compose.yml
 	if err := writeFile(filepath.Join(projectDir, "docker-compose.yml"), generateDockerCompose(name)); err != nil {
 		return fmt.Errorf("write docker-compose.yml: %w", err)
 	}
+	display.FileCreated("docker-compose.yml")
 
-	fmt.Printf("\nProject created successfully!\n\n")
+	fmt.Println()
+	display.Success("Project created successfully!")
+	fmt.Println()
 
 	// Warn about empty config
 	cfgPath, _ := agentconfig.ConfigFilePath()
 	if created {
-		fmt.Printf("  Config file created: %s\n", cfgPath)
-		fmt.Printf("  ⚠ Please fill in your LLM and embedder API keys before running 'agentforge build'.\n\n")
+		display.Info(fmt.Sprintf("Config file created: %s", cfgPath))
+		display.Warn("Please fill in your LLM and embedder API keys before running 'agentforge build'.")
+		fmt.Println()
 	} else if !agentconfig.IsConfigured() {
-		fmt.Printf("  ⚠ Config file is empty: %s\n", cfgPath)
-		fmt.Printf("    Fill in your LLM and embedder API keys, or 'agentforge build' will fail.\n\n")
+		display.Warn(fmt.Sprintf("Config file is empty: %s", cfgPath))
+		display.Warn("Fill in your LLM and embedder API keys, or 'agentforge build' will fail.")
+		fmt.Println()
 	}
 
-	fmt.Printf("Next steps:\n")
-	fmt.Printf("  1. cd %s\n", name)
-	fmt.Printf("  2. Edit %s with your API keys\n", cfgPath)
-	fmt.Printf("  3. Add documents to the data/ directory\n")
-	fmt.Printf("  4. Edit agent.yaml to configure your agent's persona\n")
-	fmt.Printf("  5. Run: agentforge build\n")
-	fmt.Printf("  6. Copy .env.example to .env (for Docker runtime keys)\n")
-	fmt.Printf("  7. Run: docker compose up --build\n")
+	display.NextSteps([]string{
+		fmt.Sprintf("cd %s", name),
+		fmt.Sprintf("Edit %s with your API keys", cfgPath),
+		"Add documents to the data/ directory",
+		"Edit agent.yaml to configure your agent's persona",
+		"Run: agentforge build",
+		"Copy .env.example to .env (for Docker runtime keys)",
+		"Run: docker compose up --build",
+	})
 
 	return nil
 }

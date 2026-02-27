@@ -13,6 +13,7 @@ import (
 
 	"github.com/agent-forge/agent-forge/internal/chunker"
 	agentconfig "github.com/agent-forge/agent-forge/internal/config"
+	"github.com/agent-forge/agent-forge/internal/display"
 	"github.com/agent-forge/agent-forge/internal/graph"
 	"github.com/agent-forge/agent-forge/internal/llm"
 	"github.com/agent-forge/agent-forge/internal/reader"
@@ -73,12 +74,15 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	// Apply dimensions from agent.yaml (canonical source) if not already set
 	agentconfig.ApplyAgentYAMLDimensions(cfg, "agent.yaml")
 
-	fmt.Println("Agent-Forge Build Pipeline")
-	fmt.Println("==========================")
-	fmt.Printf("Embedding dimensions: %d\n", cfg.Embedder.Dimensions)
+	display.Header("⚡ Agent-Forge Build Pipeline")
+	fmt.Println()
+	display.KeyValue("Embed Dimensions", cfg.Embedder.Dimensions, display.Bold+display.BrightYellow)
+	display.KeyValue("LLM Model", cfg.LLM.Model, display.BrightMagenta)
+	display.KeyValue("Embed Endpoint", cfg.Embedder.BaseURL, display.Dim+display.White)
+	fmt.Println()
 
 	// Step 1: Load documents
-	fmt.Println("\n[1/5] Loading documents from data/...")
+	display.Step(1, 5, "Loading documents from data/...")
 	docs, err := reader.LoadDirectory("data")
 	if err != nil {
 		return fmt.Errorf("load documents: %w", err)
@@ -86,13 +90,13 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	if len(docs) == 0 {
 		return errors.New("no supported documents found in data/ (add .md, .txt, or .pdf files)")
 	}
-	fmt.Printf("      Loaded %d document(s)\n", len(docs))
+	display.StepResult("Loaded", fmt.Sprintf("%d document(s)", len(docs)))
 	for _, doc := range docs {
-		fmt.Printf("      - %s\n", doc.Name)
+		display.StepDetail("• " + doc.Name)
 	}
 
 	// Step 2: Chunk documents
-	fmt.Println("\n[2/5] Chunking documents...")
+	display.Step(2, 5, "Chunking documents...")
 	chunkOpts := chunker.DefaultOptions()
 	ck, err := chunker.NewChunker(chunkOpts)
 	if err != nil {
@@ -107,10 +111,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		}
 		allChunks = append(allChunks, chunks...)
 	}
-	fmt.Printf("      Created %d chunk(s)\n", len(allChunks))
+	display.StepResult("Created", fmt.Sprintf("%d chunk(s)", len(allChunks)))
 
 	// Step 3: Build vector store
-	fmt.Println("\n[3/5] Building vector index (this may take a while)...")
+	display.Step(3, 5, "Building vector index (this may take a while)...")
 	vectorPath := filepath.Join("data", "memory.chromem")
 	if err := os.MkdirAll(vectorPath, 0755); err != nil {
 		return fmt.Errorf("create vector store directory: %w", err)
@@ -124,10 +128,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	if err := vs.AddChunks(ctx, allChunks); err != nil {
 		return fmt.Errorf("add chunks to vector store: %w", err)
 	}
-	fmt.Printf("      Indexed %d vectors\n", vs.Count())
+	display.StepResult("Indexed", fmt.Sprintf("%d vectors", vs.Count()))
 
 	// Step 4: Extract knowledge graph
-	fmt.Println("\n[4/5] Extracting knowledge graph triples...")
+	display.Step(4, 5, "Extracting knowledge graph triples...")
 	graphPath := filepath.Join("data", "knowledge.cayley")
 	if err := os.MkdirAll(graphPath, 0755); err != nil {
 		return fmt.Errorf("create graph store directory: %w", err)
@@ -163,22 +167,22 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 		triples, err := llmClient.ExtractTriples(ctx, combined.String())
 		if err != nil {
-			fmt.Printf("      warning: triple extraction failed for batch %d-%d: %v\n", i, end, err)
+			display.StepWarn(fmt.Sprintf("triple extraction failed for batch %d-%d: %v", i, end, err))
 			continue
 		}
 
 		if err := gdb.AddTriples(ctx, triples); err != nil {
-			fmt.Printf("      warning: failed to add triples for batch %d-%d: %v\n", i, end, err)
+			display.StepWarn(fmt.Sprintf("failed to add triples for batch %d-%d: %v", i, end, err))
 			continue
 		}
 
 		totalTriples += int64(len(triples))
-		fmt.Printf("      Processed chunks %d-%d: +%d triples (total: %d)\n", i+1, end, len(triples), totalTriples)
+		display.StepDetail(fmt.Sprintf("Chunks %d-%d: +%d triples (total: %d)", i+1, end, len(triples), totalTriples))
 	}
-	fmt.Printf("      Knowledge graph: %d triples\n", gdb.Count())
+	display.StepResult("Knowledge graph", fmt.Sprintf("%d triples", gdb.Count()))
 
 	// Step 5: Generate MCP descriptions
-	fmt.Println("\n[5/5] Generating optimized MCP tool descriptions...")
+	display.Step(5, 5, "Generating optimized MCP tool descriptions...")
 	var sampleContent strings.Builder
 	limit := 3
 	if len(allChunks) < limit {
@@ -208,23 +212,26 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	mcpDesc, err := llmClient.GenerateMCPDescription(ctx, agentName, sampleContent.String())
 	if err != nil {
-		fmt.Printf("      warning: MCP description generation failed: %v\n", err)
+		display.StepWarn(fmt.Sprintf("MCP description generation failed: %v", err))
 		mcpDesc = fmt.Sprintf("Search the %s expert knowledge base for relevant information.", agentName)
 	}
 
 	// Update agent.yaml with new MCP description
 	if err := updateAgentYAMLMCPDescription("agent.yaml", agentName, mcpDesc); err != nil {
-		fmt.Printf("      warning: failed to update agent.yaml: %v\n", err)
+		display.StepWarn(fmt.Sprintf("failed to update agent.yaml: %v", err))
 	} else {
-		fmt.Printf("      Updated agent.yaml with MCP tool description\n")
+		display.StepResult("Updated", "agent.yaml with MCP tool description")
 	}
 
-	fmt.Println("\n==========================")
-	fmt.Println("Build complete!")
-	fmt.Printf("  Vector index: %s (%d documents)\n", vectorPath, vs.Count())
-	fmt.Printf("  Graph store:  %s (%d triples)\n", graphPath, gdb.Count())
-	fmt.Println("\nNext steps:")
-	fmt.Println("  docker compose up --build")
+	fmt.Println()
+	display.Success("Build complete!")
+	fmt.Println()
+	display.KeyValue("Vector index", fmt.Sprintf("%s (%d documents)", vectorPath, vs.Count()), display.BrightGreen)
+	display.KeyValue("Graph store", fmt.Sprintf("%s (%d triples)", graphPath, gdb.Count()), display.BrightGreen)
+
+	display.NextSteps([]string{
+		"docker compose up --build",
+	})
 
 	return nil
 }
