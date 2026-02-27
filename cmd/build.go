@@ -34,14 +34,14 @@ var buildCmd = &cobra.Command{
 func runBuild(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	// Load build config
+	// Load unified config (env vars take priority over config.yaml)
 	cfg, err := agentconfig.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	if err := validateBuildConfig(cfg); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
+	if err := agentconfig.ValidateBuild(cfg); err != nil {
+		return err
 	}
 
 	// Ensure we're in an agent-forge project
@@ -94,7 +94,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create vector store directory: %w", err)
 	}
 
-	vs, err := vector.NewPersistentStore(vectorPath, &cfg.BuildProviders.Embedder)
+	vs, err := vector.NewPersistentStore(vectorPath, &cfg.Embedder)
 	if err != nil {
 		return fmt.Errorf("create vector store: %w", err)
 	}
@@ -117,7 +117,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	defer gdb.Close()
 
-	llmClient, err := llm.NewClient(&cfg.BuildProviders.LLM)
+	llmClient, err := llm.NewClient(&cfg.LLM)
 	if err != nil {
 		return fmt.Errorf("create LLM client: %w", err)
 	}
@@ -202,31 +202,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Vector index: %s (%d documents)\n", vectorPath, vs.Count())
 	fmt.Printf("  Graph store:  %s (%d triples)\n", graphPath, gdb.Count())
 	fmt.Println("\nNext steps:")
-	fmt.Println("  docker build -t my-agent:latest .")
-	fmt.Println("  docker run -p 8000:8000 --env-file .env my-agent:latest")
+	fmt.Println("  docker compose up --build")
 
-	return nil
-}
-
-func validateBuildConfig(cfg *agentconfig.Config) error {
-	if cfg.BuildProviders.LLM.BaseURL == "" {
-		return errors.New("build_providers.llm.base_url is required in ~/.agent-forge/config.yaml")
-	}
-	if cfg.BuildProviders.LLM.APIKey == "" {
-		return errors.New("build_providers.llm.api_key is required in ~/.agent-forge/config.yaml")
-	}
-	if cfg.BuildProviders.LLM.Model == "" {
-		return errors.New("build_providers.llm.model is required in ~/.agent-forge/config.yaml")
-	}
-	if cfg.BuildProviders.Embedder.BaseURL == "" {
-		return errors.New("build_providers.embedder.base_url is required in ~/.agent-forge/config.yaml")
-	}
-	if cfg.BuildProviders.Embedder.APIKey == "" {
-		return errors.New("build_providers.embedder.api_key is required in ~/.agent-forge/config.yaml")
-	}
-	if cfg.BuildProviders.Embedder.Model == "" {
-		return errors.New("build_providers.embedder.model is required in ~/.agent-forge/config.yaml")
-	}
 	return nil
 }
 

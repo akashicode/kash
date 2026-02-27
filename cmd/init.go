@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	agentconfig "github.com/agent-forge/agent-forge/internal/config"
 )
 
 var initCmd = &cobra.Command{
@@ -17,7 +19,10 @@ var initCmd = &cobra.Command{
   - agent.yaml     Persona, models, and interface configuration
   - Dockerfile     Pre-configured for building Docker image
   - .env.example   Template for runtime environment variables
-  - .dockerignore  Excludes raw data files from the final image`,
+  - .dockerignore  Excludes raw data files from the final image
+
+Also generates ~/.agentforge/config.yaml (if it doesn't already exist)
+with an empty skeleton for LLM, embedder, and reranker settings.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runInit,
 }
@@ -29,6 +34,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Check if directory already exists
 	if _, err := os.Stat(projectDir); err == nil {
 		return fmt.Errorf("directory %q already exists", name)
+	}
+
+	// Ensure ~/.agentforge/config.yaml exists
+	created, err := agentconfig.EnsureConfigFile()
+	if err != nil {
+		return fmt.Errorf("create config file: %w", err)
 	}
 
 	fmt.Printf("Initializing new agent project: %s\n", name)
@@ -76,13 +87,25 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("\nProject created successfully!\n\n")
+
+	// Warn about empty config
+	cfgPath, _ := agentconfig.ConfigFilePath()
+	if created {
+		fmt.Printf("  Config file created: %s\n", cfgPath)
+		fmt.Printf("  ⚠ Please fill in your LLM and embedder API keys before running 'agentforge build'.\n\n")
+	} else if !agentconfig.IsConfigured() {
+		fmt.Printf("  ⚠ Config file is empty: %s\n", cfgPath)
+		fmt.Printf("    Fill in your LLM and embedder API keys, or 'agentforge build' will fail.\n\n")
+	}
+
 	fmt.Printf("Next steps:\n")
 	fmt.Printf("  1. cd %s\n", name)
-	fmt.Printf("  2. Add documents to the data/ directory\n")
-	fmt.Printf("  3. Edit agent.yaml to configure your agent's persona\n")
-	fmt.Printf("  4. Copy .env.example to .env and fill in your API keys\n")
+	fmt.Printf("  2. Edit %s with your API keys\n", cfgPath)
+	fmt.Printf("  3. Add documents to the data/ directory\n")
+	fmt.Printf("  4. Edit agent.yaml to configure your agent's persona\n")
 	fmt.Printf("  5. Run: agentforge build\n")
-	fmt.Printf("  6. Run: docker compose up --build\n")
+	fmt.Printf("  6. Copy .env.example to .env (for Docker runtime keys)\n")
+	fmt.Printf("  7. Run: docker compose up --build\n")
 
 	return nil
 }

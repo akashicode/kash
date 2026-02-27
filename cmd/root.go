@@ -30,7 +30,7 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.agent-forge/config.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.agentforge/config.yaml)")
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(buildCmd)
@@ -45,7 +45,7 @@ func initConfig() {
 			fmt.Fprintln(os.Stderr, "warning: could not determine home directory:", err)
 			return
 		}
-		viper.AddConfigPath(filepath.Join(home, ".agent-forge"))
+		viper.AddConfigPath(filepath.Join(home, ".agentforge"))
 		viper.SetConfigType("yaml")
 		viper.SetConfigName("config")
 	}
@@ -53,6 +53,6 @@ func initConfig() {
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
-		fmt.Fprintln(os.Stderr, "warning: no config file found, using environment variables only")
+		// Silence the warning — config.yaml is optional when env vars are set
 	}
 }

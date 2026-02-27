@@ -49,7 +49,7 @@ type Server struct {
 	llmClient   *llm.Client
 	reranker    *llm.Reranker
 	agentCfg    *AgentConfig
-	runtimeCfg  *agentconfig.RuntimeConfig
+	appCfg      *agentconfig.Config
 	mux         *http.ServeMux
 }
 
@@ -58,13 +58,13 @@ type Config struct {
 	VectorStorePath string
 	GraphDBPath     string
 	AgentYAMLPath   string
-	RuntimeCfg      *agentconfig.RuntimeConfig
+	AppCfg          *agentconfig.Config
 }
 
 // New creates and initializes a new runtime Server.
 func New(cfg Config) (*Server, error) {
-	if cfg.RuntimeCfg == nil {
-		return nil, fmt.Errorf("runtime config is required")
+	if cfg.AppCfg == nil {
+		return nil, fmt.Errorf("application config is required")
 	}
 
 	// Load agent.yaml
@@ -74,7 +74,7 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	// Initialize vector store
-	vs, err := vector.NewStoreFromPath(cfg.VectorStorePath, &cfg.RuntimeCfg.Embedder)
+	vs, err := vector.NewStoreFromPath(cfg.VectorStorePath, &cfg.AppCfg.Embedder)
 	if err != nil {
 		return nil, fmt.Errorf("open vector store: %w", err)
 	}
@@ -86,15 +86,18 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	// Initialize LLM client
-	llmClient, err := llm.NewClient(&cfg.RuntimeCfg.LLM)
+	llmClient, err := llm.NewClient(&cfg.AppCfg.LLM)
 	if err != nil {
 		return nil, fmt.Errorf("create LLM client: %w", err)
 	}
 
-	// Initialize reranker (optional)
-	reranker, err := llm.NewReranker(&cfg.RuntimeCfg.Reranker)
-	if err != nil {
-		return nil, fmt.Errorf("create reranker: %w", err)
+	// Initialize reranker (optional — skip if not configured)
+	var reranker *llm.Reranker
+	if cfg.AppCfg.Reranker.BaseURL != "" {
+		reranker, err = llm.NewReranker(&cfg.AppCfg.Reranker)
+		if err != nil {
+			return nil, fmt.Errorf("create reranker: %w", err)
+		}
 	}
 
 	s := &Server{
@@ -103,7 +106,7 @@ func New(cfg Config) (*Server, error) {
 		llmClient:   llmClient,
 		reranker:    reranker,
 		agentCfg:    agentCfg,
-		runtimeCfg:  cfg.RuntimeCfg,
+		appCfg:      cfg.AppCfg,
 		mux:         http.NewServeMux(),
 	}
 
