@@ -257,12 +257,15 @@ LLM_MODEL=gpt-4o
 EMBED_BASE_URL=https://api.voyageai.com/v1
 EMBED_API_KEY=pa-your-key-here
 EMBED_MODEL=
-EMBED_DIMENSIONS=1024
 
 # Reranking Provider (optional) - must be OpenAI-compatible
 # RERANK_BASE_URL=
 # RERANK_API_KEY=
 # RERANK_MODEL=
+
+# Auth Token (optional) - when set, all endpoints (except /health) require
+# Authorization: Bearer <token>. Leave commented out for open local access.
+# AGENT_AUTH_TOKEN=my-secret-token-123
 `
 }
 
