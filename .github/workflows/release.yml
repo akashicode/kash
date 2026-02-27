@@ -137,36 +137,36 @@ jobs:
             echo "- Initial release" >> release_notes.md
           fi
 
-          cat >> release_notes.md << 'EOF'
+          cat >> release_notes.md << EOF
 
 ## Installation
 
 ### Linux (amd64)
-```bash
+\`\`\`bash
 curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_linux_amd64.tar.gz | tar -xz
 sudo mv kash /usr/local/bin/
-```
+\`\`\`
 
 ### Linux (arm64)
-```bash
+\`\`\`bash
 curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_linux_arm64.tar.gz | tar -xz
 sudo mv kash /usr/local/bin/
-```
+\`\`\`
 
 ### macOS (Apple Silicon)
-```bash
+\`\`\`bash
 curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_darwin_arm64.tar.gz | tar -xz
 sudo mv kash /usr/local/bin/
-```
+\`\`\`
 
 ### macOS (Intel)
-```bash
+\`\`\`bash
 curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_darwin_amd64.tar.gz | tar -xz
 sudo mv kash /usr/local/bin/
-```
+\`\`\`
 
 ### Windows (amd64)
-Download [`kash_windows_amd64.zip`](https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_windows_amd64.zip), extract, and add `kash.exe` to a directory on your `PATH`.
+Download [\`kash_windows_amd64.zip\`](https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_windows_amd64.zip), extract, and add \`kash.exe\` to a directory on your \`PATH\`.
 
 ---
 
