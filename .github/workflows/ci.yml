@@ -29,8 +29,11 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test
-        run: go test -race -coverprofile=coverage.out ./...
+      - name: Test (race)
+        run: go test -race ./...
+
+      - name: Test (coverage)
+        run: go test -coverprofile=coverage.out ./...
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -85,9 +88,3 @@ jobs:
               -X github.com/agent-forge/agent-forge/cmd.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             -o "bin/${BINARY_NAME}" \
             ./cmd/agent-forge
-
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: agentforge_${{ matrix.goos }}_${{ matrix.goarch }}
-          path: bin/
