@@ -55,7 +55,7 @@ type Server struct {
 	appCfg      *agentconfig.Config
 	mux         *http.ServeMux
 	log         *slog.Logger
-	authToken   string // optional bearer token; empty = no auth
+	apiKey string // optional API key for auth; empty = open access
 }
 
 // Config holds the runtime server configuration.
@@ -110,8 +110,8 @@ func New(cfg Config) (*Server, error) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	// Optional bearer auth token
-	authToken := os.Getenv("AGENT_AUTH_TOKEN")
+	// Optional API key — enables auth on all endpoints (except /health)
+	apiKey := os.Getenv("AGENT_API_KEY")
 
 	s := &Server{
 		vectorStore: vs,
@@ -122,7 +122,7 @@ func New(cfg Config) (*Server, error) {
 		appCfg:      cfg.AppCfg,
 		mux:         http.NewServeMux(),
 		log:         logger,
-		authToken:   authToken,
+		apiKey:      apiKey,
 	}
 
 	logger.Info("server initialized",
@@ -132,7 +132,7 @@ func New(cfg Config) (*Server, error) {
 		"llm_model", cfg.AppCfg.LLM.Model,
 		"embed_model", cfg.AppCfg.Embedder.Model,
 		"embed_dimensions", cfg.AppCfg.Embedder.Dimensions,
-		"auth_enabled", authToken != "",
+		"auth_enabled", apiKey != "",
 	)
 
 	s.registerRoutes()
@@ -156,7 +156,7 @@ func (s *Server) Info() display.ServerInfo {
 		RerankModel:      s.appCfg.Reranker.Model,
 		RerankBaseURL:    s.appCfg.Reranker.BaseURL,
 		Port:             s.appCfg.Port,
-		AuthEnabled:      s.authToken != "",
+		AuthEnabled:      s.apiKey != "",
 	}
 	return info
 }
@@ -166,13 +166,18 @@ func (s *Server) Handler() http.Handler {
 	return s.loggingMiddleware(corsMiddleware(s.authMiddleware(s.mux)))
 }
 
-// authMiddleware enforces bearer token auth when AGENT_AUTH_TOKEN is set.
+// authMiddleware enforces API key auth when AGENT_API_KEY is set.
 // The /health endpoint is always public. All other endpoints require
-// Authorization: Bearer <token> when auth is enabled.
+// Authorization: Bearer <AGENT_API_KEY> when auth is enabled.
+// This is compatible with:
+//   - curl / HTTP clients: -H "Authorization: Bearer <key>"
+//   - OpenAI SDK: pass AGENT_API_KEY as the SDK's api_key
+//   - MCP clients: set API_KEY env var in MCP server config
+//   - A2A clients: standard Bearer auth per A2A spec
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// No token configured — open access
-		if s.authToken == "" {
+		// No API key configured — open access
+		if s.apiKey == "" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -189,13 +194,13 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Check Authorization header
+		// Check Authorization: Bearer <key>
 		auth := r.Header.Get("Authorization")
 		const prefix = "Bearer "
-		if !strings.HasPrefix(auth, prefix) || strings.TrimPrefix(auth, prefix) != s.authToken {
+		if !strings.HasPrefix(auth, prefix) || strings.TrimPrefix(auth, prefix) != s.apiKey {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized — set Authorization: Bearer <AGENT_AUTH_TOKEN>"})
+			json.NewEncoder(w).Encode(map[string]string{"error": "invalid or missing API key — pass via Authorization: Bearer <AGENT_API_KEY>"})
 			return
 		}
 
@@ -303,7 +308,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"llm_model":        s.appCfg.LLM.Model,
 		"embed_model":      s.appCfg.Embedder.Model,
 		"reranker_enabled": s.appCfg.Reranker.BaseURL != "",
-		"auth_enabled":     s.authToken != "",
+		"auth_enabled":     s.apiKey != "",
 		"time":             time.Now().UTC().Format(time.RFC3339),
 	}
 

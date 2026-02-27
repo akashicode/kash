@@ -124,9 +124,9 @@ func PrintBanner(info ServerInfo) {
 		printKVColored(w, "Reranker", "✗ disabled", dim+white)
 	}
 	if info.AuthEnabled {
-		printKVColored(w, "Auth", "✓ bearer token", brightGreen)
+		printKVColored(w, "Auth", "✓ API key required", brightGreen)
 	} else {
-		printKVColored(w, "Auth", "✗ open (set AGENT_AUTH_TOKEN to enable)", brightYellow)
+		printKVColored(w, "Auth", "✗ open (set AGENT_API_KEY to enable)", brightYellow)
 	}
 	fmt.Fprintln(w)
 

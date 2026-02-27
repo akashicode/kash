@@ -263,9 +263,10 @@ EMBED_MODEL=
 # RERANK_API_KEY=
 # RERANK_MODEL=
 
-# Auth Token (optional) - when set, all endpoints (except /health) require
-# Authorization: Bearer <token>. Leave commented out for open local access.
-# AGENT_AUTH_TOKEN=my-secret-token-123
+# API Key (optional) - when set, all endpoints (except /health) require auth.
+# Works as Bearer token with curl, as api_key with OpenAI SDK,
+# and as API_KEY env var for MCP clients.
+# AGENT_API_KEY=my-secret-api-key
 `
 }
 
