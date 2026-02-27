@@ -125,22 +125,53 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME}"
           PREV_TAG=$(git tag --sort=-version:refname | sed -n '2p')
+          REPO="https://github.com/${{ github.repository }}"
+
           echo "## What's Changed" > release_notes.md
+          echo "" >> release_notes.md
           if [ -n "$PREV_TAG" ]; then
             git log --oneline "${PREV_TAG}..HEAD" \
-              --pretty=format:"- %s ([%h](https://github.com/${{ github.repository }}/commit/%H))" \
+              --pretty=format:"- %s ([%h](${REPO}/commit/%H))" \
               >> release_notes.md
           else
             echo "- Initial release" >> release_notes.md
           fi
-          echo "" >> release_notes.md
-          echo "## Installation" >> release_notes.md
-          echo "" >> release_notes.md
-          echo '```bash' >> release_notes.md
-          echo "# Linux / macOS" >> release_notes.md
-          echo "curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_linux_amd64.tar.gz | tar -xz" >> release_notes.md
-          echo "sudo mv kash /usr/local/bin/" >> release_notes.md
-          echo '```' >> release_notes.md
+
+          cat >> release_notes.md << 'EOF'
+
+## Installation
+
+### Linux (amd64)
+```bash
+curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_linux_amd64.tar.gz | tar -xz
+sudo mv kash /usr/local/bin/
+```
+
+### Linux (arm64)
+```bash
+curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_linux_arm64.tar.gz | tar -xz
+sudo mv kash /usr/local/bin/
+```
+
+### macOS (Apple Silicon)
+```bash
+curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_darwin_arm64.tar.gz | tar -xz
+sudo mv kash /usr/local/bin/
+```
+
+### macOS (Intel)
+```bash
+curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_darwin_amd64.tar.gz | tar -xz
+sudo mv kash /usr/local/bin/
+```
+
+### Windows (amd64)
+Download [`kash_windows_amd64.zip`](https://github.com/${{ github.repository }}/releases/download/${VERSION}/kash_windows_amd64.zip), extract, and add `kash.exe` to a directory on your `PATH`.
+
+---
+
+> For full usage instructions, configuration options, and examples, see the [README](https://github.com/${{ github.repository }}/blob/main/README.md).
+EOF
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
