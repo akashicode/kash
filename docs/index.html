@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kash — The AI Agent Compiler</title>
+    <meta name="description" content="Compile your documents into embedded GraphRAG brains. Ship AI agents as Docker images. Zero infrastructure.">
+    <meta name="theme-color" content="#0f0f23">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Kash — The AI Agent Compiler">
+    <meta property="og:description" content="Compile documents into self-contained AI agents. Ship as Docker images.">
+    <meta property="og:type" content="website">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+        /* ============================================================
+           RESET & BASE
+           ============================================================ */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-primary: #0a0a1a;
+            --bg-secondary: #0f0f23;
+            --bg-card: #141428;
+            --bg-card-hover: #1a1a35;
+            --text-primary: #e8e8f0;
+            --text-secondary: #9090b0;
+            --text-dim: #606080;
+            --accent: #7c5cfc;
+            --accent-light: #a78bfa;
+            --accent-glow: rgba(124, 92, 252, 0.3);
+            --green: #34d399;
+            --blue: #60a5fa;
+            --orange: #fb923c;
+            --pink: #f472b6;
+            --border: rgba(255, 255, 255, 0.06);
+            --border-accent: rgba(124, 92, 252, 0.2);
+            --radius: 12px;
+            --radius-lg: 20px;
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+        }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.7;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        a { color: var(--accent-light); text-decoration: none; transition: color 0.2s; }
+        a:hover { color: #c4b5fd; }
+
+        /* ============================================================
+           ANIMATED BACKGROUND
+           ============================================================ */
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background-image:
+                linear-gradient(rgba(124, 92, 252, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(124, 92, 252, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+        }
+
+        .bg-glow {
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.15;
+            pointer-events: none;
+            z-index: -1;
+        }
+        .bg-glow-1 { top: -200px; left: -100px; background: var(--accent); }
+        .bg-glow-2 { bottom: -200px; right: -100px; background: #4f46e5; }
+
+        /* ============================================================
+           NAVIGATION
+           ============================================================ */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            z-index: 100;
+            padding: 1rem 2rem;
+            backdrop-filter: blur(20px);
+            background: rgba(10, 10, 26, 0.8);
+            border-bottom: 1px solid var(--border);
+            transition: background 0.3s;
+        }
+
+        .nav-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-brand {
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            letter-spacing: -0.02em;
+        }
+        .nav-brand span { color: var(--accent-light); }
+
+        .nav-links { display: flex; gap: 2rem; align-items: center; }
+        .nav-links a {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover { color: var(--text-primary); }
+
+        .nav-cta {
+            padding: 0.5rem 1.2rem;
+            background: var(--accent);
+            color: #fff !important;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .nav-cta:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px var(--accent-glow);
+        }
+
+        /* ============================================================
+           HERO
+           ============================================================ */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 8rem 2rem 4rem;
+            position: relative;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            background: rgba(124, 92, 252, 0.1);
+            border: 1px solid var(--border-accent);
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--accent-light);
+            margin-bottom: 2rem;
+            animation: fadeInUp 0.6s ease;
+        }
+
+        .hero h1 {
+            font-size: clamp(3rem, 8vw, 5.5rem);
+            font-weight: 900;
+            line-height: 1.05;
+            letter-spacing: -0.04em;
+            margin-bottom: 1.5rem;
+            animation: fadeInUp 0.6s ease 0.1s both;
+        }
+
+        .hero h1 .gradient-text {
+            background: linear-gradient(135deg, var(--accent-light), var(--pink), var(--orange));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero-subtitle {
+            font-size: clamp(1.1rem, 2.5vw, 1.35rem);
+            color: var(--text-secondary);
+            max-width: 640px;
+            margin-bottom: 1rem;
+            animation: fadeInUp 0.6s ease 0.2s both;
+        }
+
+        .hero-tagline {
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            color: var(--text-dim);
+            margin-bottom: 2.5rem;
+            animation: fadeInUp 0.6s ease 0.3s both;
+        }
+
+        .hero-actions {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
+            animation: fadeInUp 0.6s ease 0.4s both;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.85rem 1.8rem;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #6d28d9);
+            color: #fff;
+            box-shadow: 0 4px 24px var(--accent-glow);
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px var(--accent-glow);
+            color: #fff;
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover {
+            background: var(--bg-card-hover);
+            border-color: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+
+        /* Terminal demo */
+        .hero-terminal {
+            margin-top: 4rem;
+            max-width: 700px;
+            width: 100%;
+            animation: fadeInUp 0.6s ease 0.5s both;
+        }
+
+        .terminal {
+            background: #0d0d1a;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            text-align: left;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .terminal-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .terminal-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .terminal-dot.red { background: #ff5f57; }
+        .terminal-dot.yellow { background: #febc2e; }
+        .terminal-dot.green { background: #28c840; }
+
+        .terminal-body {
+            padding: 1.2rem 1.5rem;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            line-height: 1.8;
+            color: var(--text-secondary);
+        }
+
+        .terminal-body .prompt { color: var(--green); }
+        .terminal-body .cmd { color: var(--text-primary); }
+        .terminal-body .comment { color: var(--text-dim); font-style: italic; }
+        .terminal-body .output { color: var(--accent-light); }
+
+        /* ============================================================
+           SECTIONS COMMON
+           ============================================================ */
+        section {
+            padding: 6rem 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .section-label {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: var(--accent-light);
+            margin-bottom: 1rem;
+        }
+
+        .section-title {
+            font-size: clamp(2rem, 4vw, 3rem);
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin-bottom: 1rem;
+        }
+
+        .section-desc {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin-bottom: 3rem;
+        }
+
+        /* ============================================================
+           HOW IT WORKS - PIPELINE
+           ============================================================ */
+        .pipeline {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .pipeline-step {
+            position: relative;
+            padding: 2rem 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            transition: all 0.3s;
+        }
+
+        .pipeline-step:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--border-accent);
+            transform: translateY(-4px);
+        }
+
+        .pipeline-number {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 0.75rem;
+        }
+
+        .pipeline-icon {
+            font-size: 2rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .pipeline-step h3 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .pipeline-step p {
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        /* ============================================================
+           COMPARISON TABLE
+           ============================================================ */
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        .comparison-card {
+            padding: 2rem;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+        }
+
+        .comparison-card.old {
+            background: rgba(239, 68, 68, 0.04);
+            border-color: rgba(239, 68, 68, 0.15);
+        }
+        .comparison-card.new {
+            background: rgba(52, 211, 153, 0.04);
+            border-color: rgba(52, 211, 153, 0.15);
+        }
+
+        .comparison-card h3 {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .comparison-card.old h3 { color: #fca5a5; }
+        .comparison-card.new h3 { color: var(--green); }
+
+        .comparison-card ul {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+        }
+
+        .comparison-card li {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            padding-left: 1.5rem;
+            position: relative;
+        }
+        .comparison-card.old li::before { content: "✗"; position: absolute; left: 0; color: #f87171; }
+        .comparison-card.new li::before { content: "✓"; position: absolute; left: 0; color: var(--green); font-weight: 700; }
+
+        /* ============================================================
+           FEATURE CARDS
+           ============================================================ */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .feature-card {
+            padding: 2rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            transition: all 0.3s;
+        }
+
+        .feature-card:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--border-accent);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            margin-bottom: 1rem;
+        }
+
+        .feature-icon.purple { background: rgba(124, 92, 252, 0.15); }
+        .feature-icon.green { background: rgba(52, 211, 153, 0.15); }
+        .feature-icon.blue { background: rgba(96, 165, 250, 0.15); }
+        .feature-icon.orange { background: rgba(251, 146, 60, 0.15); }
+        .feature-icon.pink { background: rgba(244, 114, 182, 0.15); }
+        .feature-icon.cyan { background: rgba(34, 211, 238, 0.15); }
+
+        .feature-card h3 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .feature-card p {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        /* ============================================================
+           INTERFACES (TABS)
+           ============================================================ */
+        .interface-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            padding: 0.6rem 1.4rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            font-family: var(--font-sans);
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active,
+        .tab-btn:hover {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+
+        .code-block {
+            background: #0d0d1a;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            overflow-x: auto;
+        }
+
+        .code-block pre {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            line-height: 1.7;
+            color: var(--text-secondary);
+        }
+
+        .code-block .kw { color: var(--accent-light); }
+        .code-block .str { color: var(--green); }
+        .code-block .comment { color: var(--text-dim); }
+        .code-block .fn { color: var(--blue); }
+
+        /* ============================================================
+           USE CASES
+           ============================================================ */
+        .usecases-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .usecase-card {
+            padding: 2rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            transition: all 0.3s;
+        }
+
+        .usecase-card:hover {
+            border-color: var(--border-accent);
+            transform: translateY(-4px);
+        }
+
+        .usecase-card .emoji { font-size: 2rem; margin-bottom: 0.75rem; }
+        .usecase-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .usecase-card p { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.6; }
+
+        /* ============================================================
+           TECH STACK
+           ============================================================ */
+        .stack-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .stack-item {
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .stack-item:hover {
+            border-color: var(--border-accent);
+            transform: translateY(-2px);
+        }
+
+        .stack-item .label {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-dim);
+            margin-bottom: 0.5rem;
+        }
+
+        .stack-item .tech {
+            font-weight: 700;
+            font-size: 1rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .stack-item .purpose {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        /* ============================================================
+           CTA
+           ============================================================ */
+        .cta-section {
+            text-align: center;
+            padding: 6rem 2rem;
+        }
+
+        .cta-box {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 4rem 3rem;
+            background: linear-gradient(135deg, rgba(124, 92, 252, 0.08), rgba(79, 70, 229, 0.08));
+            border: 1px solid var(--border-accent);
+            border-radius: var(--radius-lg);
+        }
+
+        .cta-box h2 {
+            font-size: clamp(1.8rem, 4vw, 2.5rem);
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin-bottom: 1rem;
+        }
+
+        .cta-box p {
+            color: var(--text-secondary);
+            font-size: 1.05rem;
+            margin-bottom: 2rem;
+        }
+
+        .cta-install {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            padding: 0.8rem 2rem;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: border-color 0.2s;
+            user-select: all;
+        }
+        .cta-install:hover { border-color: var(--accent); }
+
+        /* ============================================================
+           FOOTER
+           ============================================================ */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        .footer-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .footer-links a {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .footer-copy {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+
+        /* ============================================================
+           ANIMATIONS
+           ============================================================ */
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* ============================================================
+           RESPONSIVE
+           ============================================================ */
+        @media (max-width: 768px) {
+            .nav-links { gap: 1rem; }
+            .nav-links a:not(.nav-cta) { display: none; }
+            .comparison { grid-template-columns: 1fr; }
+            .hero { padding: 6rem 1.5rem 3rem; }
+            .cta-box { padding: 3rem 1.5rem; }
+            section { padding: 4rem 1.5rem; }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-primary); }
+        ::-webkit-scrollbar-thumb { background: #2a2a4a; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3a3a5a; }
+    </style>
+</head>
+<body>
+    <!-- Background Effects -->
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-inner">
+            <div class="nav-brand">⚡ <span>Kash</span></div>
+            <div class="nav-links">
+                <a href="#how-it-works">How It Works</a>
+                <a href="#features">Features</a>
+                <a href="#interfaces">Interfaces</a>
+                <a href="#use-cases">Use Cases</a>
+                <a href="https://github.com/akashicode/kash" class="nav-cta">GitHub →</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="hero-badge">🚀 Open Source &middot; MIT Licensed</div>
+        <h1>
+            Compile Knowledge.<br>
+            <span class="gradient-text">Ship AI Agents.</span>
+        </h1>
+        <p class="hero-subtitle">
+            Kash turns your documents into self-contained AI agents with embedded GraphRAG — packaged into ~50MB Docker containers.
+        </p>
+        <p class="hero-tagline">No Python. No vector DB. No infrastructure. Just Go.</p>
+
+        <div class="hero-actions">
+            <a href="https://github.com/akashicode/kash" class="btn btn-primary">
+                ⚡ Get Started
+            </a>
+            <a href="#how-it-works" class="btn btn-secondary">
+                Learn More ↓
+            </a>
+        </div>
+
+        <div class="hero-terminal">
+            <div class="terminal">
+                <div class="terminal-header">
+                    <div class="terminal-dot red"></div>
+                    <div class="terminal-dot yellow"></div>
+                    <div class="terminal-dot green"></div>
+                </div>
+                <div class="terminal-body">
+                    <span class="comment"># Scaffold a new agent</span><br>
+                    <span class="prompt">$</span> <span class="cmd">kash init my-expert</span><br><br>
+                    <span class="comment"># Add your knowledge</span><br>
+                    <span class="prompt">$</span> <span class="cmd">cp ~/docs/*.pdf my-expert/data/</span><br><br>
+                    <span class="comment"># Compile into GraphRAG databases</span><br>
+                    <span class="prompt">$</span> <span class="cmd">kash build --dir my-expert</span><br>
+                    <span class="output">  ✓ Chunked 42 documents (1,892 passages)</span><br>
+                    <span class="output">  ✓ Generated 1,892 embeddings</span><br>
+                    <span class="output">  ✓ Extracted 3,451 knowledge graph triples</span><br><br>
+                    <span class="comment"># Ship it!</span><br>
+                    <span class="prompt">$</span> <span class="cmd">docker build -t my-expert . && docker run -p 8000:8000 my-expert</span><br>
+                    <span class="output">  🚀 Agent live at http://localhost:8000</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section id="how-it-works" class="reveal">
+        <span class="section-label">// How It Works</span>
+        <h2 class="section-title">The Compiler Approach</h2>
+        <p class="section-desc">
+            Think of Kash like a static site generator — but for AI brains. Data ingestion happens at build time. Runtime only serves queries.
+        </p>
+
+        <div class="pipeline">
+            <div class="pipeline-step">
+                <div class="pipeline-number">01</div>
+                <div class="pipeline-icon">📄</div>
+                <h3>Initialize</h3>
+                <p><code>kash init</code> scaffolds your agent project with a Dockerfile, config, and data directory.</p>
+            </div>
+            <div class="pipeline-step">
+                <div class="pipeline-number">02</div>
+                <div class="pipeline-icon">📚</div>
+                <h3>Add Documents</h3>
+                <p>Drop PDFs, Markdown, and text files into <code>data/</code>. That's your knowledge base.</p>
+            </div>
+            <div class="pipeline-step">
+                <div class="pipeline-number">03</div>
+                <div class="pipeline-icon">⚡</div>
+                <h3>Compile</h3>
+                <p><code>kash build</code> chunks text, generates embeddings, and extracts knowledge graph triples.</p>
+            </div>
+            <div class="pipeline-step">
+                <div class="pipeline-number">04</div>
+                <div class="pipeline-icon">🐳</div>
+                <h3>Ship</h3>
+                <p><code>docker build</code> packages everything into a ~50MB container. Push and run anywhere.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Comparison -->
+    <section class="reveal">
+        <span class="section-label">// Why Kash?</span>
+        <h2 class="section-title">Rethink Your RAG Stack</h2>
+        <p class="section-desc">
+            Traditional RAG stacks are bloated. Kash collapses the entire pipeline into a single binary.
+        </p>
+
+        <div class="comparison">
+            <div class="comparison-card old">
+                <h3>❌ Traditional RAG</h3>
+                <ul>
+                    <li>Python app + FastAPI + Gunicorn</li>
+                    <li>Pinecone / Weaviate / Qdrant</li>
+                    <li>Redis or PostgreSQL for metadata</li>
+                    <li>Runtime document ingestion</li>
+                    <li>Complex multi-service deployment</li>
+                    <li>$$$ infrastructure costs</li>
+                </ul>
+            </div>
+            <div class="comparison-card new">
+                <h3>✅ Kash</h3>
+                <ul>
+                    <li>Single Go binary (~15MB)</li>
+                    <li>Embedded vector store (chromem-go)</li>
+                    <li>Embedded graph DB (cayley)</li>
+                    <li>Build-time compilation</li>
+                    <li><code>docker run</code> and done</li>
+                    <li>Runs on a Raspberry Pi</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="reveal">
+        <span class="section-label">// Features</span>
+        <h2 class="section-title">Everything You Need</h2>
+        <p class="section-desc">
+            A complete agent framework with zero external dependencies at runtime.
+        </p>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon purple">🧠</div>
+                <h3>Hybrid GraphRAG</h3>
+                <p>Every query runs through both vector similarity search and knowledge graph traversal, merged and optionally reranked.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon green">🐳</div>
+                <h3>Docker-First Distribution</h3>
+                <p>Ship agents as tiny Docker images. The Go binary + baked databases fit in ~50MB. Multi-arch support included.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon blue">🔌</div>
+                <h3>Three Runtime Interfaces</h3>
+                <p>REST API (OpenAI-compatible), MCP Server (for IDEs), and A2A Protocol (for multi-agent orchestration) — all on one port.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon orange">🔑</div>
+                <h3>Provider Agnostic (BYOM)</h3>
+                <p>Works with any OpenAI-compatible API. Use OpenAI, Anthropic via proxy, Ollama, LiteLLM — your choice.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon pink">📊</div>
+                <h3>Knowledge Graph Extraction</h3>
+                <p>Automatic extraction of entity-relationship triples via LLM during build. Deep reasoning, not just keyword matching.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon cyan">🔒</div>
+                <h3>API Key Authentication</h3>
+                <p>Optional Bearer token auth across all interfaces. Set one env var to secure everything. Open access for local dev.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Interfaces -->
+    <section id="interfaces" class="reveal">
+        <span class="section-label">// Interfaces</span>
+        <h2 class="section-title">Three Ways to Connect</h2>
+        <p class="section-desc">
+            One port, three protocols. Plug your agent into any ecosystem.
+        </p>
+
+        <div class="interface-tabs">
+            <button class="tab-btn active" data-tab="rest">REST API</button>
+            <button class="tab-btn" data-tab="mcp">MCP Server</button>
+            <button class="tab-btn" data-tab="a2a">A2A Protocol</button>
+        </div>
+
+        <div id="tab-rest" class="tab-panel active">
+            <div class="code-block">
+<pre><span class="comment"># Drop-in OpenAI replacement — works with LibreChat, Open WebUI, etc.</span>
+
+<span class="fn">curl</span> http://localhost:8000/v1/chat/completions \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "Explain the key concepts"}]
+  }'</span></pre>
+            </div>
+        </div>
+
+        <div id="tab-mcp" class="tab-panel">
+            <div class="code-block">
+<pre><span class="comment">// Add to Cursor / Windsurf / Claude Desktop settings</span>
+
+{
+  <span class="str">"mcpServers"</span>: {
+    <span class="str">"my-agent"</span>: {
+      <span class="str">"url"</span>: <span class="str">"http://localhost:8000/mcp"</span>
+    }
+  }
+}</pre>
+            </div>
+        </div>
+
+        <div id="tab-a2a" class="tab-panel">
+            <div class="code-block">
+<pre><span class="comment"># JSON-RPC for multi-agent frameworks (AutoGen, CrewAI)</span>
+
+<span class="fn">curl</span> http://localhost:8000/rpc/agent \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "agent.query",
+    "params": {"query": "What are the key architectural decisions?"}
+  }'</span></pre>
+            </div>
+        </div>
+    </section>
+
+    <!-- Use Cases -->
+    <section id="use-cases" class="reveal">
+        <span class="section-label">// Use Cases</span>
+        <h2 class="section-title">Build Anything</h2>
+        <p class="section-desc">
+            From personal study tools to enterprise knowledge agents.
+        </p>
+
+        <div class="usecases-grid">
+            <div class="usecase-card">
+                <div class="emoji">📖</div>
+                <h3>Expert Knowledge Agent</h3>
+                <p>Feed company docs, runbooks, or research papers. Every dev gets a domain expert on tap.</p>
+            </div>
+            <div class="usecase-card">
+                <div class="emoji">🎓</div>
+                <h3>Study &amp; Exam Prep</h3>
+                <p>Compile textbooks into a Socratic tutor that quizzes you and explains concepts accurately.</p>
+            </div>
+            <div class="usecase-card">
+                <div class="emoji">🛠️</div>
+                <h3>Product Support Bot</h3>
+                <p>Turn API docs, changelogs, and FAQs into a support agent that plugs into any chat UI.</p>
+            </div>
+            <div class="usecase-card">
+                <div class="emoji">🤝</div>
+                <h3>Multi-Agent Teams</h3>
+                <p>Spin up specialized agents (legal, finance, eng) and wire them together via A2A protocol.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Tech Stack -->
+    <section class="reveal">
+        <span class="section-label">// Built With</span>
+        <h2 class="section-title">100% Go-Native Stack</h2>
+        <p class="section-desc">
+            No external database servers. No Python runtime. Pure Go from CLI to serving.
+        </p>
+
+        <div class="stack-grid">
+            <div class="stack-item">
+                <div class="label">CLI</div>
+                <div class="tech">spf13/cobra</div>
+                <div class="purpose">Command framework</div>
+            </div>
+            <div class="stack-item">
+                <div class="label">Vectors</div>
+                <div class="tech">chromem-go</div>
+                <div class="purpose">Embedded vector store</div>
+            </div>
+            <div class="stack-item">
+                <div class="label">Graph</div>
+                <div class="tech">cayley</div>
+                <div class="purpose">Knowledge graph DB</div>
+            </div>
+            <div class="stack-item">
+                <div class="label">LLM</div>
+                <div class="tech">go-openai</div>
+                <div class="purpose">OpenAI-compatible client</div>
+            </div>
+            <div class="stack-item">
+                <div class="label">MCP</div>
+                <div class="tech">mcp-go</div>
+                <div class="purpose">IDE tool protocol</div>
+            </div>
+            <div class="stack-item">
+                <div class="label">Container</div>
+                <div class="tech">Docker</div>
+                <div class="purpose">~50MB images</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta-section reveal">
+        <div class="cta-box">
+            <h2>Ready to Compile<br>Your First Agent?</h2>
+            <p>Get started in under 5 minutes. Ship an AI agent today.</p>
+            <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-bottom: 2rem;">
+                <a href="https://github.com/akashicode/kash" class="btn btn-primary">
+                    ⚡ View on GitHub
+                </a>
+                <a href="https://github.com/akashicode/kash#-quick-start" class="btn btn-secondary">
+                    📖 Read the Docs
+                </a>
+            </div>
+            <div class="cta-install">
+                go install github.com/akashicode/kash/cmd/kash@latest
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-inner">
+            <div class="footer-links">
+                <a href="https://github.com/akashicode/kash">GitHub</a>
+                <a href="https://github.com/akashicode/kash#-quick-start">Docs</a>
+                <a href="https://github.com/akashicode/kash/issues">Issues</a>
+                <a href="https://github.com/akashicode/kash/blob/main/LICENSE">MIT License</a>
+            </div>
+            <p class="footer-copy">
+                Built with ❤️ in Go. &copy; 2025 Kash Contributors.
+            </p>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script>
+        // Intersection Observer for reveal animations
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1 });
+
+        document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+            });
+        });
+
+        // Smooth scroll for nav links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

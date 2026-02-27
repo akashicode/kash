@@ -1,8 +1,16 @@
 # Kash Makefile
 
-BINARY=bin/kash
 CMD_DIR=./cmd/kash
 MODULE=github.com/akashicode/kash
+
+# Auto-detect .exe suffix on Windows
+ifeq ($(OS),Windows_NT)
+    EXE=.exe
+else
+    EXE=
+endif
+
+BINARY=bin/kash$(EXE)
 
 # Go build flags
 GOFLAGS=-trimpath
