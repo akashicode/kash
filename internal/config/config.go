@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 // ErrNilConfig is returned when a nil Config is provided.
@@ -195,10 +196,13 @@ llm:
   model: ""
 
 # Embedding provider (required) — must be OpenAI-compatible
+# Model is optional when using an embedding router.
+# Dimensions must be consistent between build and serve.
 embedder:
   base_url: ""
   api_key: ""
-  model: ""
+  model: ""       # optional — omit when using a router
+  dimensions: 1024 # default: 1024
 
 # Reranking provider (optional) — must be OpenAI-compatible
 reranker:
@@ -228,4 +232,38 @@ func IsConfigured() bool {
 		return false
 	}
 	return v.GetString("llm.api_key") != "" && v.GetString("embedder.api_key") != ""
+}
+
+// AgentYAMLDimensions reads runtime.embedder.dimensions from an agent.yaml file.
+// Returns 0 if the file doesn't exist or the field is not set.
+func AgentYAMLDimensions(path string) int {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	var parsed struct {
+		Runtime struct {
+			Embedder struct {
+				Dimensions int `yaml:"dimensions"`
+			} `yaml:"embedder"`
+		} `yaml:"runtime"`
+	}
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		return 0
+	}
+	return parsed.Runtime.Embedder.Dimensions
+}
+
+// ApplyAgentYAMLDimensions reads dimensions from agent.yaml and applies them
+// to the config if not already set via env/config.yaml. Ensures a default of 1024.
+func ApplyAgentYAMLDimensions(cfg *Config, agentYAMLPath string) {
+	if cfg.Embedder.Dimensions == 0 {
+		if d := AgentYAMLDimensions(agentYAMLPath); d > 0 {
+			cfg.Embedder.Dimensions = d
+		}
+	}
+	// Final default
+	if cfg.Embedder.Dimensions == 0 {
+		cfg.Embedder.Dimensions = 1024
+	}
 }

@@ -27,9 +27,9 @@ type AgentConfig struct {
 		SystemPrompt string `yaml:"system_prompt"`
 	} `yaml:"agent"`
 	Runtime struct {
-		LLM struct {
-			Model string `yaml:"model"`
-		} `yaml:"llm"`
+		Embedder struct {
+			Dimensions int `yaml:"dimensions"`
+		} `yaml:"embedder"`
 	} `yaml:"runtime"`
 	MCP struct {
 		Tools []struct {
@@ -74,6 +74,9 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load agent config: %w", err)
 	}
+
+	// Apply agent.yaml dimensions as fallback if not set via env/config
+	agentconfig.ApplyAgentYAMLDimensions(cfg.AppCfg, cfg.AgentYAMLPath)
 
 	// Initialize vector store
 	vs, err := vector.NewStoreFromPath(cfg.VectorStorePath, &cfg.AppCfg.Embedder)
@@ -121,6 +124,7 @@ func New(cfg Config) (*Server, error) {
 		"triples", gdb.Count(),
 		"llm_model", cfg.AppCfg.LLM.Model,
 		"embed_model", cfg.AppCfg.Embedder.Model,
+		"embed_dimensions", cfg.AppCfg.Embedder.Dimensions,
 	)
 
 	s.registerRoutes()

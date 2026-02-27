@@ -1,9 +1,13 @@
 package vector
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"runtime"
 
 	chromem "github.com/philippgille/chromem-go"
@@ -50,12 +54,7 @@ func NewStore(embedCfg *config.ProviderConfig) (*Store, error) {
 
 	db := chromem.NewDB()
 
-	embeddingFunc := chromem.NewEmbeddingFuncOpenAICompat(
-		embedCfg.BaseURL,
-		embedCfg.APIKey,
-		embedCfg.Model,
-		nil,
-	)
+	embeddingFunc := newEmbeddingFuncWithDimensions(embedCfg)
 
 	collection, err := db.CreateCollection("documents", nil, embeddingFunc)
 	if err != nil {
@@ -80,12 +79,7 @@ func NewStoreFromPath(path string, embedCfg *config.ProviderConfig) (*Store, err
 		return nil, fmt.Errorf("open persistent db at %q: %w", path, err)
 	}
 
-	embeddingFunc := chromem.NewEmbeddingFuncOpenAICompat(
-		embedCfg.BaseURL,
-		embedCfg.APIKey,
-		embedCfg.Model,
-		nil,
-	)
+	embeddingFunc := newEmbeddingFuncWithDimensions(embedCfg)
 
 	collection := db.GetCollection("documents", embeddingFunc)
 	if collection == nil {
@@ -114,12 +108,7 @@ func NewPersistentStore(path string, embedCfg *config.ProviderConfig) (*Store, e
 		return nil, fmt.Errorf("create persistent db at %q: %w", path, err)
 	}
 
-	embeddingFunc := chromem.NewEmbeddingFuncOpenAICompat(
-		embedCfg.BaseURL,
-		embedCfg.APIKey,
-		embedCfg.Model,
-		nil,
-	)
+	embeddingFunc := newEmbeddingFuncWithDimensions(embedCfg)
 
 	collection, err := db.CreateCollection("documents", nil, embeddingFunc)
 	if err != nil {
@@ -192,4 +181,84 @@ func (s *Store) Query(ctx context.Context, query string, topK int) ([]SearchResu
 // Count returns the number of documents in the store.
 func (s *Store) Count() int {
 	return s.collection.Count()
+}
+
+// embedRequest is the request body for OpenAI-compatible embeddings.
+type embedRequest struct {
+	Input      string `json:"input"`
+	Model      string `json:"model,omitempty"`
+	Dimensions int    `json:"dimensions,omitempty"`
+}
+
+// embedResponse is the response body from an OpenAI-compatible embeddings API.
+type embedResponse struct {
+	Data []struct {
+		Embedding []float32 `json:"embedding"`
+	} `json:"data"`
+}
+
+// newEmbeddingFuncWithDimensions returns a chromem-go EmbeddingFunc that sends
+// the "dimensions" parameter in the embedding API request. This ensures
+// consistent vector sizes regardless of the upstream model's native dimensions.
+// If Model is empty it is omitted from the request (router-friendly).
+func newEmbeddingFuncWithDimensions(cfg *config.ProviderConfig) chromem.EmbeddingFunc {
+	client := &http.Client{}
+
+	return func(ctx context.Context, text string) ([]float32, error) {
+		reqBody := embedRequest{
+			Input:      text,
+			Dimensions: cfg.Dimensions,
+		}
+		if cfg.Model != "" {
+			reqBody.Model = cfg.Model
+		}
+
+		body, err := json.Marshal(reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("marshal embedding request: %w", err)
+		}
+
+		url := cfg.BaseURL + "/embeddings"
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("create embedding request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if cfg.APIKey != "" {
+			req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("embedding request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("read embedding response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("embedding API returned status %d: %s", resp.StatusCode, string(respBody))
+		}
+
+		var embedResp embedResponse
+		if err := json.Unmarshal(respBody, &embedResp); err != nil {
+			return nil, fmt.Errorf("unmarshal embedding response: %w", err)
+		}
+
+		if len(embedResp.Data) == 0 || len(embedResp.Data[0].Embedding) == 0 {
+			return nil, errors.New("embedding API returned no embeddings")
+		}
+
+		v := embedResp.Data[0].Embedding
+
+		// Truncate or validate dimension
+		if cfg.Dimensions > 0 && len(v) > cfg.Dimensions {
+			v = v[:cfg.Dimensions]
+		}
+
+		return v, nil
+	}
 }

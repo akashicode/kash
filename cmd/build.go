@@ -31,7 +31,25 @@ var buildCmd = &cobra.Command{
 	RunE: runBuild,
 }
 
+var buildDir string
+
+func init() {
+	buildCmd.Flags().StringVarP(&buildDir, "dir", "d", ".", "Path to the agent project directory")
+}
+
 func runBuild(cmd *cobra.Command, args []string) error {
+	// Change to project directory if specified
+	if buildDir != "." {
+		abs, err := filepath.Abs(buildDir)
+		if err != nil {
+			return fmt.Errorf("resolve directory %q: %w", buildDir, err)
+		}
+		if err := os.Chdir(abs); err != nil {
+			return fmt.Errorf("change to directory %q: %w", abs, err)
+		}
+		fmt.Printf("Working directory: %s\n", abs)
+	}
+
 	ctx := context.Background()
 
 	// Load unified config (env vars take priority over config.yaml)
@@ -52,8 +70,12 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return errors.New("data/ directory not found — run 'agentforge init <name>' first")
 	}
 
+	// Apply dimensions from agent.yaml (canonical source) if not already set
+	agentconfig.ApplyAgentYAMLDimensions(cfg, "agent.yaml")
+
 	fmt.Println("Agent-Forge Build Pipeline")
 	fmt.Println("==========================")
+	fmt.Printf("Embedding dimensions: %d\n", cfg.Embedder.Dimensions)
 
 	// Step 1: Load documents
 	fmt.Println("\n[1/5] Loading documents from data/...")

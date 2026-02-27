@@ -18,10 +18,11 @@ var ErrNilEmbedConfig = errors.New("embedder config is nil")
 
 // Embedder generates vector embeddings via an OpenAI-compatible API.
 type Embedder struct {
-	baseURL string
-	apiKey  string
-	model   string
-	client  *http.Client
+	baseURL    string
+	apiKey     string
+	model      string
+	dimensions int
+	client     *http.Client
 }
 
 // NewEmbedder creates a new Embedder from a ProviderConfig.
@@ -35,20 +36,20 @@ func NewEmbedder(cfg *config.ProviderConfig) (*Embedder, error) {
 	if cfg.APIKey == "" {
 		return nil, errors.New("embedder api_key is required")
 	}
-	if cfg.Model == "" {
-		return nil, errors.New("embedder model is required")
-	}
+	// Model is optional — embedding routers don't need it
 	return &Embedder{
-		baseURL: strings.TrimSuffix(cfg.BaseURL, "/"),
-		apiKey:  cfg.APIKey,
-		model:   cfg.Model,
-		client:  &http.Client{},
+		baseURL:    strings.TrimSuffix(cfg.BaseURL, "/"),
+		apiKey:     cfg.APIKey,
+		model:      cfg.Model,
+		dimensions: cfg.Dimensions,
+		client:     &http.Client{},
 	}, nil
 }
 
 type embedRequest struct {
-	Input []string `json:"input"`
-	Model string   `json:"model"`
+	Input      []string `json:"input"`
+	Model      string   `json:"model,omitempty"`
+	Dimensions int      `json:"dimensions,omitempty"`
 }
 
 type embedResponse struct {
@@ -67,7 +68,15 @@ func (e *Embedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32,
 		return [][]float32{}, nil
 	}
 
-	reqBody, err := json.Marshal(embedRequest{Input: texts, Model: e.model})
+	embedReq := embedRequest{Input: texts}
+	if e.model != "" {
+		embedReq.Model = e.model
+	}
+	if e.dimensions > 0 {
+		embedReq.Dimensions = e.dimensions
+	}
+
+	reqBody, err := json.Marshal(embedReq)
 	if err != nil {
 		return nil, fmt.Errorf("marshal embed request: %w", err)
 	}

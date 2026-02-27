@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -12,6 +14,7 @@ import (
 
 var (
 	serveAgentYAML string
+	serveDir       string
 )
 
 var serveCmd = &cobra.Command{
@@ -32,10 +35,23 @@ then falls back to ~/.agentforge/config.yaml.`,
 
 func init() {
 	serveCmd.Flags().StringVar(&serveAgentYAML, "agent", "agent.yaml", "Path to agent.yaml")
+	serveCmd.Flags().StringVarP(&serveDir, "dir", "d", ".", "Path to the agent project directory")
 	rootCmd.AddCommand(serveCmd)
 }
 
 func runServe(_ *cobra.Command, _ []string) error {
+	// Change to project directory if specified
+	if serveDir != "." {
+		abs, err := filepath.Abs(serveDir)
+		if err != nil {
+			return fmt.Errorf("resolve directory %q: %w", serveDir, err)
+		}
+		if err := os.Chdir(abs); err != nil {
+			return fmt.Errorf("change to directory %q: %w", abs, err)
+		}
+		fmt.Printf("Working directory: %s\n", abs)
+	}
+
 	// Load unified config (env vars take priority over config.yaml)
 	cfg, err := agentconfig.Load()
 	if err != nil {

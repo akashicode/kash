@@ -131,12 +131,12 @@ agent:
     Always ground your responses in the retrieved context.
     Be precise, helpful, and cite your knowledge when possible.
 
-# Runtime model preferences (overridden by env vars)
+# Runtime settings
+# Model names are resolved from env vars / config.yaml (not here).
+# Only embedding dimensions need to be consistent between build and serve.
 runtime:
-  llm:
-    model: "gpt-4o"
   embedder:
-    model: "voyage-3"
+    dimensions: 1024  # must match at build AND serve time
 
 # MCP tool definitions (auto-populated by 'agentforge build')
 mcp:
@@ -186,6 +186,7 @@ ENV LLM_MODEL=""
 ENV EMBED_BASE_URL=""
 ENV EMBED_API_KEY=""
 ENV EMBED_MODEL=""
+ENV EMBED_DIMENSIONS="1024"
 # Optional reranker:
 ENV RERANK_BASE_URL=""
 ENV RERANK_API_KEY=""
@@ -239,9 +240,11 @@ LLM_API_KEY=sk-your-key-here
 LLM_MODEL=gpt-4o
 
 # Embedding Provider (required) - must be OpenAI-compatible
+# Model is optional when using an embedding router.
 EMBED_BASE_URL=https://api.voyageai.com/v1
 EMBED_API_KEY=pa-your-key-here
-EMBED_MODEL=voyage-3
+EMBED_MODEL=
+EMBED_DIMENSIONS=1024
 
 # Reranking Provider (optional) - must be OpenAI-compatible
 # RERANK_BASE_URL=
