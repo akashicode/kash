@@ -311,6 +311,71 @@ curl http://localhost:8000/rpc/agent \
 
 > 🧪 *A2A protocol implementation is complete. Integration testing with AutoGen/CrewAI is in progress.*
 
+---
+
+## 🔐 Security — API Key Auth
+
+By default all endpoints are open (ideal for local dev). Set `AGENT_API_KEY` to enable authentication on all endpoints except `/health`.
+
+```bash
+export AGENT_API_KEY="my-secret-key"
+agentforge serve
+```
+
+The key is passed as a standard Bearer token — compatible with all three interfaces:
+
+### curl / any HTTP client
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer my-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}'
+```
+
+### OpenAI Python / JS SDK
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="my-secret-key",   # ← AGENT_API_KEY goes here
+)
+```
+
+```ts
+import OpenAI from 'openai';
+const client = new OpenAI({
+  baseURL: 'http://localhost:8000/v1',
+  apiKey: 'my-secret-key',
+});
+```
+
+### MCP clients (Cursor, Claude Desktop, Windsurf)
+```json
+{
+  "mcpServers": {
+    "my-agent": {
+      "url": "http://localhost:8000/mcp",
+      "env": {
+        "API_KEY": "my-secret-key"
+      }
+    }
+  }
+}
+```
+
+### A2A clients
+```bash
+curl http://localhost:8000/rpc/agent \
+  -H "Authorization: Bearer my-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"agent.info"}'
+```
+
+When `AGENT_API_KEY` is not set, everything works without any header (open access).
+
+---
+
 ### Health Check — `GET /health`
 
 ```bash
@@ -329,9 +394,12 @@ curl http://localhost:8000/health
   "llm_model": "gpt-4o",
   "embed_model": "voyage-3",
   "reranker_enabled": false,
+  "auth_enabled": true,
   "time": "2026-02-27T10:00:00Z"
 }
 ```
+
+> `/health` is always public — no auth required even when `AGENT_API_KEY` is set.
 
 ---
 
@@ -348,7 +416,6 @@ export LLM_API_KEY="sk-..."
 export LLM_MODEL="gpt-4o"
 export EMBED_BASE_URL="https://api.voyageai.com/v1"
 export EMBED_API_KEY="pa-..."
-export EMBED_DIMENSIONS=1024
 
 # Build the knowledge base
 agentforge build
@@ -388,7 +455,7 @@ docker run -p 8000:8000 \
   -e LLM_MODEL="gpt-4o" \
   -e EMBED_BASE_URL="https://api.voyageai.com/v1" \
   -e EMBED_API_KEY="pa-..." \
-  -e EMBED_DIMENSIONS=1024 \
+  -e AGENT_API_KEY="my-secret-key" \
   my-agent:latest
 ```
 
@@ -445,10 +512,10 @@ Used by `agentforge serve` and Docker containers.
 | `EMBED_BASE_URL` | ✅ | Embedding API endpoint |
 | `EMBED_API_KEY` | ✅ | Embedding API key |
 | `EMBED_MODEL` | ❌ | Embedding model (optional if using a router) |
-| `EMBED_DIMENSIONS` | ❌ | Embedding dimensions (default: from `agent.yaml`) |
 | `RERANK_BASE_URL` | ❌ | Reranker endpoint |
 | `RERANK_API_KEY` | ❌ | Reranker API key |
 | `RERANK_MODEL` | ❌ | Reranker model name |
+| `AGENT_API_KEY` | ❌ | Enable auth — all endpoints (except `/health`) require `Authorization: Bearer <key>` |
 | `PORT` | ❌ | Override listen port (default: `8000`) |
 
 ### Agent Config: `agent.yaml`

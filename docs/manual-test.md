@@ -137,7 +137,71 @@ curl http://localhost:8000/mcp
 # A2A — agent-to-agent JSON-RPC
 curl -X POST http://localhost:8000/rpc/agent `
   -H "Content-Type: application/json" `
-  -d '{"jsonrpc":"2.0","method":"agent/query","params":{"query":"test"},"id":1}'
+  -d '{"jsonrpc":"2.0","method":"agent.info","id":1}'
+```
+
+---
+
+## Step 5b: Test API key auth (optional)
+
+Set `AGENT_API_KEY` to enable authentication. `/health` always stays public.
+
+```powershell
+$env:AGENT_API_KEY="my-test-secret"
+agentforge serve
+```
+
+**Without the key — should get 401:**
+```powershell
+curl -X POST http://localhost:8000/v1/chat/completions `
+  -H "Content-Type: application/json" `
+  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}'
+# → {"error":"invalid or missing API key — pass via Authorization: Bearer <AGENT_API_KEY>"}
+```
+
+**With the key — should succeed:**
+```powershell
+# curl
+curl -X POST http://localhost:8000/v1/chat/completions `
+  -H "Authorization: Bearer my-test-secret" `
+  -H "Content-Type: application/json" `
+  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}'
+
+# A2A with auth
+curl -X POST http://localhost:8000/rpc/agent `
+  -H "Authorization: Bearer my-test-secret" `
+  -H "Content-Type: application/json" `
+  -d '{"jsonrpc":"2.0","id":1,"method":"agent.info"}'
+
+# Health is always public (no header needed)
+curl http://localhost:8000/health
+# → includes "auth_enabled": true
+```
+
+**OpenAI Python SDK with API key:**
+```python
+from openai import OpenAI
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="my-test-secret",  # ← AGENT_API_KEY goes here
+)
+resp = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "what do you know?"}]
+)
+print(resp.choices[0].message.content)
+```
+
+**MCP config with API key (Cursor / Claude Desktop):**
+```json
+{
+  "mcpServers": {
+    "my-test-agent": {
+      "url": "http://localhost:8000/mcp",
+      "env": { "API_KEY": "my-test-secret" }
+    }
+  }
+}
 ```
 
 ---
@@ -201,3 +265,4 @@ curl -X POST http://localhost:8000/v1/chat/completions `
 | Build fails with `no supported documents` | `data/` dir is empty | Add at least one `.md`, `.txt`, or `.pdf` file |
 | Container exits immediately | Missing env vars in `.env` | Copy `.env.example` → `.env` and fill all required keys |
 | `agent.yaml not found` on build | Not in the agent project directory | `cd my-test-agent` before running `agentforge build` |
+| `401 unauthorized` on all endpoints | `AGENT_API_KEY` is set but not passed | Add `-H "Authorization: Bearer <key>"` to requests, or unset the env var for local dev |
