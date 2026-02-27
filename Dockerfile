@@ -1,5 +1,7 @@
-# Agent-Forge CLI Dockerfile
-# This builds the agent-forge CLI binary itself (not an agent container)
+# Agent-Forge Dockerfile
+# Builds the single agentforge binary (used for both CLI and server).
+# This image is published to ghcr.io/agent-forge/agent-forge:latest
+# and referenced by generated agent Dockerfiles via COPY --from.
 
 FROM golang:1.22-alpine AS builder
 

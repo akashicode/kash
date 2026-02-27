@@ -71,6 +71,7 @@ The Go runtime multiplexes on port 8000:
 3. **Docker-First Distribution**: Single ~50MB container with baked databases.
 4. **Build vs Runtime**: Data ingestion at `build` time; runtime only serves queries.
 5. **BYOM (Bring Your Own Model)**: Runtime requires user-provided API keys; no bundled inference.
+6. **Single Binary**: One `agentforge` binary handles CLI (`init`, `build`) and server (`serve`). Agent Dockerfiles pull this binary from `ghcr.io/agent-forge/agent-forge:latest` via `COPY --from`; no separate server binary exists.
 
 ## Configuration
 
@@ -111,7 +112,9 @@ agent-forge/
 ├── cmd/                    # Cobra commands
 │   ├── root.go            # Root command, Viper config
 │   ├── init.go            # `agentforge init`
-│   └── build.go           # `agentforge build`
+│   ├── build.go           # `agentforge build`
+│   ├── serve.go           # `agentforge serve` (runtime server)
+│   └── version.go         # `agentforge version`
 ├── internal/              # Private application code
 │   ├── config/            # Viper configuration
 │   ├── vector/            # chromem-go operations

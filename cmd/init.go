@@ -126,18 +126,12 @@ server:
 
 func generateDockerfile() string {
 	return `# Agent-Forge Runtime Dockerfile
-# Multi-stage build for minimal image size (~50MB)
+# Packages compiled databases with the agentforge binary (~50MB)
+#
+# The agentforge binary is a single binary that acts as both CLI and server.
+# At runtime it executes "agentforge serve" which starts the HTTP server
+# exposing REST, MCP, and A2A interfaces on port 8000.
 
-# Stage 1: Build the Go runtime binary
-FROM golang:1.22-alpine AS builder
-
-WORKDIR /build
-
-# Copy the agent-forge runtime binary source
-# The runtime is embedded in the agent-forge base image
-COPY . .
-
-# Stage 2: Minimal runtime image
 FROM alpine:3.19
 
 # Install CA certificates for HTTPS calls to LLM APIs
@@ -145,9 +139,10 @@ RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR /app
 
-# Copy the pre-built agent-forge server binary
-# This is the standard agent-forge runtime base image
-COPY --from=ghcr.io/agent-forge/runtime:latest /agentforge-server /app/agentforge-server
+# Copy the agentforge binary from the published container image.
+# This is the same single binary used for CLI commands (init, build)
+# and for serving (agentforge serve).
+COPY --from=ghcr.io/agent-forge/agent-forge:latest /app/agentforge /app/agentforge
 
 # Copy the compiled database artifacts from 'agentforge build'
 COPY data/memory.chromem/ /app/data/memory.chromem/
@@ -174,7 +169,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
   CMD wget -qO- http://localhost:8000/health || exit 1
 
-ENTRYPOINT ["/app/agentforge-server"]
+ENTRYPOINT ["/app/agentforge", "serve"]
 `
 }
 
