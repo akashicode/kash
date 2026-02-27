@@ -477,7 +477,7 @@ agentforge serve --port 8000 --agent agent.yaml
 agentforge v1.2.0
   commit:     a3f9c12
   built:      2026-02-27T10:00:00Z
-  go version: go1.22.0
+  go version: go1.25.0
   os/arch:    linux/amd64
 ```
 
