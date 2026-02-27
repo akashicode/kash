@@ -59,10 +59,6 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	if err := agentconfig.ValidateBuild(cfg); err != nil {
-		return err
-	}
-
 	// Ensure we're in a Kash agent project
 	if _, err := os.Stat("agent.yaml"); os.IsNotExist(err) {
 		return errors.New("agent.yaml not found — run 'kash init <name>' first")
@@ -71,8 +67,12 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return errors.New("data/ directory not found — run 'kash init <name>' first")
 	}
 
-	// Apply dimensions from agent.yaml (canonical source) if not already set
+	// Apply dimensions from agent.yaml (canonical source) before validation
 	agentconfig.ApplyAgentYAMLDimensions(cfg, "agent.yaml")
+
+	if err := agentconfig.ValidateBuild(cfg); err != nil {
+		return err
+	}
 
 	display.Header("⚡ Kash Build Pipeline")
 	fmt.Println()
