@@ -1,0 +1,33 @@
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build artifacts
+coverage.out
+coverage.html
+
+# Go test artifacts
+*.test
+*.prof
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Agent-Forge compiled databases (project-specific, not source code)
+data/memory.chromem/
+data/knowledge.cayley/
+
+# OS
+.DS_Store
+Thumbs.db

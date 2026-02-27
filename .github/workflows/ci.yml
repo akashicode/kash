@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  build:
+    name: Build (cross-platform)
+    runs-on: ubuntu-latest
+    needs: test
+
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          BINARY_NAME=agent-forge
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME=agent-forge.exe
+          fi
+          go build \
+            -trimpath \
+            -ldflags "-s -w \
+              -X github.com/agent-forge/agent-forge/cmd.version=dev \
+              -X github.com/agent-forge/agent-forge/cmd.commit=$(git rev-parse --short HEAD) \
+              -X github.com/agent-forge/agent-forge/cmd.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o "bin/${BINARY_NAME}" \
+            ./cmd/agent-forge
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-forge_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: bin/

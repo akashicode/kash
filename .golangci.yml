@@ -1,0 +1,60 @@
+# GolangCI-Lint configuration for Agent-Forge
+# Install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+run:
+  timeout: 5m
+  go: "1.22"
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - gocritic
+    - misspell
+    - revive
+    - exhaustive
+    - godot
+    - noctx
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - unparam
+    - whitespace
+
+linters-settings:
+  goimports:
+    local-prefixes: github.com/agent-forge/agent-forge
+
+  revive:
+    rules:
+      - name: exported
+        disabled: false
+      - name: var-naming
+        disabled: false
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+issues:
+  exclude-rules:
+    # Allow fmt.Println in cmd package (CLI output)
+    - path: cmd/
+      linters:
+        - forbidigo
+    # Allow test files to use assert without error check
+    - path: _test\.go
+      linters:
+        - errcheck

@@ -1,0 +1,157 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: linux_amd64
+            archive: tar.gz
+          - goos: linux
+            goarch: arm64
+            suffix: linux_arm64
+            archive: tar.gz
+          - goos: darwin
+            goarch: amd64
+            suffix: darwin_amd64
+            archive: tar.gz
+          - goos: darwin
+            goarch: arm64
+            suffix: darwin_arm64
+            archive: tar.gz
+          - goos: windows
+            goarch: amd64
+            suffix: windows_amd64
+            archive: zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Set build variables
+        id: vars
+        run: |
+          echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+          echo "COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          BINARY_NAME=agent-forge
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME=agent-forge.exe
+          fi
+          go build \
+            -trimpath \
+            -ldflags "-s -w \
+              -X github.com/agent-forge/agent-forge/cmd.version=${VERSION} \
+              -X github.com/agent-forge/agent-forge/cmd.commit=${COMMIT} \
+              -X github.com/agent-forge/agent-forge/cmd.buildDate=${BUILD_DATE}" \
+            -o "dist/${BINARY_NAME}" \
+            ./cmd/agent-forge
+
+      - name: Package archive (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          cd dist
+          tar -czf "agent-forge_${{ matrix.suffix }}.tar.gz" agent-forge
+          sha256sum "agent-forge_${{ matrix.suffix }}.tar.gz" >> checksums.txt
+
+      - name: Package archive (zip)
+        if: matrix.archive == 'zip'
+        run: |
+          cd dist
+          zip "agent-forge_${{ matrix.suffix }}.zip" agent-forge.exe
+          sha256sum "agent-forge_${{ matrix.suffix }}.zip" >> checksums.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-forge_${{ matrix.suffix }}
+          path: |
+            dist/agent-forge_${{ matrix.suffix }}.*
+            dist/checksums.txt
+
+  release:
+    name: Create GitHub Release
+    needs: build-and-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Merge checksums
+        run: |
+          cat dist/checksums.txt | sort -u > dist/checksums_all.txt
+          mv dist/checksums_all.txt dist/checksums.txt
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          PREV_TAG=$(git tag --sort=-version:refname | sed -n '2p')
+          echo "## What's Changed" > release_notes.md
+          if [ -n "$PREV_TAG" ]; then
+            git log --oneline "${PREV_TAG}..HEAD" \
+              --pretty=format:"- %s ([%h](https://github.com/${{ github.repository }}/commit/%H))" \
+              >> release_notes.md
+          else
+            echo "- Initial release" >> release_notes.md
+          fi
+          echo "" >> release_notes.md
+          echo "## Installation" >> release_notes.md
+          echo "" >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "# Linux / macOS" >> release_notes.md
+          echo "curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/agent-forge_linux_amd64.tar.gz | tar -xz" >> release_notes.md
+          echo "sudo mv agent-forge /usr/local/bin/" >> release_notes.md
+          echo '```' >> release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "agent-forge ${{ github.ref_name }}"
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            dist/agent-forge_linux_amd64.tar.gz
+            dist/agent-forge_linux_arm64.tar.gz
+            dist/agent-forge_darwin_amd64.tar.gz
+            dist/agent-forge_darwin_arm64.tar.gz
+            dist/agent-forge_windows_amd64.zip
+            dist/checksums.txt
