@@ -73,9 +73,9 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          BINARY_NAME=agent-forge
+          BINARY_NAME=agentforge
           if [ "${{ matrix.goos }}" = "windows" ]; then
-            BINARY_NAME=agent-forge.exe
+            BINARY_NAME=agentforge.exe
           fi
           go build \
             -trimpath \
@@ -89,5 +89,5 @@ jobs:
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: agent-forge_${{ matrix.goos }}_${{ matrix.goarch }}
+          name: agentforge_${{ matrix.goos }}_${{ matrix.goarch }}
           path: bin/

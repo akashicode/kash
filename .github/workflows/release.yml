@@ -80,22 +80,22 @@ jobs:
         if: matrix.archive == 'tar.gz'
         run: |
           cd dist
-          tar -czf "agent-forge_${{ matrix.suffix }}.tar.gz" agentforge
-          sha256sum "agent-forge_${{ matrix.suffix }}.tar.gz" >> checksums.txt
+          tar -czf "agentforge_${{ matrix.suffix }}.tar.gz" agentforge
+          sha256sum "agentforge_${{ matrix.suffix }}.tar.gz" >> checksums.txt
 
       - name: Package archive (zip)
         if: matrix.archive == 'zip'
         run: |
           cd dist
-          zip "agent-forge_${{ matrix.suffix }}.zip" agentforge.exe
-          sha256sum "agent-forge_${{ matrix.suffix }}.zip" >> checksums.txt
+          zip "agentforge_${{ matrix.suffix }}.zip" agentforge.exe
+          sha256sum "agentforge_${{ matrix.suffix }}.zip" >> checksums.txt
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: agent-forge_${{ matrix.suffix }}
+          name: agentforge_${{ matrix.suffix }}
           path: |
-            dist/agent-forge_${{ matrix.suffix }}.*
+            dist/agentforge_${{ matrix.suffix }}.*
             dist/checksums.txt
 
   release:
@@ -138,23 +138,23 @@ jobs:
           echo "" >> release_notes.md
           echo '```bash' >> release_notes.md
           echo "# Linux / macOS" >> release_notes.md
-          echo "curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/agent-forge_linux_amd64.tar.gz | tar -xz" >> release_notes.md
+          echo "curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/agentforge_linux_amd64.tar.gz | tar -xz" >> release_notes.md
           echo "sudo mv agentforge /usr/local/bin/" >> release_notes.md
           echo '```' >> release_notes.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "agent-forge ${{ github.ref_name }}"
+          name: "agentforge ${{ github.ref_name }}"
           body_path: release_notes.md
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
-            dist/agent-forge_linux_amd64.tar.gz
-            dist/agent-forge_linux_arm64.tar.gz
-            dist/agent-forge_darwin_amd64.tar.gz
-            dist/agent-forge_darwin_arm64.tar.gz
-            dist/agent-forge_windows_amd64.zip
+            dist/agentforge_linux_amd64.tar.gz
+            dist/agentforge_linux_arm64.tar.gz
+            dist/agentforge_darwin_amd64.tar.gz
+            dist/agentforge_darwin_arm64.tar.gz
+            dist/agentforge_windows_amd64.zip
             dist/checksums.txt
 
   docker-publish:
