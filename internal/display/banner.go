@@ -59,6 +59,9 @@ type ServerInfo struct {
 	RerankModel   string
 	RerankBaseURL string
 
+	// Security
+	AuthEnabled bool
+
 	// Server
 	Port int
 }
@@ -119,6 +122,11 @@ func PrintBanner(info ServerInfo) {
 		printKV(w, "Rerank Endpoint", maskURL(info.RerankBaseURL), dim+white)
 	} else {
 		printKVColored(w, "Reranker", "✗ disabled", dim+white)
+	}
+	if info.AuthEnabled {
+		printKVColored(w, "Auth", "✓ bearer token", brightGreen)
+	} else {
+		printKVColored(w, "Auth", "✗ open (set AGENT_AUTH_TOKEN to enable)", brightYellow)
 	}
 	fmt.Fprintln(w)
 

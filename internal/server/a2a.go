@@ -137,7 +137,8 @@ func (s *Server) a2aQuery(r *http.Request, params json.RawMessage) (interface{},
 	// Call LLM (simplified via Complete)
 	answer, err := s.llmClient.Complete(ctx, systemPrompt+"\n\n"+retrievedCtx, p.Query)
 	if err != nil {
-		return nil, &A2AError{Code: -32603, Message: "LLM error: " + err.Error()}
+		s.log.Error("A2A LLM call failed", "error", err)
+		return nil, &A2AError{Code: -32603, Message: "upstream LLM request failed"}
 	}
 
 	return map[string]interface{}{

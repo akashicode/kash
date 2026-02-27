@@ -55,6 +55,7 @@ type Server struct {
 	appCfg      *agentconfig.Config
 	mux         *http.ServeMux
 	log         *slog.Logger
+	authToken   string // optional bearer token; empty = no auth
 }
 
 // Config holds the runtime server configuration.
@@ -109,6 +110,9 @@ func New(cfg Config) (*Server, error) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
+	// Optional bearer auth token
+	authToken := os.Getenv("AGENT_AUTH_TOKEN")
+
 	s := &Server{
 		vectorStore: vs,
 		graphDB:     gdb,
@@ -118,6 +122,7 @@ func New(cfg Config) (*Server, error) {
 		appCfg:      cfg.AppCfg,
 		mux:         http.NewServeMux(),
 		log:         logger,
+		authToken:   authToken,
 	}
 
 	logger.Info("server initialized",
@@ -127,6 +132,7 @@ func New(cfg Config) (*Server, error) {
 		"llm_model", cfg.AppCfg.LLM.Model,
 		"embed_model", cfg.AppCfg.Embedder.Model,
 		"embed_dimensions", cfg.AppCfg.Embedder.Dimensions,
+		"auth_enabled", authToken != "",
 	)
 
 	s.registerRoutes()
@@ -150,13 +156,51 @@ func (s *Server) Info() display.ServerInfo {
 		RerankModel:      s.appCfg.Reranker.Model,
 		RerankBaseURL:    s.appCfg.Reranker.BaseURL,
 		Port:             s.appCfg.Port,
+		AuthEnabled:      s.authToken != "",
 	}
 	return info
 }
 
 // Handler returns the HTTP handler for the server.
 func (s *Server) Handler() http.Handler {
-	return s.loggingMiddleware(corsMiddleware(s.mux))
+	return s.loggingMiddleware(corsMiddleware(s.authMiddleware(s.mux)))
+}
+
+// authMiddleware enforces bearer token auth when AGENT_AUTH_TOKEN is set.
+// The /health endpoint is always public. All other endpoints require
+// Authorization: Bearer <token> when auth is enabled.
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// No token configured — open access
+		if s.authToken == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// /health is always public
+		if r.URL.Path == "/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// CORS preflight must pass through
+		if r.Method == http.MethodOptions {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Check Authorization header
+		auth := r.Header.Get("Authorization")
+		const prefix = "Bearer "
+		if !strings.HasPrefix(auth, prefix) || strings.TrimPrefix(auth, prefix) != s.authToken {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized — set Authorization: Bearer <AGENT_AUTH_TOKEN>"})
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 // loggingMiddleware logs every inbound HTTP request with colorful output.
@@ -259,6 +303,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"llm_model":        s.appCfg.LLM.Model,
 		"embed_model":      s.appCfg.Embedder.Model,
 		"reranker_enabled": s.appCfg.Reranker.BaseURL != "",
+		"auth_enabled":     s.authToken != "",
 		"time":             time.Now().UTC().Format(time.RFC3339),
 	}
 
@@ -315,7 +360,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	response, err := s.llmClient.ChatWithContext(ctx, augmented, "")
 	if err != nil {
 		s.log.Error("LLM call failed", "error", err)
-		http.Error(w, "LLM error: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, "upstream LLM request failed", http.StatusBadGateway)
 		return
 	}
 	s.log.Info("LLM response received", "length", len(response))
@@ -376,7 +421,9 @@ func (s *Server) handleStreamingCompletion(w http.ResponseWriter, r *http.Reques
 	})
 
 	if err != nil {
-		fmt.Fprintf(w, "data: {\"error\": \"%s\"}\n\n", err.Error())
+		s.log.Error("streaming LLM error", "error", err)
+		errPayload, _ := json.Marshal(map[string]string{"error": "upstream LLM request failed"})
+		fmt.Fprintf(w, "data: %s\n\n", errPayload)
 		flusher.Flush()
 		return
 	}

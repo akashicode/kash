@@ -213,7 +213,7 @@ reranker:
 # Server port (default: 8000)
 port: 8000
 `
-	if err := os.WriteFile(cfgPath, []byte(skeleton), 0644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(skeleton), 0600); err != nil {
 		return false, fmt.Errorf("write config file: %w", err)
 	}
 	return true, nil
