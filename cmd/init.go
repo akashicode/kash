@@ -70,13 +70,19 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("write README.md: %w", err)
 	}
 
+	// Write docker-compose.yml
+	if err := writeFile(filepath.Join(projectDir, "docker-compose.yml"), generateDockerCompose(name)); err != nil {
+		return fmt.Errorf("write docker-compose.yml: %w", err)
+	}
+
 	fmt.Printf("\nProject created successfully!\n\n")
 	fmt.Printf("Next steps:\n")
 	fmt.Printf("  1. cd %s\n", name)
 	fmt.Printf("  2. Add documents to the data/ directory\n")
 	fmt.Printf("  3. Edit agent.yaml to configure your agent's persona\n")
-	fmt.Printf("  4. Run: agentforge build\n")
-	fmt.Printf("  5. Run: docker build -t %s:latest .\n", name)
+	fmt.Printf("  4. Copy .env.example to .env and fill in your API keys\n")
+	fmt.Printf("  5. Run: agentforge build\n")
+	fmt.Printf("  6. Run: docker compose up --build\n")
 
 	return nil
 }
@@ -171,6 +177,34 @@ ENTRYPOINT ["/app/agentforge", "serve"]
 `
 }
 
+func generateDockerCompose(name string) string {
+	slug := strings.ToLower(strings.ReplaceAll(name, " ", "-"))
+	return fmt.Sprintf(`# docker-compose.yml
+# Builds and runs the %s agent locally.
+#
+# Usage:
+#   1. Copy .env.example to .env and fill in your API keys
+#   2. Run: agentforge build
+#   3. Run: docker compose up --build
+
+services:
+  agent:
+    build: .
+    image: %s:latest
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+`, name, slug)
+}
+
 func generateEnvExample() string {
 	return `# Agent-Forge Runtime Environment Variables
 # Copy this to .env and fill in your values
@@ -252,6 +286,15 @@ An expert AI agent built with [Agent-Forge](https://github.com/agent-forge/agent
    `+"```"+`
 
 ### Run
+
+**Easy way — Docker Compose:**
+
+`+"```"+`bash
+cp .env.example .env   # fill in your API keys
+docker compose up --build
+`+"```"+`
+
+**Manual — docker run:**
 
 `+"```"+`bash
 docker run -p 8000:8000 \
