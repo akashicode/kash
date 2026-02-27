@@ -15,7 +15,7 @@ COPY . .
 # Build the binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -trimpath -ldflags="-s -w" \
-    -o /agent-forge ./cmd/agent-forge
+    -o /agentforge ./cmd/agent-forge
 
 # --- Runtime stage ---
 FROM alpine:3.19
@@ -24,7 +24,7 @@ RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR /app
 
-COPY --from=builder /agent-forge /app/agent-forge
+COPY --from=builder /agentforge /app/agentforge
 
 # Runtime API credentials (must be provided at run time)
 ENV LLM_BASE_URL=""
@@ -42,4 +42,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
   CMD wget -qO- http://localhost:8000/health || exit 1
 
-ENTRYPOINT ["/app/agent-forge", "serve"]
+ENTRYPOINT ["/app/agentforge", "serve"]

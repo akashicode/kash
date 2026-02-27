@@ -46,10 +46,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	// Ensure we're in an agent-forge project
 	if _, err := os.Stat("agent.yaml"); os.IsNotExist(err) {
-		return errors.New("agent.yaml not found — run 'agent-forge init <name>' first")
+		return errors.New("agent.yaml not found — run 'agentforge init <name>' first")
 	}
 	if _, err := os.Stat("data"); os.IsNotExist(err) {
-		return errors.New("data/ directory not found — run 'agent-forge init <name>' first")
+		return errors.New("data/ directory not found — run 'agentforge init <name>' first")
 	}
 
 	fmt.Println("Agent-Forge Build Pipeline")

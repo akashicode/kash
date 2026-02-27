@@ -167,10 +167,7 @@ func (c *Chunker) SplitBySentence(text, source string) ([]Chunk, error) {
 
 func buildChunkID(source string, idx int) string {
 	if source == "" {
-		return strings.ReplaceAll(
-			strings.ToLower(strings.ReplaceAll(source, " ", "_")),
-			"/", "_",
-		) + "_" + itoa(idx)
+		return "chunk_" + itoa(idx)
 	}
 	// Sanitize source for use as an ID prefix
 	sanitized := strings.ReplaceAll(source, "/", "_")

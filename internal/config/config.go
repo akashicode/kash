@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"os"
 
 	"github.com/spf13/viper"
 )
@@ -48,19 +49,19 @@ func Load() (*Config, error) {
 func LoadRuntime() *RuntimeConfig {
 	return &RuntimeConfig{
 		LLM: ProviderConfig{
-			BaseURL: viper.GetString("LLM_BASE_URL"),
-			APIKey:  viper.GetString("LLM_API_KEY"),
-			Model:   viper.GetString("LLM_MODEL"),
+			BaseURL: os.Getenv("LLM_BASE_URL"),
+			APIKey:  os.Getenv("LLM_API_KEY"),
+			Model:   os.Getenv("LLM_MODEL"),
 		},
 		Embedder: ProviderConfig{
-			BaseURL: viper.GetString("EMBED_BASE_URL"),
-			APIKey:  viper.GetString("EMBED_API_KEY"),
-			Model:   viper.GetString("EMBED_MODEL"),
+			BaseURL: os.Getenv("EMBED_BASE_URL"),
+			APIKey:  os.Getenv("EMBED_API_KEY"),
+			Model:   os.Getenv("EMBED_MODEL"),
 		},
 		Reranker: ProviderConfig{
-			BaseURL: viper.GetString("RERANK_BASE_URL"),
-			APIKey:  viper.GetString("RERANK_API_KEY"),
-			Model:   viper.GetString("RERANK_MODEL"),
+			BaseURL: os.Getenv("RERANK_BASE_URL"),
+			APIKey:  os.Getenv("RERANK_API_KEY"),
+			Model:   os.Getenv("RERANK_MODEL"),
 		},
 	}
 }
