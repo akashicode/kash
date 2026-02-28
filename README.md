@@ -96,6 +96,12 @@ Spin up multiple specialized agents (legal, finance, engineering) and wire them 
 
 ---
 
+## Scanned PDFs / OCR
+
+Note: Scanned (image-only) PDF support (OCR) is not yet available. Kash currently extracts embedded/selectable text only.
+
+---
+
 ## ⚡ Quick Start
 
 ### 5-Minute Setup
