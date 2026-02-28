@@ -1,53 +1,48 @@
 package reader
 
 import (
+	"bytes"
 	"fmt"
-	"os"
 	"strings"
+	"unicode/utf8"
 
-	"github.com/pdfcpu/pdfcpu/pkg/api"
-	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/ledongthuc/pdf"
 )
 
-// extractPDFText extracts plain text from a PDF file using pdfcpu.
+// extractPDFText extracts plain text from a PDF file.
+// It uses ledongthuc/pdf which decodes font-encoded glyphs into valid UTF-8.
 func extractPDFText(path string) (string, error) {
-	// Create a temp dir for extraction output
-	tmpDir, err := os.MkdirTemp("", "kash-pdf-*")
+	f, r, err := pdf.Open(path)
 	if err != nil {
-		return "", fmt.Errorf("create temp dir: %w", err)
+		return "", fmt.Errorf("open PDF: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer f.Close()
 
-	conf := model.NewDefaultConfiguration()
-	conf.ValidationMode = model.ValidationRelaxed
-
-	// Extract text content pages
-	if err := api.ExtractContentFile(path, tmpDir, nil, conf); err != nil {
-		return "", fmt.Errorf("extract PDF content: %w", err)
-	}
-
-	// Read all extracted text files
-	entries, err := os.ReadDir(tmpDir)
+	reader, err := r.GetPlainText()
 	if err != nil {
-		return "", fmt.Errorf("read temp dir: %w", err)
+		return "", fmt.Errorf("extract PDF text: %w", err)
 	}
 
-	var sb strings.Builder
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		data, err := os.ReadFile(tmpDir + "/" + entry.Name())
-		if err != nil {
-			continue
-		}
-		sb.Write(data)
-		sb.WriteString("\n")
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(reader); err != nil {
+		return "", fmt.Errorf("read PDF text: %w", err)
 	}
 
-	text := sb.String()
+	text := buf.String()
 	if text == "" {
 		return "", fmt.Errorf("no text extracted from PDF")
 	}
+
+	// Sanitize: replace any remaining invalid UTF-8 sequences with the
+	// Unicode replacement character so downstream processing never fails.
+	if !utf8.ValidString(text) {
+		var sb strings.Builder
+		sb.Grow(len(text))
+		for _, r := range text {
+			sb.WriteRune(r)
+		}
+		text = sb.String()
+	}
+
 	return text, nil
 }
