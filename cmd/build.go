@@ -176,9 +176,20 @@ func runBuild(cmd *cobra.Command, args []string) error {
 			combined.WriteString("\n\n")
 		}
 
-		triples, err := llmClient.ExtractTriples(ctx, combined.String())
-		if err != nil {
-			display.StepWarn(fmt.Sprintf("triple extraction failed for batch %d-%d: %v", i, end, err))
+		var triples []llm.Triple
+		var extractErr error
+		maxRetries := 2
+		for attempt := 0; attempt <= maxRetries; attempt++ {
+			triples, extractErr = llmClient.ExtractTriples(ctx, combined.String())
+			if extractErr == nil {
+				break
+			}
+			if attempt < maxRetries {
+				display.StepWarn(fmt.Sprintf("triple extraction failed for batch %d-%d (attempt %d/%d, retrying): %v", i, end, attempt+1, maxRetries+1, extractErr))
+			}
+		}
+		if extractErr != nil {
+			display.StepWarn(fmt.Sprintf("triple extraction failed for batch %d-%d after %d attempts: %v", i, end, maxRetries+1, extractErr))
 			continue
 		}
 
