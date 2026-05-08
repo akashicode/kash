@@ -31,3 +31,5 @@ data/knowledge.cayley/
 # OS
 .DS_Store
 Thumbs.db
+
+*.zip
