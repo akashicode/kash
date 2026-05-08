@@ -182,6 +182,9 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		for attempt := 0; attempt <= maxRetries; attempt++ {
 			triples, extractErr = llmClient.ExtractTriples(ctx, combined.String())
 			if extractErr == nil {
+				if attempt > 0 {
+					display.StepDetail(fmt.Sprintf("Batch %d-%d: retry succeeded on attempt %d/%d", i+1, end, attempt+1, maxRetries+1))
+				}
 				break
 			}
 			if attempt < maxRetries {
