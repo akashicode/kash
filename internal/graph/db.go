@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/cayleygraph/cayley"
 	"github.com/cayleygraph/cayley/graph"
@@ -92,13 +94,16 @@ func (db *DB) Search(ctx context.Context, query string, topK int) ([]SearchResul
 		topK = 10
 	}
 
-	queryTerms := strings.Fields(strings.ToLower(query))
+	queryTerms := tokenize(query)
 	results := []SearchResult{}
 	seen := map[string]bool{}
 
 	it := db.store.QuadsAllIterator()
 	defer it.Close()
 
+	// Scan the FULL graph — an early exit would bias results toward whichever
+	// documents happen to sit first in storage order, making later documents
+	// unreachable. All matches are collected, then sorted by score.
 	for it.Next(ctx) {
 		ref := it.Result()
 		q := db.store.Quad(ref)
@@ -122,18 +127,11 @@ func (db *DB) Search(ctx context.Context, query string, topK int) ([]SearchResul
 				Score:     score,
 			})
 		}
-
-		if len(results) >= topK*3 {
-			break
-		}
 	}
 
-	// Sort by score descending
-	for i := 1; i < len(results); i++ {
-		for j := i; j > 0 && results[j].Score > results[j-1].Score; j-- {
-			results[j], results[j-1] = results[j-1], results[j]
-		}
-	}
+	sort.SliceStable(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
 
 	if len(results) > topK {
 		results = results[:topK]
@@ -149,7 +147,7 @@ func FormatResults(results []SearchResult) string {
 	var sb strings.Builder
 	sb.WriteString("Knowledge Graph Facts:\n")
 	for _, r := range results {
-		sb.WriteString(fmt.Sprintf("- %s %s %s\n", r.Subject, r.Predicate, r.Object))
+		fmt.Fprintf(&sb, "- %s %s %s\n", r.Subject, r.Predicate, r.Object)
 	}
 	return sb.String()
 }
@@ -182,14 +180,33 @@ func quadValueStr(v quad.Value) string {
 	return strings.TrimSpace(s)
 }
 
+// tokenize lowercases text and splits it into alphanumeric terms, stripping
+// punctuation so "yoga?" matches "yoga".
+func tokenize(text string) []string {
+	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	})
+}
+
+// scoreMatch scores a triple against query terms. Whole-word matches score
+// higher than substring matches so precise entity hits outrank incidental
+// overlaps (e.g. "art" inside "particular").
 func scoreMatch(terms []string, values ...string) float64 {
 	combined := strings.ToLower(strings.Join(values, " "))
+	words := map[string]bool{}
+	for _, w := range tokenize(combined) {
+		words[w] = true
+	}
+
 	score := 0.0
 	for _, term := range terms {
 		if len(term) < 3 {
 			continue
 		}
-		if strings.Contains(combined, term) {
+		switch {
+		case words[term]:
+			score += 2.0
+		case strings.Contains(combined, term):
 			score += 1.0
 		}
 	}

@@ -220,13 +220,10 @@ func (s *Server) mcpCallTool(r *http.Request, params json.RawMessage) (interface
 	}
 
 	ctx := r.Context()
-	retrievedCtx, err := s.hybridSearch(ctx, query)
+	retrievedCtx, err := s.hybridSearch(ctx, query, topK)
 	if err != nil {
 		return nil, &MCPError{Code: -32603, Message: "search error: " + err.Error()}
 	}
-
-	// Limit to topK result segments
-	_ = topK
 
 	return map[string]interface{}{
 		"content": []map[string]interface{}{

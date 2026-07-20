@@ -111,7 +111,7 @@ func (s *Server) a2aQuery(r *http.Request, params json.RawMessage) (interface{},
 	ctx := r.Context()
 
 	// Run hybrid search
-	retrievedCtx, err := s.hybridSearch(ctx, p.Query)
+	retrievedCtx, err := s.hybridSearch(ctx, p.Query, defaultTopK)
 	if err != nil {
 		retrievedCtx = ""
 	}

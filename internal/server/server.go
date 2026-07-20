@@ -250,18 +250,45 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/rpc/agent", s.handleA2A)
 }
 
-// hybridSearch performs both vector and graph search, then merges results.
-// If a reranker is configured, vector results are reranked before inclusion.
-func (s *Server) hybridSearch(ctx context.Context, query string) (string, error) {
-	s.log.Debug("hybrid search starting", "query", query)
+// defaultTopK is the number of chunks injected as context when the caller
+// does not specify one.
+const defaultTopK = 5
 
-	// Vector search
-	vectorResults, err := s.vectorStore.Query(ctx, query, 5)
-	if err != nil {
-		s.log.Error("vector search failed", "error", err, "query", query)
-		return "", fmt.Errorf("vector search: %w", err)
+// hybridSearch performs both vector and graph search, then merges results.
+//
+// Retrieval is two-stage: a wide candidate pool is pulled from the vector
+// store (so relevant chunks from any document can surface), then narrowed to
+// topK — by the reranker when configured, by similarity order otherwise —
+// with a per-source cap so a single document cannot monopolize the context.
+func (s *Server) hybridSearch(ctx context.Context, query string, topK int) (string, error) {
+	if topK <= 0 {
+		topK = defaultTopK
 	}
-	s.log.Info("vector search completed", "results", len(vectorResults), "query", query)
+	s.log.Debug("hybrid search starting", "query", query, "top_k", topK)
+
+	// Candidate pool: 4x the requested results (min 20, max 40), capped at
+	// the collection size — chromem errors when nResults exceeds it.
+	candidateK := topK * 4
+	if candidateK < 20 {
+		candidateK = 20
+	}
+	if candidateK > 40 {
+		candidateK = 40
+	}
+	if count := s.vectorStore.Count(); candidateK > count {
+		candidateK = count
+	}
+
+	var vectorResults []vector.SearchResult
+	if candidateK > 0 {
+		var err error
+		vectorResults, err = s.vectorStore.Query(ctx, query, candidateK)
+		if err != nil {
+			s.log.Error("vector search failed", "error", err, "query", query)
+			return "", fmt.Errorf("vector search: %w", err)
+		}
+	}
+	s.log.Info("vector search completed", "candidates", len(vectorResults), "query", query)
 
 	// Graph search
 	graphResults, err := s.graphDB.Search(ctx, query, 10)
@@ -272,8 +299,8 @@ func (s *Server) hybridSearch(ctx context.Context, query string) (string, error)
 		s.log.Info("graph search completed", "results", len(graphResults), "query", query)
 	}
 
-	// Rerank vector results if reranker is configured
-	var rerankedDocs []string
+	// Narrow candidates: rerank when configured, similarity order otherwise.
+	ranked := vectorResults
 	if s.reranker != nil && len(vectorResults) > 0 {
 		docs := make([]string, len(vectorResults))
 		for i, r := range vectorResults {
@@ -281,34 +308,26 @@ func (s *Server) hybridSearch(ctx context.Context, query string) (string, error)
 		}
 		rerankResults, rerankErr := s.reranker.Rerank(ctx, query, docs)
 		if rerankErr != nil {
-			s.log.Warn("reranker failed (using original order)", "error", rerankErr)
+			s.log.Warn("reranker failed (using similarity order)", "error", rerankErr)
 		} else {
-			s.log.Info("reranker completed", "results", len(rerankResults),
+			s.log.Info("reranker completed", "candidates", len(rerankResults),
 				"top_score", fmt.Sprintf("%.3f", rerankResults[0].RelevanceScore))
-			rerankedDocs = make([]string, len(rerankResults))
+			ranked = make([]vector.SearchResult, len(rerankResults))
 			for i, r := range rerankResults {
-				rerankedDocs[i] = r.Content
+				ranked[i] = vectorResults[r.Index]
 			}
 		}
 	}
 
-	var sb strings.Builder
+	selected := diversifyBySource(ranked, topK)
 
-	// Add vector results (reranked if available, original order otherwise)
-	if len(vectorResults) > 0 {
+	var sb strings.Builder
+	if len(selected) > 0 {
 		sb.WriteString("## Relevant Knowledge\n\n")
-		if len(rerankedDocs) > 0 {
-			for i, content := range rerankedDocs {
-				sb.WriteString(fmt.Sprintf("**[%d]**\n", i+1))
-				sb.WriteString(content)
-				sb.WriteString("\n\n")
-			}
-		} else {
-			for i, r := range vectorResults {
-				sb.WriteString(fmt.Sprintf("**[%d] Source: %s** (similarity: %.2f)\n", i+1, r.Source, r.Similarity))
-				sb.WriteString(r.Content)
-				sb.WriteString("\n\n")
-			}
+		for i, r := range selected {
+			sb.WriteString(fmt.Sprintf("**[%d] Source: %s**\n", i+1, r.Source))
+			sb.WriteString(r.Content)
+			sb.WriteString("\n\n")
 		}
 	}
 
@@ -320,6 +339,46 @@ func (s *Server) hybridSearch(ctx context.Context, query string) (string, error)
 	}
 
 	return sb.String(), nil
+}
+
+// diversifyBySource picks up to topK results from a ranked list while capping
+// how many may come from a single source document. Remaining slots are
+// backfilled in rank order when the cap leaves them unfilled.
+func diversifyBySource(ranked []vector.SearchResult, topK int) []vector.SearchResult {
+	if len(ranked) <= topK {
+		return ranked
+	}
+
+	maxPerSource := (topK + 1) / 2
+	if maxPerSource < 1 {
+		maxPerSource = 1
+	}
+
+	selected := make([]vector.SearchResult, 0, topK)
+	perSource := map[string]int{}
+	skipped := []vector.SearchResult{}
+
+	for _, r := range ranked {
+		if len(selected) >= topK {
+			break
+		}
+		if perSource[r.Source] >= maxPerSource {
+			skipped = append(skipped, r)
+			continue
+		}
+		perSource[r.Source]++
+		selected = append(selected, r)
+	}
+
+	// Backfill from skipped results if the cap left slots open
+	for _, r := range skipped {
+		if len(selected) >= topK {
+			break
+		}
+		selected = append(selected, r)
+	}
+
+	return selected
 }
 
 // handleHealth returns a detailed health status including all key metrics.
@@ -369,7 +428,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	s.log.Info("chat completion request", "query", userQuery, "stream", req.Stream)
 
 	// Run hybrid search
-	retrievedCtx, err := s.hybridSearch(ctx, userQuery)
+	retrievedCtx, err := s.hybridSearch(ctx, userQuery, defaultTopK)
 	if err != nil {
 		s.log.Error("hybrid search failed, proceeding without RAG context", "error", err)
 		retrievedCtx = ""
