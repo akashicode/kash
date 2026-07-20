@@ -1,51 +1,57 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.25" />
-  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" />
-  <img src="https://img.shields.io/badge/GraphRAG-Vector+Graph-blueviolet?style=for-the-badge" alt="GraphRAG" />
-  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License" />
-</p>
+<div align="center">
 
-<h1 align="center">⚡ Kash</h1>
+# ⚡ Kash
 
-<p align="center">
-  <strong>Cache your knowledge. Channel the Akashic.</strong><br/>
-  <em>Compile your documents into an embedded GraphRAG brain. Ship AI agents as Docker images.</em>
-</p>
+**Cache your knowledge. Channel the Akashic.**
+
+*Compile your documents into an embedded GraphRAG brain — ship AI agents as Docker images.*
+
+<br/>
+
+<img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.25" />
+<img src="https://img.shields.io/badge/Docker-~50MB-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker ~50MB" />
+<img src="https://img.shields.io/badge/GraphRAG-Vector%20%2B%20Graph-blueviolet?style=for-the-badge" alt="GraphRAG" />
+<img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License" />
+
+<br/><br/>
+
+```text
+📄 Your Documents  →  ⚡ kash build  →  🐳 Docker Image  →  🚀 Ship Anywhere
+```
+
+</div>
 
 ---
 
-## 💡 What is Kash?
+## 💡 Why Kash?
 
-Kash is a **Go CLI** that turns your raw documents (PDFs, Markdown, text files) into a **self-contained AI agent** packaged in a **lightweight Docker container** (base size ~50MB, final size depends on the amount of knowledge data added).
+RAG usually means Python servers, external vector databases, and infrastructure glue. **Kash is a compiler instead**: it ingests your documents at *build time* and produces a single self-contained agent that just serves queries at runtime.
 
-No Python runtime. No external vector databases. No infrastructure headaches.
+| | Typical RAG Stack | ⚡ Kash |
+|---|---|---|
+| **Runtime** | Python + dependencies | Single Go binary |
+| **Vector DB** | Hosted service (Pinecone, etc.) | Embedded (`chromem-go`) |
+| **Graph DB** | Neo4j server | Embedded (`cayley`) |
+| **Deploy** | Multi-service setup | One ~50MB container |
+| **Share an agent** | "Clone the repo, install..." | `docker run` |
 
-```text
-Your Documents  →  kash build  →  Docker Image  →  Ship Anywhere 🚀
-```
+Works with **any OpenAI-compatible API** — OpenAI, Ollama, LiteLLM, OneAPI. Bring your own model. 🔑
 
 ---
 
 ## ⚡ Quick Start
 
-### 5-Minute Setup
-
 ```bash
-# 1. Install Kash
+# 1. Install
 go install github.com/akashicode/kash/cmd/kash@latest
 
 # 2. Scaffold a new agent
 kash init my-expert
-```
 
-> **Important:** The `~/.kash/` directory and `config.yaml` are auto-generated the first time you run `kash init`. There's no need to manually create the files, but **you must edit `~/.kash/config.yaml`** to fill in your API keys (e.g., OpenAI, Voyage) with proper values before proceeding.
-
-```bash
-# 3. Add your knowledge
+# 3. Add your knowledge (PDFs, Markdown, text — OCR handles scanned PDFs)
 cp ~/docs/*.pdf my-expert/data/
-cp ~/notes/*.md my-expert/data/
 
-# 4. Compile the knowledge base
+# 4. Compile documents → vector + graph databases
 cd my-expert
 kash build --dir .
 
@@ -53,66 +59,92 @@ kash build --dir .
 kash serve -d .
 ```
 
-Your agent is now live at **http://localhost:8000**.
+🎉 Your agent is live at **http://localhost:8000**
+
+> [!IMPORTANT]
+> `kash init` auto-generates `~/.kash/config.yaml` on first run. Edit it with your API keys (OpenAI, Voyage, etc.) **before** running `kash build`. See [Configuration](#%EF%B8%8F-configuration).
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ How It Works
 
-Kash runs a **Hybrid RAG Pipeline**:
-1. **Vector Memory**: `philippgille/chromem-go`
-2. **Graph Memory**: `cayleygraph/cayley`
-3. **LLM Client**: `sashabaranov/go-openai`
+```mermaid
+flowchart LR
+    subgraph BUILD ["🔨 Build Time — kash build"]
+        A["📄 Documents<br/>(PDF · MD · TXT)"] --> B["✂️ Chunker"]
+        B --> C["🧮 Vector Store<br/>chromem-go"]
+        B --> D["🕸️ Knowledge Graph<br/>cayley"]
+    end
 
-During build time, Kash parses documents, embeds chunks into a vector database, and extracts triples into a knowledge graph. At runtime, it performs hybrid search, optionally reranks, and feeds context to the LLM.
+    subgraph RUN ["🚀 Runtime — kash serve"]
+        E["❓ Query"] --> F["🔍 Hybrid Search<br/>Vector + Graph"]
+        C --> F
+        D --> F
+        F --> G["🎯 Rerank<br/>(optional)"]
+        G --> H["🤖 Your LLM"]
+        H --> I["💬 Answer"]
+    end
 
----
+    BUILD -.->|"baked into image"| RUN
+```
 
-## 🖥️ CLI Reference
-
-- `kash init <name>`: Scaffolds a new agent project.
-- `kash build`: Compiles documents into vector + graph databases (from `data/` dir).
-- `kash serve`: Starts the runtime HTTP server.
-- `kash version`: Displays the Kash version.
-
----
-
-## 🔌 Runtime Interfaces
-
-Kash concurrently serves three interfaces on the same port:
-
-1. **REST API** (`POST /v1/chat/completions`): Drop-in replacement for the OpenAI API. Intercepts requests, runs hybrid RAG, injects context, proxies to your LLM.
-2. **MCP Server** (`GET /mcp`): [Model Context Protocol](https://modelcontextprotocol.io). Exposes your knowledge base as tools to IDEs like Cursor or Windsurf.
-3. **A2A Protocol** (`POST /rpc/agent`): JSON-RPC for multi-agent frameworks (e.g., AutoGen, CrewAI). *(WIP - Still under testing)*
-
-> Note: You can secure all endpoints by setting the `AGENT_API_KEY` environment variable.
+**Build time** — documents are chunked, embedded into a vector store, and mined for graph triples via LLM.
+**Runtime** — hybrid search (vector + graph) finds context, optionally reranks it, and feeds it to your LLM.
 
 ---
 
-## 🚀 Running Your Agent
+## 🔌 Three Interfaces, One Port
 
-### Option 1: Local (No Docker)
-Set your environment variables (`LLM_BASE_URL`, `LLM_API_KEY`, `EMBED_BASE_URL`, `EMBED_API_KEY`, etc.), then run `kash build` and `kash serve`.
+Every Kash agent serves all three simultaneously on port `8000`:
 
-### Option 2: Docker Compose (Recommended)
-Fill in your `.env` with API keys.
+| Interface | Endpoint | Use It For |
+|---|---|---|
+| 🌐 **REST API** | `POST /v1/chat/completions` | Drop-in OpenAI API replacement with RAG context injection |
+| 🧩 **MCP Server** | `GET /mcp` | Expose knowledge as tools to Cursor, Windsurf & IDEs via [MCP](https://modelcontextprotocol.io) |
+| 🤝 **A2A Protocol** | `POST /rpc/agent` | JSON-RPC for multi-agent frameworks (AutoGen, CrewAI) — *WIP* |
+
+> 🔒 Secure all endpoints by setting the `AGENT_API_KEY` environment variable.
+
+---
+
+## 🚀 Ship It
+
+<details open>
+<summary><strong>🐳 Docker Compose (recommended)</strong></summary>
+
 ```bash
+# Fill in .env with your runtime API keys, then:
 kash build
 docker compose up --build
 ```
+</details>
 
-### Option 3: Docker Run
+<details>
+<summary><strong>🐳 Docker Run</strong></summary>
+
 ```bash
 docker build -t my-agent:latest .
 docker run -p 8000:8000 --env-file .env my-agent:latest
 ```
+</details>
+
+<details>
+<summary><strong>💻 Local (no Docker)</strong></summary>
+
+```bash
+kash build && kash serve
+# Falls back to ~/.kash/config.yaml if env vars aren't set
+```
+</details>
 
 ---
 
 ## ⚙️ Configuration
 
-### Build-Time: `~/.kash/config.yaml`
-Auto-generated upon `kash init`. Fill this in before running `kash build`.
+### 🔨 Build Time — `~/.kash/config.yaml`
+
+Auto-generated by `kash init`. Used by `kash build` for embedding & triple extraction:
+
 ```yaml
 build_providers:
   llm:
@@ -125,13 +157,32 @@ build_providers:
     model: "voyage-3"
 ```
 
-### Runtime: Environment Variables
-Used by `kash serve` and Docker containers. Provide variables like `LLM_BASE_URL`, `LLM_API_KEY`, `EMBED_BASE_URL`, `EMBED_API_KEY`, and optionally reranker variables.
+### 🚀 Runtime — Environment Variables
 
-> **Note:** When running locally, `kash serve` will automatically fall back to the values set in `~/.kash/config.yaml` if environment variables are not specified. However, when running via Docker, you must explicitly provide these values as environment variables (e.g., using a `.env` file).
+| Variable | Required | Purpose |
+|---|:---:|---|
+| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | ✅ | The model that answers queries |
+| `EMBED_BASE_URL` / `EMBED_API_KEY` / `EMBED_MODEL` | ✅ | Embeds queries for vector search |
+| `RERANK_BASE_URL` / `RERANK_API_KEY` / `RERANK_MODEL` | ➖ | Optional reranker (Cohere-compatible `/rerank`) |
+| `AGENT_API_KEY` | ➖ | Optional auth for all endpoints |
 
-### Agent Config: `agent.yaml`
-Generated in your project directory. Contains the persona, embedding dimensions, and MCP tools configuration.
+> [!NOTE]
+> Running locally, `kash serve` falls back to `~/.kash/config.yaml` when env vars are missing. In Docker, pass them explicitly (e.g., via `.env`).
+
+### 🤖 Agent — `agent.yaml`
+
+Generated per project. Holds the persona, embedding dimensions, and MCP tool config.
+
+---
+
+## 🖥️ CLI Reference
+
+| Command | What It Does |
+|---|---|
+| `kash init <name>` | Scaffold a new agent project (`data/`, `agent.yaml`, `Dockerfile`) |
+| `kash build` | Compile documents into vector + graph databases |
+| `kash serve` | Start the runtime HTTP server |
+| `kash version` | Print the Kash version |
 
 ---
 
@@ -140,12 +191,19 @@ Generated in your project directory. Contains the persona, embedding dimensions,
 ```bash
 git clone https://github.com/akashicode/kash.git
 cd kash
-make build
-# Or build for all platforms: make build-all
+make build          # or: make build-all for every platform
 ```
 
 ---
 
+<div align="center">
+
 ## 📜 License
 
-MIT License.
+MIT — do whatever, just keep the notice.
+
+<br/>
+
+**If Kash saves you an infra headache, [⭐ star the repo](https://github.com/akashicode/kash) — it helps others find it.**
+
+</div>
