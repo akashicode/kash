@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/sashabaranov/go-openai"
 
@@ -129,6 +130,41 @@ The tool name will be: search_%s_knowledge`, agentName, sampleContent, agentName
 		return "", fmt.Errorf("generate MCP description: %w", err)
 	}
 	return desc, nil
+}
+
+// RewriteQuery rewrites a conversational follow-up ("tell me more about
+// that") into a standalone search query by resolving references against the
+// recent conversation history. Returns the rewritten query, or an error the
+// caller should treat as non-fatal (fall back to the original message).
+func (c *Client) RewriteQuery(ctx context.Context, history []openai.ChatCompletionMessage, lastMessage string) (string, error) {
+	system := `You rewrite conversational follow-up messages into standalone search queries.
+Given a conversation and the user's latest message, produce ONE self-contained search query that captures what the user is asking about, resolving pronouns and references like "that", "it", or "tell me more".
+Rules:
+- Return ONLY the query text — no quotes, no explanation, no punctuation-only output
+- Keep it short and keyword-rich (it feeds a search engine, not a chat)
+- If the latest message is already self-contained, return it unchanged`
+
+	var sb strings.Builder
+	for _, m := range history {
+		content := m.Content
+		// Truncate long turns — only the topic matters for rewriting
+		if r := []rune(content); len(r) > 500 {
+			content = string(r[:500]) + "…"
+		}
+		fmt.Fprintf(&sb, "%s: %s\n", m.Role, content)
+	}
+
+	prompt := fmt.Sprintf("Conversation so far:\n%s\nLatest user message: %s\n\nStandalone search query:", sb.String(), lastMessage)
+
+	out, err := c.Complete(ctx, system, prompt)
+	if err != nil {
+		return "", fmt.Errorf("rewrite query: %w", err)
+	}
+	out = strings.TrimSpace(strings.Trim(strings.TrimSpace(out), `"`))
+	if out == "" {
+		return "", ErrEmptyResponse
+	}
+	return out, nil
 }
 
 // ChatWithContext proxies a chat completion request, injecting context into the system message.

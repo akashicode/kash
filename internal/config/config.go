@@ -252,6 +252,26 @@ func AgentYAMLDimensions(path string) int {
 	return parsed.Runtime.Embedder.Dimensions
 }
 
+// AgentYAMLChunkOptions reads build.chunk_size and build.chunk_overlap
+// (both in characters) from an agent.yaml file. Returns 0 for unset fields
+// or when the file doesn't exist.
+func AgentYAMLChunkOptions(path string) (chunkSize, chunkOverlap int) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0
+	}
+	var parsed struct {
+		Build struct {
+			ChunkSize    int `yaml:"chunk_size"`
+			ChunkOverlap int `yaml:"chunk_overlap"`
+		} `yaml:"build"`
+	}
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		return 0, 0
+	}
+	return parsed.Build.ChunkSize, parsed.Build.ChunkOverlap
+}
+
 // AgentYAMLMaxTokens reads runtime.embedder.max_tokens from an agent.yaml file.
 // Returns 0 if the file doesn't exist or the field is not set.
 func AgentYAMLMaxTokens(path string) int {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"sort"
 	"strings"
 	"unicode"
@@ -91,6 +92,38 @@ func (db *DB) AddTriples(ctx context.Context, triples []Triple, source string) e
 		return fmt.Errorf("add quads: %w", err)
 	}
 	return nil
+}
+
+// Sample returns up to limit triples drawn uniformly from the whole graph
+// (reservoir sampling), so a visualization is not biased toward whichever
+// document sits first in storage order.
+func (db *DB) Sample(ctx context.Context, limit int) ([]SearchResult, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	samples := make([]SearchResult, 0, limit)
+	n := 0
+
+	it := db.store.QuadsAllIterator()
+	defer it.Close()
+
+	for it.Next(ctx) {
+		q := db.store.Quad(it.Result())
+		sr := SearchResult{
+			Subject:   quadValueStr(q.Subject),
+			Predicate: quadValueStr(q.Predicate),
+			Object:    quadValueStr(q.Object),
+			Source:    quadValueStr(q.Label),
+		}
+		n++
+		if len(samples) < limit {
+			samples = append(samples, sr)
+		} else if j := rand.Intn(n); j < limit {
+			samples[j] = sr
+		}
+	}
+	return samples, nil
 }
 
 // DeleteBySource removes all triples whose label matches the given source

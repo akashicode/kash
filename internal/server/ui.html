@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kash Agent</title>
+<style>
+  :root {
+    --bg: #0d1017; --panel: #151a24; --panel2: #1c2230; --border: #2a3244;
+    --text: #e6e9f0; --muted: #8a93a6; --accent: #f5b942; --accent2: #8b7cf8;
+    --good: #4ade80; --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color: var(--accent); }
+
+  header { display: flex; align-items: center; gap: 14px; padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
+  header .logo { font-size: 22px; }
+  header h1 { font-size: 18px; font-weight: 650; }
+  header .desc { color: var(--muted); font-size: 13px; flex: 1 1 200px; }
+  .badge { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--accent); color: #1a1405; white-space: nowrap; }
+  .badge.alt { background: var(--panel2); color: var(--muted); border: 1px solid var(--border); }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 24px 60px; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; }
+  .stat .v { font-size: 20px; font-weight: 700; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+
+  nav.tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+  nav.tabs button { background: none; border: none; color: var(--muted); font: inherit; font-weight: 600; padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent; }
+  nav.tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
+
+  section { display: none; } section.on { display: block; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); background: var(--panel2); }
+  tr:last-child td { border-bottom: none; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ok { color: var(--good); } .part { color: var(--warn); }
+
+  .bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  input[type=text], select { background: var(--panel2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 12px; font: inherit; flex: 1 1 240px; }
+  input[type=text]:focus { outline: none; border-color: var(--accent2); }
+  button.go { background: var(--accent); color: #1a1405; border: none; border-radius: 8px; padding: 8px 18px; font: inherit; font-weight: 700; cursor: pointer; }
+  button.go:hover { filter: brightness(1.1); }
+
+  #canvasWrap { position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  #graphCanvas { display: block; width: 100%; height: 520px; cursor: grab; }
+  #graphHint { position: absolute; bottom: 8px; left: 12px; color: var(--muted); font-size: 12px; pointer-events: none; }
+
+  .triples { margin-top: 14px; }
+  .triple { display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; padding: 7px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .triple:last-child { border-bottom: none; }
+  .triple .s { color: var(--accent); font-weight: 600; }
+  .triple .p { color: var(--muted); font-style: italic; }
+  .triple .o { color: var(--accent2); font-weight: 600; }
+  .triple .src { margin-left: auto; color: var(--muted); font-size: 11px; }
+  .listbox { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; max-height: 300px; overflow-y: auto; }
+
+  .chunk { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+  .chunk .meta { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 12px; }
+  .chunk .rank { background: var(--accent2); color: #fff; border-radius: 6px; padding: 1px 8px; font-weight: 700; }
+  .chunk .src { color: var(--accent); font-weight: 600; }
+  .chunk .sim { color: var(--muted); }
+  .chunk .body { color: var(--text); font-size: 13px; white-space: pre-wrap; max-height: 180px; overflow-y: auto; }
+
+  .empty { color: var(--muted); padding: 30px; text-align: center; }
+  h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 8px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">⚡</span>
+  <h1 id="agentName">Kash Agent</h1>
+  <span class="desc" id="agentDesc"></span>
+  <span class="badge" id="corpusV">corpus v?</span>
+  <span class="badge alt" id="agentV"></span>
+</header>
+
+<main>
+  <div class="stats" id="stats"></div>
+
+  <nav class="tabs">
+    <button data-tab="books" class="on">📚 Books</button>
+    <button data-tab="graph">🕸️ Knowledge Graph</button>
+    <button data-tab="search">🔍 Retrieval Tester</button>
+  </nav>
+
+  <section id="tab-books" class="on">
+    <table>
+      <thead><tr><th>Document</th><th class="num">Chunks</th><th class="num">Triples</th><th>Status</th><th>Built</th></tr></thead>
+      <tbody id="bookRows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+    </table>
+  </section>
+
+  <section id="tab-graph">
+    <div class="bar">
+      <input type="text" id="graphQ" placeholder="Filter graph by search terms (empty = random sample of whole corpus)">
+      <select id="graphLimit"><option>50</option><option selected>150</option><option>300</option><option>500</option></select>
+      <button class="go" id="graphGo">Explore</button>
+    </div>
+    <div id="canvasWrap">
+      <canvas id="graphCanvas"></canvas>
+      <div id="graphHint">drag nodes · hover for labels · click a node to see its facts</div>
+    </div>
+    <h3>Facts <span id="tripleCount"></span></h3>
+    <div class="listbox triples" id="tripleList"><div class="empty">Explore the graph to list facts</div></div>
+  </section>
+
+  <section id="tab-search">
+    <div class="bar">
+      <input type="text" id="searchQ" placeholder="Ask something — see exactly what the RAG pipeline retrieves">
+      <select id="searchK"><option>3</option><option selected>5</option><option>8</option><option>12</option></select>
+      <button class="go" id="searchGo">Retrieve</button>
+    </div>
+    <div id="searchOut"><div class="empty">Run a query to inspect retrieval</div></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+/* ---------- API helper with optional bearer key ---------- */
+async function api(path) {
+  const key = localStorage.getItem("kashKey");
+  const res = await fetch(path, key ? { headers: { Authorization: "Bearer " + key } } : {});
+  if (res.status === 401) {
+    const k = prompt("This agent requires an API key (AGENT_API_KEY):");
+    if (k) { localStorage.setItem("kashKey", k); return api(path); }
+    throw new Error("unauthorized");
+  }
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* ---------- Tabs ---------- */
+document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav.tabs button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll("main section").forEach(s => s.classList.toggle("on", s.id === "tab-" + b.dataset.tab));
+});
+
+/* ---------- Info + books ---------- */
+async function loadInfo() {
+  try {
+    const info = await api("/api/info");
+    document.title = info.agent + " · Kash";
+    document.getElementById("agentName").textContent = info.agent || "Kash Agent";
+    document.getElementById("agentDesc").textContent = info.description || "";
+    document.getElementById("corpusV").textContent = "corpus v" + (info.corpus_version || 0);
+    document.getElementById("agentV").textContent = info.version ? "agent " + info.version : "";
+    const stats = [
+      [info.vectors, "vector chunks"],
+      [info.triples, "graph triples"],
+      [(info.documents || []).length, "documents"],
+      [info.embed_model || "?", "embedder"],
+      [info.llm_model || "?", "llm"],
+      [info.reranker_enabled ? "on" : "off", "reranker"],
+    ];
+    document.getElementById("stats").innerHTML = stats.map(([v, k]) =>
+      `<div class="stat"><div class="v" title="${esc(v)}">${esc(v)}</div><div class="k">${esc(k)}</div></div>`).join("");
+
+    const rows = (info.documents || []).map(d => `<tr>
+      <td>${esc(d.name)}</td>
+      <td class="num">${d.chunks}</td>
+      <td class="num">${d.triples}</td>
+      <td>${d.done ? '<span class="ok">✓ built</span>' : '<span class="part">⟳ partial — rerun kash build</span>'}</td>
+      <td>${d.completed_at ? new Date(d.completed_at).toLocaleString() : "—"}</td>
+    </tr>`);
+    document.getElementById("bookRows").innerHTML = rows.length ? rows.join("")
+      : '<tr><td colspan="5" class="empty">No build manifest found — corpus was built before manifest support. Run kash build --rebuild.</td></tr>';
+  } catch (e) {
+    document.getElementById("bookRows").innerHTML = `<tr><td colspan="5" class="empty">Failed to load: ${esc(e.message)}</td></tr>`;
+  }
+}
+loadInfo();
+
+/* ---------- Force-directed graph ---------- */
+const canvas = document.getElementById("graphCanvas");
+const ctx = canvas.getContext("2d");
+let nodes = [], edges = [], nodeIndex = new Map(), dragging = null, hover = null, selected = null, anim = null;
+
+function resizeCanvas() {
+  const r = canvas.getBoundingClientRect();
+  if (r.width === 0) return; // tab hidden — keep previous backing store
+  canvas.width = r.width * devicePixelRatio;
+  canvas.height = 520 * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+window.addEventListener("resize", () => { resizeCanvas(); });
+
+function buildGraph(triples) {
+  nodes = []; edges = []; nodeIndex = new Map(); selected = null;
+  const W = canvas.clientWidth || 1000, H = 520;
+  const getNode = label => {
+    if (nodeIndex.has(label)) return nodeIndex.get(label);
+    // Deterministic golden-angle spiral placement — spreads nodes evenly and
+    // avoids the exploding start random placement causes
+    const i = nodes.length, ang = i * 2.39996, rad = 26 + 9 * Math.sqrt(i);
+    const n = { label, x: W / 2 + Math.cos(ang) * rad, y: H / 2 + Math.sin(ang) * rad, vx: 0, vy: 0, deg: 0 };
+    nodeIndex.set(label, n); nodes.push(n);
+    return n;
+  };
+  for (const t of triples) {
+    const a = getNode(t.subject), b = getNode(t.object);
+    a.deg++; b.deg++;
+    edges.push({ a, b, p: t.predicate, src: t.source || "" });
+  }
+}
+
+const REST = 85, SPRING = 0.03, REPULSE = 1800, DAMP = 0.82, MAXV = 6;
+function tick() {
+  const W = canvas.clientWidth, H = 520;
+  if (!W || !nodes.length) return; // tab hidden — don't run physics against a 0-width box
+  // repulsion (capped, with distance cutoff)
+  for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+    const a = nodes[i], b = nodes[j];
+    let dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+    if (d2 > 90000) continue; // >300px apart — negligible
+    if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = 1; }
+    const d = Math.sqrt(d2), f = Math.min(REPULSE / d2, 8);
+    dx = dx / d * f; dy = dy / d * f;
+    a.vx += dx; a.vy += dy; b.vx -= dx; b.vy -= dy;
+  }
+  // springs (linear in displacement from rest length)
+  for (const e of edges) {
+    let dx = e.b.x - e.a.x, dy = e.b.y - e.a.y;
+    const d = Math.sqrt(dx * dx + dy * dy) || 1;
+    const f = (d - REST) * SPRING;
+    dx = dx / d * f; dy = dy / d * f;
+    e.a.vx += dx; e.a.vy += dy; e.b.vx -= dx; e.b.vy -= dy;
+  }
+  // gravity toward center + damped, speed-capped integration
+  for (const n of nodes) {
+    if (n === dragging) { n.vx = n.vy = 0; continue; }
+    n.vx += (W / 2 - n.x) * 0.0015; n.vy += (H / 2 - n.y) * 0.0015;
+    n.vx = Math.max(-MAXV, Math.min(MAXV, n.vx * DAMP));
+    n.vy = Math.max(-MAXV, Math.min(MAXV, n.vy * DAMP));
+    n.x += n.vx; n.y += n.vy;
+    n.x = Math.max(14, Math.min(W - 14, n.x)); n.y = Math.max(14, Math.min(H - 14, n.y));
+  }
+}
+
+function draw() {
+  const W = canvas.clientWidth, H = 520;
+  if (!W) return; // tab hidden
+  if (Math.abs(W * devicePixelRatio - canvas.width) > 1) resizeCanvas(); // heal stale sizing
+  ctx.clearRect(0, 0, W, H);
+  const active = selected || hover;
+  for (const e of edges) {
+    const on = active && (e.a === active || e.b === active);
+    ctx.strokeStyle = on ? "rgba(245,185,66,0.85)" : "rgba(120,130,155,0.25)";
+    ctx.lineWidth = on ? 1.6 : 1;
+    ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke();
+  }
+  for (const n of nodes) {
+    const r = 4 + Math.min(8, Math.sqrt(n.deg) * 2);
+    const on = n === active;
+    ctx.fillStyle = on ? "#f5b942" : "#8b7cf8";
+    ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 7); ctx.fill();
+    if (on || n.deg >= 3 || nodes.length <= 40) {
+      ctx.fillStyle = on ? "#f5b942" : "rgba(230,233,240,0.75)";
+      ctx.font = (on ? "600 " : "") + "11px system-ui";
+      const label = n.label.length > 28 ? n.label.slice(0, 28) + "…" : n.label;
+      ctx.fillText(label, n.x + r + 4, n.y + 4);
+    }
+  }
+}
+
+function loop() { tick(); draw(); anim = requestAnimationFrame(loop); }
+
+function nodeAt(x, y) {
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const n = nodes[i], r = 6 + Math.min(8, Math.sqrt(n.deg) * 2);
+    if ((n.x - x) ** 2 + (n.y - y) ** 2 <= r * r) return n;
+  }
+  return null;
+}
+function canvasPos(ev) {
+  const r = canvas.getBoundingClientRect();
+  return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+}
+canvas.addEventListener("mousedown", ev => { const p = canvasPos(ev); dragging = nodeAt(p.x, p.y); });
+canvas.addEventListener("mousemove", ev => {
+  const p = canvasPos(ev);
+  if (dragging) { dragging.x = p.x; dragging.y = p.y; }
+  else { hover = nodeAt(p.x, p.y); canvas.style.cursor = hover ? "pointer" : "grab"; }
+});
+window.addEventListener("mouseup", ev => {
+  if (dragging) {
+    const p = canvasPos(ev), n = nodeAt(p.x, p.y);
+    if (n === dragging) { selected = (selected === n) ? null : n; renderTriples(); }
+    dragging = null;
+  }
+});
+
+let lastTriples = [];
+function renderTriples() {
+  const list = document.getElementById("tripleList");
+  const shown = selected
+    ? lastTriples.filter(t => t.subject === selected.label || t.object === selected.label)
+    : lastTriples;
+  document.getElementById("tripleCount").textContent =
+    `(${shown.length}${selected ? " · " + selected.label : ""})`;
+  list.innerHTML = shown.length ? shown.map(t => `<div class="triple">
+      <span class="s">${esc(t.subject)}</span><span class="p">${esc(t.predicate)}</span><span class="o">${esc(t.object)}</span>
+      ${t.source ? `<span class="src">📖 ${esc(t.source)}</span>` : ""}
+    </div>`).join("") : '<div class="empty">No facts</div>';
+}
+
+async function loadGraph() {
+  const q = document.getElementById("graphQ").value.trim();
+  const limit = document.getElementById("graphLimit").value;
+  const btn = document.getElementById("graphGo");
+  btn.disabled = true; btn.textContent = "…";
+  try {
+    const data = await api(`/api/graph?limit=${limit}${q ? "&q=" + encodeURIComponent(q) : ""}`);
+    lastTriples = data.triples || [];
+    resizeCanvas();
+    buildGraph(lastTriples);
+    renderTriples();
+    if (!anim) loop();
+  } catch (e) {
+    document.getElementById("tripleList").innerHTML = `<div class="empty">Failed: ${esc(e.message)}</div>`;
+  } finally { btn.disabled = false; btn.textContent = "Explore"; }
+}
+document.getElementById("graphGo").onclick = loadGraph;
+document.getElementById("graphQ").addEventListener("keydown", e => { if (e.key === "Enter") loadGraph(); });
+document.querySelector('[data-tab=graph]').addEventListener("click", () => { if (!nodes.length) loadGraph(); }, { once: true });
+
+/* ---------- Retrieval tester ---------- */
+async function runSearch() {
+  const q = document.getElementById("searchQ").value.trim();
+  if (!q) return;
+  const k = document.getElementById("searchK").value;
+  const out = document.getElementById("searchOut");
+  const btn = document.getElementById("searchGo");
+  btn.disabled = true; btn.textContent = "…";
+  out.innerHTML = '<div class="empty">Retrieving…</div>';
+  try {
+    const r = await api(`/api/search?q=${encodeURIComponent(q)}&top_k=${k}`);
+    let html = "";
+    const chunks = r.chunks || [], facts = r.facts || [];
+    html += `<h3>Retrieved chunks (${chunks.length})</h3>`;
+    html += chunks.length ? chunks.map((c, i) => `<div class="chunk">
+        <div class="meta"><span class="rank">#${i + 1}</span>
+          <span class="src">📖 ${esc(c.Source || c.source || "unknown")}</span>
+          ${c.Similarity ? `<span class="sim">similarity ${(c.Similarity).toFixed(3)}</span>` : ""}
+        </div>
+        <div class="body">${esc(c.Content || c.content || "")}</div>
+      </div>`).join("") : '<div class="empty">No chunks retrieved</div>';
+    html += `<h3>Knowledge graph facts (${facts.length})</h3>`;
+    html += facts.length ? `<div class="listbox triples">` + facts.map(t => `<div class="triple">
+        <span class="s">${esc(t.subject)}</span><span class="p">${esc(t.predicate)}</span><span class="o">${esc(t.object)}</span>
+        ${t.source ? `<span class="src">📖 ${esc(t.source)}</span>` : ""}
+      </div>`).join("") + `</div>` : '<div class="empty">No graph facts matched</div>';
+    out.innerHTML = html;
+  } catch (e) {
+    out.innerHTML = `<div class="empty">Failed: ${esc(e.message)}</div>`;
+  } finally { btn.disabled = false; btn.textContent = "Retrieve"; }
+}
+document.getElementById("searchGo").onclick = runSearch;
+document.getElementById("searchQ").addEventListener("keydown", e => { if (e.key === "Enter") runSearch(); });
+</script>
+</body>
+</html>

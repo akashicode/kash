@@ -167,7 +167,7 @@ func TestOptionsFromMaxTokens(t *testing.T) {
 		{
 			name:      "8192 token model capped for retrieval quality",
 			maxTokens: 8192,
-			wantChunk: 2000, // int(8192*4*0.9)=29491, capped at maxRetrievalChunkSize
+			wantChunk: 2000, // int(8192*4*0.9)=29491, capped at MaxRetrievalChunkSize
 		},
 		{
 			name:      "zero falls back to default",

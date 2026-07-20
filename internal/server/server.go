@@ -56,8 +56,9 @@ type Server struct {
 	appCfg      *agentconfig.Config
 	mux           *http.ServeMux
 	log           *slog.Logger
-	apiKey        string // optional API key for auth; empty = open access
-	corpusVersion int    // 0 = unknown (no build manifest found)
+	apiKey        string             // optional API key for auth; empty = open access
+	corpusVersion int                // 0 = unknown (no build manifest found)
+	buildManifest *manifest.Manifest // nil when no manifest is present
 }
 
 // Config holds the runtime server configuration.
@@ -118,10 +119,12 @@ func New(cfg Config) (*Server, error) {
 	// Optional API key — enables auth on all endpoints (except /health)
 	apiKey := os.Getenv("AGENT_API_KEY")
 
-	// Corpus version from the build manifest (optional)
+	// Corpus manifest (optional) — feeds /health and the dashboard UI
 	corpusVersion := 0
+	var buildManifest *manifest.Manifest
 	if cfg.ManifestPath != "" {
-		if m, mErr := manifest.LoadOrNew(cfg.ManifestPath); mErr == nil {
+		if m, mErr := manifest.LoadOrNew(cfg.ManifestPath); mErr == nil && len(m.Documents) > 0 {
+			buildManifest = m
 			corpusVersion = m.Version
 		}
 	}
@@ -137,6 +140,7 @@ func New(cfg Config) (*Server, error) {
 		log:           logger,
 		apiKey:        apiKey,
 		corpusVersion: corpusVersion,
+		buildManifest: buildManifest,
 	}
 
 	logger.Info("server initialized",
@@ -196,8 +200,9 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// /health is always public
-		if r.URL.Path == "/health" {
+		// /health and the dashboard shell are always public (the dashboard's
+		// data APIs stay protected; the page asks for the key client-side)
+		if r.URL.Path == "/health" || r.URL.Path == "/" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -251,6 +256,14 @@ func (w *statusWriter) Flush() {
 }
 
 func (s *Server) registerRoutes() {
+	// Dashboard UI (static shell — the APIs it calls are auth-protected)
+	s.mux.HandleFunc("/", s.handleUI)
+
+	// Dashboard APIs
+	s.mux.HandleFunc("/api/info", s.handleAPIInfo)
+	s.mux.HandleFunc("/api/graph", s.handleAPIGraph)
+	s.mux.HandleFunc("/api/search", s.handleAPISearch)
+
 	// Health check
 	s.mux.HandleFunc("/health", s.handleHealth)
 
@@ -268,13 +281,19 @@ func (s *Server) registerRoutes() {
 // does not specify one.
 const defaultTopK = 5
 
-// hybridSearch performs both vector and graph search, then merges results.
+// retrievalResult bundles structured hybrid search output.
+type retrievalResult struct {
+	Chunks []vector.SearchResult `json:"chunks"`
+	Facts  []graph.SearchResult  `json:"facts"`
+}
+
+// retrieve performs both vector and graph search and returns structured results.
 //
 // Retrieval is two-stage: a wide candidate pool is pulled from the vector
 // store (so relevant chunks from any document can surface), then narrowed to
 // topK — by the reranker when configured, by similarity order otherwise —
 // with a per-source cap so a single document cannot monopolize the context.
-func (s *Server) hybridSearch(ctx context.Context, query string, topK int) (string, error) {
+func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrievalResult, error) {
 	if topK <= 0 {
 		topK = defaultTopK
 	}
@@ -299,7 +318,7 @@ func (s *Server) hybridSearch(ctx context.Context, query string, topK int) (stri
 		vectorResults, err = s.vectorStore.Query(ctx, query, candidateK)
 		if err != nil {
 			s.log.Error("vector search failed", "error", err, "query", query)
-			return "", fmt.Errorf("vector search: %w", err)
+			return retrievalResult{}, fmt.Errorf("vector search: %w", err)
 		}
 	}
 	s.log.Info("vector search completed", "candidates", len(vectorResults), "query", query)
@@ -335,18 +354,28 @@ func (s *Server) hybridSearch(ctx context.Context, query string, topK int) (stri
 
 	selected := diversifyBySource(ranked, topK)
 
+	return retrievalResult{Chunks: selected, Facts: graphResults}, nil
+}
+
+// hybridSearch runs retrieve and formats the results as a context string for
+// injection into LLM prompts.
+func (s *Server) hybridSearch(ctx context.Context, query string, topK int) (string, error) {
+	result, err := s.retrieve(ctx, query, topK)
+	if err != nil {
+		return "", err
+	}
+
 	var sb strings.Builder
-	if len(selected) > 0 {
+	if len(result.Chunks) > 0 {
 		sb.WriteString("## Relevant Knowledge\n\n")
-		for i, r := range selected {
-			sb.WriteString(fmt.Sprintf("**[%d] Source: %s**\n", i+1, r.Source))
+		for i, r := range result.Chunks {
+			fmt.Fprintf(&sb, "**[%d] Source: %s**\n", i+1, r.Source)
 			sb.WriteString(r.Content)
 			sb.WriteString("\n\n")
 		}
 	}
 
-	// Add graph results
-	graphCtx := graph.FormatResults(graphResults)
+	graphCtx := graph.FormatResults(result.Facts)
 	if graphCtx != "" {
 		sb.WriteString("\n## Knowledge Graph Context\n\n")
 		sb.WriteString(graphCtx)
@@ -438,8 +467,9 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Extract user query for retrieval
-	userQuery := extractLastUserMessage(req.Messages)
+	// Extract user query for retrieval, rewriting follow-ups into standalone
+	// queries using the conversation history
+	userQuery := s.buildRetrievalQuery(ctx, req.Messages)
 	s.log.Info("chat completion request", "query", userQuery, "stream", req.Stream)
 
 	// Run hybrid search
@@ -549,6 +579,52 @@ func extractLastUserMessage(messages []openai.ChatCompletionMessage) string {
 	return ""
 }
 
+// buildRetrievalQuery returns the search query to use for retrieval. On the
+// first turn this is the user's message as-is. On follow-up turns the message
+// is rewritten into a standalone query via the LLM, so references like "tell
+// me more about that" resolve against the conversation instead of retrieving
+// nothing. Falls back to the raw message on any rewrite failure.
+func (s *Server) buildRetrievalQuery(ctx context.Context, messages []openai.ChatCompletionMessage) string {
+	userQuery := extractLastUserMessage(messages)
+	if userQuery == "" {
+		return ""
+	}
+
+	// Collect conversational history (user/assistant turns) before the last
+	// user message. No history → nothing to resolve, skip the LLM call.
+	lastUserIdx := -1
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == openai.ChatMessageRoleUser {
+			lastUserIdx = i
+			break
+		}
+	}
+	var history []openai.ChatCompletionMessage
+	for _, m := range messages[:lastUserIdx] {
+		if m.Role == openai.ChatMessageRoleUser || m.Role == openai.ChatMessageRoleAssistant {
+			history = append(history, m)
+		}
+	}
+	if len(history) == 0 {
+		return userQuery
+	}
+	// Only the recent turns matter for reference resolution
+	const maxHistory = 6
+	if len(history) > maxHistory {
+		history = history[len(history)-maxHistory:]
+	}
+
+	rewritten, err := s.llmClient.RewriteQuery(ctx, history, userQuery)
+	if err != nil {
+		s.log.Warn("query rewrite failed (using raw message)", "error", err)
+		return userQuery
+	}
+	if rewritten != userQuery {
+		s.log.Info("query rewritten for retrieval", "original", userQuery, "rewritten", rewritten)
+	}
+	return rewritten
+}
+
 func buildAugmentedMessages(systemPrompt, retrievedCtx string, original []openai.ChatCompletionMessage) []openai.ChatCompletionMessage {
 	augmented := make([]openai.ChatCompletionMessage, 0, len(original)+2)
 
@@ -560,11 +636,14 @@ func buildAugmentedMessages(systemPrompt, retrievedCtx string, original []openai
 		})
 	}
 
-	// Add retrieved context
+	// Add retrieved context with citation instructions — the sources are
+	// attached to every chunk and fact, but the model must be told to use them
 	if retrievedCtx != "" {
 		augmented = append(augmented, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: "Here is relevant context from the knowledge base:\n\n" + retrievedCtx,
+			Role: openai.ChatMessageRoleSystem,
+			Content: "Here is relevant context from the knowledge base:\n\n" + retrievedCtx +
+				"\n\nWhen you answer, cite the source documents you drew from inline, e.g. (source: book.pdf). " +
+				"Only cite sources that appear in the context above; never invent a source.",
 		})
 	}
 

@@ -41,17 +41,18 @@ func DefaultOptions() Options {
 	}
 }
 
-// maxRetrievalChunkSize caps chunk size regardless of the embedder's token
-// limit. The model's max tokens is a hard ceiling, not a target: oversized
-// chunks (e.g. ~115K chars for a 32K-token model) blend many topics into one
-// embedding and destroy retrieval precision. ~2000 chars (~500 tokens) keeps
-// chunks topically focused.
-const maxRetrievalChunkSize = 2000
+// MaxRetrievalChunkSize caps auto-tuned chunk size regardless of the
+// embedder's token limit. The model's max tokens is a hard ceiling, not a
+// target: oversized chunks (e.g. ~115K chars for a 32K-token model) blend
+// many topics into one embedding and destroy retrieval precision.
+// ~2000 chars (~500 tokens) keeps chunks topically focused. An explicit
+// build.chunk_size in agent.yaml may exceed this (with a warning).
+const MaxRetrievalChunkSize = 2000
 
 // OptionsFromMaxTokens computes chunk options from a model's token limit.
 // It uses a conservative estimate of ~4 characters per token and applies a
 // 90% safety margin so chunks stay well under the model's maximum, then caps
-// the result at maxRetrievalChunkSize for retrieval quality.
+// the result at MaxRetrievalChunkSize for retrieval quality.
 // Returns DefaultOptions if maxTokens is <= 0.
 func OptionsFromMaxTokens(maxTokens int) Options {
 	if maxTokens <= 0 {
@@ -62,8 +63,8 @@ func OptionsFromMaxTokens(maxTokens int) Options {
 	if chunkSize < 200 {
 		chunkSize = 200 // absolute floor
 	}
-	if chunkSize > maxRetrievalChunkSize {
-		chunkSize = maxRetrievalChunkSize
+	if chunkSize > MaxRetrievalChunkSize {
+		chunkSize = MaxRetrievalChunkSize
 	}
 	overlap := chunkSize / 5
 	return Options{

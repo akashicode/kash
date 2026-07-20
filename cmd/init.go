@@ -156,6 +156,14 @@ runtime:
     # parallel: true    # optional: enable parallel embedding requests (for local embedders)
                         # default: false (sequential with retry, safe for hosted APIs)
 
+# Build settings (used by 'kash build')
+build:
+  chunk_size: 1000    # max characters per chunk — retrieval works best at 800-2000
+  chunk_overlap: 200  # characters shared between consecutive chunks (~20%% of chunk_size)
+  # Note: an explicit chunk_size here takes priority over max_tokens auto-tuning.
+  # Changing these after a build only affects new/changed documents; run
+  # 'kash build --rebuild' to re-chunk the whole corpus consistently.
+
 # MCP tool definitions (auto-populated by 'kash build')
 mcp:
   tools:

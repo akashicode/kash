@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -123,12 +124,31 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Chunk options: auto-tune from max_tokens if set in agent.yaml
+	// Chunk options — priority: explicit build.chunk_size in agent.yaml,
+	// then auto-tune from runtime.embedder.max_tokens, then defaults.
+	chunkSize, chunkOverlap := agentconfig.AgentYAMLChunkOptions("agent.yaml")
 	maxTokens := agentconfig.AgentYAMLMaxTokens("agent.yaml")
 	var chunkOpts chunker.Options
-	if maxTokens > 0 {
+	switch {
+	case chunkSize > 0:
+		if chunkOverlap <= 0 {
+			chunkOverlap = chunkSize / 5
+		}
+		chunkOpts = chunker.Options{ChunkSize: chunkSize, Overlap: chunkOverlap}
+		// Never exceed what the embedding model can actually accept
+		if maxTokens > 0 {
+			modelLimit := int(float64(maxTokens) * 4 * 0.9)
+			if chunkOpts.ChunkSize > modelLimit {
+				display.StepWarn(fmt.Sprintf("build.chunk_size %d exceeds the embedder's ~%d-char limit (max_tokens: %d) — capping to %d", chunkOpts.ChunkSize, modelLimit, maxTokens, modelLimit))
+				chunkOpts.ChunkSize = modelLimit
+			}
+		}
+		if chunkOpts.ChunkSize > chunker.MaxRetrievalChunkSize {
+			display.StepWarn(fmt.Sprintf("build.chunk_size %d is large — chunks over ~%d chars usually reduce retrieval precision", chunkOpts.ChunkSize, chunker.MaxRetrievalChunkSize))
+		}
+	case maxTokens > 0:
 		chunkOpts = chunker.OptionsFromMaxTokens(maxTokens)
-	} else {
+	default:
 		chunkOpts = chunker.DefaultOptions()
 	}
 
@@ -159,6 +179,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	display.KeyValue("LLM Model", cfg.LLM.Model, display.BrightMagenta)
 	display.KeyValue("Embed Endpoint", cfg.Embedder.BaseURL, display.Dim+display.White)
 	display.KeyValue("Chunk Size (chars)", chunkOpts.ChunkSize, display.Dim+display.White)
+	display.KeyValue("Chunk Overlap (chars)", chunkOpts.Overlap, display.Dim+display.White)
 	fmt.Println()
 
 	// Step 1: Load documents
@@ -309,34 +330,57 @@ func runBuild(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Phase 1: embeddings
-		if !state.VectorDone {
-			if p.Reason == reasonResume {
-				// Clear any partially embedded chunks from the interrupted run
-				if err := vs.DeleteBySource(ctx, name); err != nil {
-					return fmt.Errorf("clear partial vectors for %q: %w", name, err)
-				}
-			}
-			if err := vs.AddChunks(ctx, chunks, parallelEmbed); err != nil {
-				return fmt.Errorf("add chunks for %q to vector store: %w", name, err)
-			}
-			state.Chunks = len(chunks)
-			state.VectorDone = true
+		// The two phases are independent — embeddings call the embedder API,
+		// triple extraction calls the LLM API — so they run concurrently and
+		// each document takes ~max(embed, extract) time instead of their sum.
+		// commit serializes manifest mutation + save between the goroutines.
+		var manifestMu sync.Mutex
+		commit := func(mutate func()) error {
+			manifestMu.Lock()
+			defer manifestMu.Unlock()
+			mutate()
 			if err := m.Save(manifestPath); err != nil {
 				return fmt.Errorf("save manifest: %w", err)
 			}
-			display.StepDetail(fmt.Sprintf("%s: embedded %d chunk(s)", name, len(chunks)))
+			return nil
+		}
+
+		var wg sync.WaitGroup
+		var vecErr error
+
+		// Phase 1: embeddings (background goroutine)
+		if !state.VectorDone {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if p.Reason == reasonResume {
+					// Clear any partially embedded chunks from the interrupted run
+					if err := vs.DeleteBySource(ctx, name); err != nil {
+						vecErr = fmt.Errorf("clear partial vectors for %q: %w", name, err)
+						return
+					}
+				}
+				if err := vs.AddChunks(ctx, chunks, parallelEmbed); err != nil {
+					vecErr = fmt.Errorf("add chunks for %q to vector store: %w", name, err)
+					return
+				}
+				if err := commit(func() { state.Chunks = len(chunks); state.VectorDone = true }); err != nil {
+					vecErr = err
+					return
+				}
+				display.StepDetail(fmt.Sprintf("%s: embedded %d chunk(s)", name, len(chunks)))
+			}()
 		} else {
 			display.StepDetail(fmt.Sprintf("%s: embeddings already done (%d chunks)", name, state.Chunks))
 		}
 
-		// Phase 2: knowledge graph triples, resumable per batch
+		// Phase 2: knowledge graph triples, resumable per batch (this goroutine)
+		docComplete := true
 		if !state.GraphDone {
 			if state.GraphBatchesDone > 0 {
 				display.StepDetail(fmt.Sprintf("%s: resuming triple extraction from batch %d", name, state.GraphBatchesDone+1))
 			}
 
-			docComplete := true
 			for i := state.GraphBatchesDone * batchSize; i < len(chunks); i += batchSize {
 				end := i + batchSize
 				if end > len(chunks) {
@@ -371,25 +415,35 @@ func runBuild(cmd *cobra.Command, args []string) error {
 				}
 
 				if err := gdb.AddTriples(ctx, triples, name); err != nil {
+					wg.Wait()
 					return fmt.Errorf("add triples for %q: %w", name, err)
 				}
 
-				state.Triples += len(triples)
-				state.GraphBatchesDone++
-				if err := m.Save(manifestPath); err != nil {
-					return fmt.Errorf("save manifest: %w", err)
+				if err := commit(func() { state.Triples += len(triples); state.GraphBatchesDone++ }); err != nil {
+					wg.Wait()
+					return err
 				}
 				display.StepDetail(fmt.Sprintf("%s: chunks %d-%d: +%d triples (doc total: %d)", name, i+1, end, len(triples), state.Triples))
 			}
 
 			if docComplete {
-				state.GraphDone = true
-				state.CompletedAt = time.Now().UTC()
-				if err := m.Save(manifestPath); err != nil {
-					return fmt.Errorf("save manifest: %w", err)
+				if err := commit(func() { state.GraphDone = true }); err != nil {
+					wg.Wait()
+					return err
 				}
 			} else {
 				incomplete = append(incomplete, name)
+			}
+		}
+
+		// Join the embedding goroutine before moving to the next document
+		wg.Wait()
+		if vecErr != nil {
+			return vecErr
+		}
+		if state.Done() && state.CompletedAt.IsZero() {
+			if err := commit(func() { state.CompletedAt = time.Now().UTC() }); err != nil {
+				return err
 			}
 		}
 
