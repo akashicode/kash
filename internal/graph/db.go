@@ -93,6 +93,31 @@ func (db *DB) AddTriples(ctx context.Context, triples []Triple, source string) e
 	return nil
 }
 
+// DeleteBySource removes all triples whose label matches the given source
+// document. Used by incremental builds to replace a changed document's facts.
+func (db *DB) DeleteBySource(ctx context.Context, source string) error {
+	if source == "" {
+		return errors.New("source cannot be empty")
+	}
+
+	var toRemove []quad.Quad
+	it := db.store.QuadsAllIterator()
+	for it.Next(ctx) {
+		q := db.store.Quad(it.Result())
+		if quadValueStr(q.Label) == source {
+			toRemove = append(toRemove, q)
+		}
+	}
+	it.Close()
+
+	for _, q := range toRemove {
+		if err := db.store.RemoveQuad(q); err != nil {
+			return fmt.Errorf("remove quad for source %q: %w", source, err)
+		}
+	}
+	return nil
+}
+
 // Search queries the graph for entities related to the query terms.
 func (db *DB) Search(ctx context.Context, query string, topK int) ([]SearchResult, error) {
 	if query == "" {

@@ -252,6 +252,18 @@ func (s *Store) Count() int {
 	return s.collection.Count()
 }
 
+// DeleteBySource removes all chunks originating from the given source
+// document. Used by incremental builds to replace a changed document's data.
+func (s *Store) DeleteBySource(ctx context.Context, source string) error {
+	if source == "" {
+		return errors.New("source cannot be empty")
+	}
+	if err := s.collection.Delete(ctx, map[string]string{"source": source}, nil); err != nil {
+		return fmt.Errorf("delete chunks for source %q: %w", source, err)
+	}
+	return nil
+}
+
 // embedRequest is the request body for OpenAI-compatible embeddings.
 // Input is sent as an array for maximum compatibility across providers/gateways.
 type embedRequest struct {

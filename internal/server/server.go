@@ -17,6 +17,7 @@ import (
 	"github.com/akashicode/kash/internal/display"
 	"github.com/akashicode/kash/internal/graph"
 	"github.com/akashicode/kash/internal/llm"
+	"github.com/akashicode/kash/internal/manifest"
 	"github.com/akashicode/kash/internal/vector"
 )
 
@@ -53,9 +54,10 @@ type Server struct {
 	reranker    *llm.Reranker
 	agentCfg    *AgentConfig
 	appCfg      *agentconfig.Config
-	mux         *http.ServeMux
-	log         *slog.Logger
-	apiKey string // optional API key for auth; empty = open access
+	mux           *http.ServeMux
+	log           *slog.Logger
+	apiKey        string // optional API key for auth; empty = open access
+	corpusVersion int    // 0 = unknown (no build manifest found)
 }
 
 // Config holds the runtime server configuration.
@@ -63,7 +65,10 @@ type Config struct {
 	VectorStorePath string
 	GraphDBPath     string
 	AgentYAMLPath   string
-	AppCfg          *agentconfig.Config
+	// ManifestPath is the optional build manifest path; when present the
+	// corpus version is exposed on /health.
+	ManifestPath string
+	AppCfg       *agentconfig.Config
 }
 
 // New creates and initializes a new runtime Server.
@@ -113,16 +118,25 @@ func New(cfg Config) (*Server, error) {
 	// Optional API key — enables auth on all endpoints (except /health)
 	apiKey := os.Getenv("AGENT_API_KEY")
 
+	// Corpus version from the build manifest (optional)
+	corpusVersion := 0
+	if cfg.ManifestPath != "" {
+		if m, mErr := manifest.LoadOrNew(cfg.ManifestPath); mErr == nil {
+			corpusVersion = m.Version
+		}
+	}
+
 	s := &Server{
-		vectorStore: vs,
-		graphDB:     gdb,
-		llmClient:   llmClient,
-		reranker:    reranker,
-		agentCfg:    agentCfg,
-		appCfg:      cfg.AppCfg,
-		mux:         http.NewServeMux(),
-		log:         logger,
-		apiKey:      apiKey,
+		vectorStore:   vs,
+		graphDB:       gdb,
+		llmClient:     llmClient,
+		reranker:      reranker,
+		agentCfg:      agentCfg,
+		appCfg:        cfg.AppCfg,
+		mux:           http.NewServeMux(),
+		log:           logger,
+		apiKey:        apiKey,
+		corpusVersion: corpusVersion,
 	}
 
 	logger.Info("server initialized",
@@ -389,6 +403,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":           "ok",
 		"agent":            s.agentCfg.Agent.Name,
 		"version":          s.agentCfg.Agent.Version,
+		"corpus_version":   s.corpusVersion,
 		"vectors":          s.vectorStore.Count(),
 		"triples":          s.graphDB.Count(),
 		"mcp_tools":        len(s.agentCfg.MCP.Tools),

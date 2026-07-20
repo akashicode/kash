@@ -70,6 +70,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 		VectorStorePath: "data/memory.chromem",
 		GraphDBPath:     "data/knowledge.cayley",
 		AgentYAMLPath:   serveAgentYAML,
+		ManifestPath:    "data/build.manifest.json",
 		AppCfg:          cfg,
 	}
 

@@ -77,6 +77,34 @@ func TestTripleProvenance(t *testing.T) {
 	assert.NotContains(t, formatted, "(source: )")
 }
 
+// TestDeleteBySource ensures incremental builds can surgically remove one
+// document's triples while leaving other documents untouched.
+func TestDeleteBySource(t *testing.T) {
+	db, err := NewDB()
+	require.NoError(t, err)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	keep := []Triple{{Subject: "Gorakhnath", Predicate: "founded", Object: "Nath tradition"}}
+	require.NoError(t, db.AddTriples(ctx, keep, "nath-book.pdf"))
+
+	drop := []Triple{
+		{Subject: "old fact", Predicate: "belongs to", Object: "stale edition"},
+		{Subject: "another old fact", Predicate: "belongs to", Object: "stale edition"},
+	}
+	require.NoError(t, db.AddTriples(ctx, drop, "stale-book.pdf"))
+
+	require.EqualValues(t, 3, db.Count())
+	require.NoError(t, db.DeleteBySource(ctx, "stale-book.pdf"))
+	assert.EqualValues(t, 1, db.Count())
+
+	results, err := db.Search(ctx, "Gorakhnath Nath tradition", 5)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "nath-book.pdf", results[0].Source)
+}
+
 func TestScoreMatchPrefersWholeWords(t *testing.T) {
 	terms := tokenize("art history")
 
