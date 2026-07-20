@@ -114,12 +114,21 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create chunker: %w", err)
 	}
 
+	// Chunks are grouped per document so triple extraction batches never mix
+	// documents — batches carry a single source for graph provenance.
+	type docChunks struct {
+		Name   string
+		Chunks []chunker.Chunk
+	}
+
 	var allChunks []chunker.Chunk
+	var docGroups []docChunks
 	for _, doc := range docs {
 		chunks, err := ck.SplitBySentence(doc.Content, doc.Name)
 		if err != nil {
 			return fmt.Errorf("chunk document %q: %w", doc.Name, err)
 		}
+		docGroups = append(docGroups, docChunks{Name: doc.Name, Chunks: chunks})
 		allChunks = append(allChunks, chunks...)
 	}
 	display.StepResult("Created", fmt.Sprintf("%d chunk(s)", len(allChunks)))
@@ -160,49 +169,52 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	totalTriples := int64(0)
-	// Process chunks in batches to extract triples
+	// Process chunks in batches per document so every triple can be labeled
+	// with its source document in the graph.
 	batchSize := 10
-	for i := 0; i < len(allChunks); i += batchSize {
-		end := i + batchSize
-		if end > len(allChunks) {
-			end = len(allChunks)
-		}
-		batch := allChunks[i:end]
+	for _, group := range docGroups {
+		for i := 0; i < len(group.Chunks); i += batchSize {
+			end := i + batchSize
+			if end > len(group.Chunks) {
+				end = len(group.Chunks)
+			}
+			batch := group.Chunks[i:end]
 
-		// Combine batch into single text for efficiency
-		var combined strings.Builder
-		for _, ch := range batch {
-			combined.WriteString(ch.Content)
-			combined.WriteString("\n\n")
-		}
+			// Combine batch into single text for efficiency
+			var combined strings.Builder
+			for _, ch := range batch {
+				combined.WriteString(ch.Content)
+				combined.WriteString("\n\n")
+			}
 
-		var triples []llm.Triple
-		var extractErr error
-		maxRetries := 2
-		for attempt := 0; attempt <= maxRetries; attempt++ {
-			triples, extractErr = llmClient.ExtractTriples(ctx, combined.String())
-			if extractErr == nil {
-				if attempt > 0 {
-					display.StepDetail(fmt.Sprintf("Batch %d-%d: retry succeeded on attempt %d/%d", i+1, end, attempt+1, maxRetries+1))
+			var triples []llm.Triple
+			var extractErr error
+			maxRetries := 2
+			for attempt := 0; attempt <= maxRetries; attempt++ {
+				triples, extractErr = llmClient.ExtractTriples(ctx, combined.String())
+				if extractErr == nil {
+					if attempt > 0 {
+						display.StepDetail(fmt.Sprintf("%s: batch %d-%d: retry succeeded on attempt %d/%d", group.Name, i+1, end, attempt+1, maxRetries+1))
+					}
+					break
 				}
-				break
+				if attempt < maxRetries {
+					display.StepWarn(fmt.Sprintf("triple extraction failed for %s batch %d-%d (attempt %d/%d, retrying): %v", group.Name, i, end, attempt+1, maxRetries+1, extractErr))
+				}
 			}
-			if attempt < maxRetries {
-				display.StepWarn(fmt.Sprintf("triple extraction failed for batch %d-%d (attempt %d/%d, retrying): %v", i, end, attempt+1, maxRetries+1, extractErr))
+			if extractErr != nil {
+				display.StepWarn(fmt.Sprintf("triple extraction failed for %s batch %d-%d after %d attempts: %v", group.Name, i, end, maxRetries+1, extractErr))
+				continue
 			}
-		}
-		if extractErr != nil {
-			display.StepWarn(fmt.Sprintf("triple extraction failed for batch %d-%d after %d attempts: %v", i, end, maxRetries+1, extractErr))
-			continue
-		}
 
-		if err := gdb.AddTriples(ctx, triples); err != nil {
-			display.StepWarn(fmt.Sprintf("failed to add triples for batch %d-%d: %v", i, end, err))
-			continue
-		}
+			if err := gdb.AddTriples(ctx, triples, group.Name); err != nil {
+				display.StepWarn(fmt.Sprintf("failed to add triples for %s batch %d-%d: %v", group.Name, i, end, err))
+				continue
+			}
 
-		totalTriples += int64(len(triples))
-		display.StepDetail(fmt.Sprintf("Chunks %d-%d: +%d triples (total: %d)", i+1, end, len(triples), totalTriples))
+			totalTriples += int64(len(triples))
+			display.StepDetail(fmt.Sprintf("%s: chunks %d-%d: +%d triples (total: %d)", group.Name, i+1, end, len(triples), totalTriples))
+		}
 	}
 	display.StepResult("Knowledge graph", fmt.Sprintf("%d triples", gdb.Count()))
 

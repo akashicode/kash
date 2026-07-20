@@ -28,6 +28,7 @@ type SearchResult struct {
 	Subject   string  `json:"subject"`
 	Predicate string  `json:"predicate"`
 	Object    string  `json:"object"`
+	Source    string  `json:"source,omitempty"`
 	Score     float64 `json:"score"`
 }
 
@@ -60,10 +61,17 @@ func NewDBFromPath(path string) (*DB, error) {
 	return &DB{store: store}, nil
 }
 
-// AddTriples inserts a batch of triples into the graph.
-func (db *DB) AddTriples(ctx context.Context, triples []Triple) error {
+// AddTriples inserts a batch of triples into the graph. The source document
+// name is stored as the quad label so retrieved facts can cite their origin;
+// pass "" when the source is unknown.
+func (db *DB) AddTriples(ctx context.Context, triples []Triple, source string) error {
 	if len(triples) == 0 {
 		return nil
+	}
+
+	var label interface{}
+	if src := normalise(source); src != "" {
+		label = src
 	}
 
 	quads := make([]quad.Quad, 0, len(triples))
@@ -75,7 +83,7 @@ func (db *DB) AddTriples(ctx context.Context, triples []Triple) error {
 			normalise(t.Subject),
 			normalise(t.Predicate),
 			normalise(t.Object),
-			nil,
+			label,
 		))
 	}
 
@@ -124,6 +132,7 @@ func (db *DB) Search(ctx context.Context, query string, topK int) ([]SearchResul
 				Subject:   subj,
 				Predicate: pred,
 				Object:    obj,
+				Source:    quadValueStr(q.Label),
 				Score:     score,
 			})
 		}
@@ -147,7 +156,11 @@ func FormatResults(results []SearchResult) string {
 	var sb strings.Builder
 	sb.WriteString("Knowledge Graph Facts:\n")
 	for _, r := range results {
-		fmt.Fprintf(&sb, "- %s %s %s\n", r.Subject, r.Predicate, r.Object)
+		if r.Source != "" {
+			fmt.Fprintf(&sb, "- %s %s %s (source: %s)\n", r.Subject, r.Predicate, r.Object, r.Source)
+		} else {
+			fmt.Fprintf(&sb, "- %s %s %s\n", r.Subject, r.Predicate, r.Object)
+		}
 	}
 	return sb.String()
 }

@@ -27,20 +27,54 @@ func TestSearchReachesLateTriples(t *testing.T) {
 			Object:    "yoga practice",
 		})
 	}
-	// The most relevant triple is added last
-	triples = append(triples, Triple{
+	require.NoError(t, db.AddTriples(ctx, triples, "early-book.pdf"))
+
+	// The most relevant triple comes from a document added last
+	late := []Triple{{
 		Subject:   "kundalini yoga",
 		Predicate: "awakens",
 		Object:    "chakra energy",
-	})
-	require.NoError(t, db.AddTriples(ctx, triples))
+	}}
+	require.NoError(t, db.AddTriples(ctx, late, "late-book.pdf"))
 
 	results, err := db.Search(ctx, "kundalini chakra awakening", 5)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 
-	// The late, strongly matching triple must rank first
+	// The late, strongly matching triple must rank first — and cite its source
 	assert.Equal(t, "kundalini yoga", results[0].Subject)
+	assert.Equal(t, "late-book.pdf", results[0].Source)
+}
+
+// TestTripleProvenance ensures sources round-trip through the graph and show
+// up as citations in formatted results, while unlabeled triples stay clean.
+func TestTripleProvenance(t *testing.T) {
+	db, err := NewDB()
+	require.NoError(t, err)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	labeled := []Triple{{Subject: "Abhinavagupta", Predicate: "authored", Object: "Tantraloka"}}
+	require.NoError(t, db.AddTriples(ctx, labeled, "tantraloka-intro.pdf"))
+
+	unlabeled := []Triple{{Subject: "Kashmir Shaivism", Predicate: "flourished in", Object: "Kashmir"}}
+	require.NoError(t, db.AddTriples(ctx, unlabeled, ""))
+
+	results, err := db.Search(ctx, "Abhinavagupta Tantraloka Kashmir", 10)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+
+	bySubject := map[string]SearchResult{}
+	for _, r := range results {
+		bySubject[r.Subject] = r
+	}
+	assert.Equal(t, "tantraloka-intro.pdf", bySubject["Abhinavagupta"].Source)
+	assert.Equal(t, "", bySubject["Kashmir Shaivism"].Source)
+
+	formatted := FormatResults(results)
+	assert.Contains(t, formatted, "(source: tantraloka-intro.pdf)")
+	assert.NotContains(t, formatted, "(source: )")
 }
 
 func TestScoreMatchPrefersWholeWords(t *testing.T) {
