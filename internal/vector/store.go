@@ -83,13 +83,12 @@ func NewStoreFromPath(path string, embedCfg *config.ProviderConfig) (*Store, err
 
 	embeddingFunc := newEmbeddingFuncWithDimensions(embedCfg)
 
-	collection := db.GetCollection("documents", embeddingFunc)
-	if collection == nil {
-		// Create it if it doesn't exist yet
-		collection, err = db.CreateCollection("documents", nil, embeddingFunc)
-		if err != nil {
-			return nil, fmt.Errorf("create collection: %w", err)
-		}
+	// GetOrCreateCollection preserves documents already loaded from disk.
+	// CreateCollection must NOT be used here: it unconditionally replaces the
+	// loaded collection with an empty one (see NewPersistentStore).
+	collection, err := db.GetOrCreateCollection("documents", nil, embeddingFunc)
+	if err != nil {
+		return nil, fmt.Errorf("get or create collection: %w", err)
 	}
 
 	return &Store{
@@ -112,14 +111,14 @@ func NewPersistentStore(path string, embedCfg *config.ProviderConfig) (*Store, e
 
 	embeddingFunc := newEmbeddingFuncWithDimensions(embedCfg)
 
-	collection, err := db.CreateCollection("documents", nil, embeddingFunc)
+	// CRITICAL: chromem's CreateCollection never errors on an existing
+	// collection — it silently replaces it with an empty one, discarding every
+	// document NewPersistentDB just loaded from disk. That made incremental
+	// builds report 0 vectors and left DeleteBySource unable to see (and so
+	// unable to remove) a changed document's stale chunks. Always get-or-create.
+	collection, err := db.GetOrCreateCollection("documents", nil, embeddingFunc)
 	if err != nil {
-		// Collection may already exist
-		existing := db.GetCollection("documents", embeddingFunc)
-		if existing == nil {
-			return nil, fmt.Errorf("get or create collection: %w", err)
-		}
-		collection = existing
+		return nil, fmt.Errorf("get or create collection: %w", err)
 	}
 
 	return &Store{
