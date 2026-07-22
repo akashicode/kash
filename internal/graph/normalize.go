@@ -24,32 +24,32 @@ var canonicalPredicates = map[string]string{
 	"consists of": "contains",
 	"has chapter": "contains",
 
-	"part of":      "is part of",
-	"is part of":   "is part of",
-	"belongs to":   "is part of",
+	"part of":       "is part of",
+	"is part of":    "is part of",
+	"belongs to":    "is part of",
 	"is section of": "is part of",
 
 	// authorship (subject = author)
-	"authored":          "authored",
-	"author of":         "authored",
-	"is author of":      "authored",
-	"is the author of":  "authored",
-	"wrote":             "authored",
-	"composed":          "authored",
-	"created":           "authored",
+	"authored":         "authored",
+	"author of":        "authored",
+	"is author of":     "authored",
+	"is the author of": "authored",
+	"wrote":            "authored",
+	"composed":         "authored",
+	"created":          "authored",
 
 	// authorship (subject = work) — inverse direction, kept distinct
-	"was written by":   "was written by",
-	"written by":       "was written by",
-	"is authored by":   "was written by",
-	"authored by":      "was written by",
+	"was written by": "was written by",
+	"written by":     "was written by",
+	"is authored by": "was written by",
+	"authored by":    "was written by",
 
 	// commentary
-	"commented on":            "commented on",
-	"wrote commentary on":     "commented on",
-	"is commentary on":        "commented on",
-	"is a commentary on":      "commented on",
-	"comments on":             "commented on",
+	"commented on":        "commented on",
+	"wrote commentary on": "commented on",
+	"is commentary on":    "commented on",
+	"is a commentary on":  "commented on",
+	"comments on":         "commented on",
 
 	// translation
 	"translated":           "translated",
@@ -82,9 +82,9 @@ var canonicalPredicates = map[string]string{
 	"expounds":  "describes",
 
 	// definition / classification
-	"is a type of": "is a type of",
-	"is a kind of": "is a type of",
-	"is a form of": "is a type of",
+	"is a type of":  "is a type of",
+	"is a kind of":  "is a type of",
+	"is a form of":  "is a type of",
 	"is defined as": "is defined as",
 	"means":         "is defined as",
 	"refers to":     "is defined as",
@@ -122,18 +122,18 @@ var canonicalPredicates = map[string]string{
 // noisePredicates are commercial/distribution metadata that add nothing to a
 // scholarly knowledge graph but consume extraction and retrieval budget.
 var noisePredicates = map[string]bool{
-	"distributes":   true,
-	"distributed by": true,
+	"distributes":       true,
+	"distributed by":    true,
 	"is distributed by": true,
-	"sells":         true,
-	"sold by":       true,
-	"is sold by":    true,
-	"printed by":    true,
-	"is printed by": true,
-	"priced at":     true,
-	"costs":         true,
-	"has isbn":      true,
-	"has price":     true,
+	"sells":             true,
+	"sold by":           true,
+	"is sold by":        true,
+	"printed by":        true,
+	"is printed by":     true,
+	"priced at":         true,
+	"costs":             true,
+	"has isbn":          true,
+	"has price":         true,
 }
 
 // CanonicalPredicate reduces a predicate to its canonical surface form.

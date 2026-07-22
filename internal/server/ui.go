@@ -60,6 +60,7 @@ func (s *Server) handleAPIInfo(w http.ResponseWriter, r *http.Request) {
 		"embed_model":      s.appCfg.Embedder.Model,
 		"embed_dimensions": s.appCfg.Embedder.Dimensions,
 		"reranker_enabled": s.appCfg.Reranker.BaseURL != "",
+		"entity_aliases":   s.entityAliases,
 		"documents":        docs,
 	}
 

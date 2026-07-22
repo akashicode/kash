@@ -49,17 +49,18 @@ type AgentConfig struct {
 
 // Server is the Kash runtime HTTP server.
 type Server struct {
-	vectorStore *vector.Store
-	graphDB     *graph.DB
-	llmClient   *llm.Client
-	reranker    *llm.Reranker
-	agentCfg    *AgentConfig
-	appCfg      *agentconfig.Config
+	vectorStore   *vector.Store
+	graphDB       *graph.DB
+	llmClient     *llm.Client
+	reranker      *llm.Reranker
+	agentCfg      *AgentConfig
+	appCfg        *agentconfig.Config
 	mux           *http.ServeMux
 	log           *slog.Logger
 	apiKey        string             // optional API key for auth; empty = open access
 	corpusVersion int                // 0 = unknown (no build manifest found)
 	buildManifest *manifest.Manifest // nil when no manifest is present
+	entityAliases int                // 0 = entity resolution not in use
 }
 
 // Config holds the runtime server configuration.
@@ -70,7 +71,10 @@ type Config struct {
 	// ManifestPath is the optional build manifest path; when present the
 	// corpus version is exposed on /health.
 	ManifestPath string
-	AppCfg       *agentconfig.Config
+	// AliasPath is the optional entity resolution map. When absent, entity
+	// spelling variants are simply not merged.
+	AliasPath string
+	AppCfg    *agentconfig.Config
 }
 
 // New creates and initializes a new runtime Server.
@@ -98,6 +102,20 @@ func New(cfg Config) (*Server, error) {
 	gdb, err := graph.NewDBFromPath(cfg.GraphDBPath)
 	if err != nil {
 		return nil, fmt.Errorf("open graph db: %w", err)
+	}
+
+	// Entity resolution is optional: a missing alias file simply means no
+	// spelling variants are merged.
+	aliasCount := 0
+	if cfg.AliasPath != "" {
+		_, aliases, aliasErr := graph.LoadAliasFile(cfg.AliasPath)
+		if aliasErr != nil {
+			// A malformed alias file must not take the agent down
+			slog.Warn("ignoring entity alias file", "error", aliasErr, "path", cfg.AliasPath)
+		} else if aliases.Len() > 0 {
+			gdb.SetAliases(aliases)
+			aliasCount = aliases.Len()
+		}
 	}
 
 	// Initialize LLM client
@@ -142,12 +160,14 @@ func New(cfg Config) (*Server, error) {
 		apiKey:        apiKey,
 		corpusVersion: corpusVersion,
 		buildManifest: buildManifest,
+		entityAliases: aliasCount,
 	}
 
 	logger.Info("server initialized",
 		"agent", agentCfg.Agent.Name,
 		"vectors", vs.Count(),
 		"triples", gdb.Count(),
+		"entity_aliases", aliasCount,
 		"llm_model", cfg.AppCfg.LLM.Model,
 		"embed_model", cfg.AppCfg.Embedder.Model,
 		"embed_dimensions", cfg.AppCfg.Embedder.Dimensions,

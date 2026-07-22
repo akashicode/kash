@@ -48,6 +48,29 @@ type DB struct {
 	// and dropped whenever the graph is mutated.
 	mu  sync.RWMutex
 	idx *snapshot
+
+	// aliases optionally folds entity spelling variants together during
+	// traversal. Nil means no entity resolution, which is a valid state.
+	aliases *AliasSet
+}
+
+// SetAliases installs an entity resolution map. Passing nil disables entity
+// resolution. The traversal index is rebuilt on next use.
+func (db *DB) SetAliases(a *AliasSet) {
+	db.mu.Lock()
+	db.aliases = a
+	db.idx = nil
+	db.mu.Unlock()
+}
+
+// entityKey returns the adjacency key for an entity, folding it through the
+// alias map when one is loaded. Without aliases this is just the normalized
+// surface form, so behaviour is unchanged.
+func (db *DB) entityKey(entity string) string {
+	db.mu.RLock()
+	a := db.aliases
+	db.mu.RUnlock()
+	return a.Resolve(entity)
 }
 
 // snapshot is an in-memory copy of the graph plus an entity->triple index.
@@ -80,6 +103,7 @@ func (db *DB) index(ctx context.Context) *snapshot {
 
 	s = &snapshot{byEntity: map[string][]int{}}
 	seen := map[string]bool{}
+	aliases := db.aliases // already holding the write lock
 
 	it := db.store.QuadsAllIterator()
 	defer it.Close()
@@ -104,7 +128,10 @@ func (db *DB) index(ctx context.Context) *snapshot {
 			Object:    obj,
 			Source:    quadValueStr(q.Label),
 		})
-		fs, fo := normalizeSurface(subj), normalizeSurface(obj)
+		// Index under the alias-resolved key so spelling variants
+		// (Gorakhnath / Gorakhnatha) share one adjacency bucket and chains
+		// traverse across them.
+		fs, fo := aliases.Resolve(subj), aliases.Resolve(obj)
 		s.byEntity[fs] = append(s.byEntity[fs], i)
 		if fo != fs {
 			s.byEntity[fo] = append(s.byEntity[fo], i)
@@ -251,7 +278,7 @@ func (db *DB) SearchWithHops(ctx context.Context, query string, topK, maxHops in
 	var expanded []SearchResult
 	for _, seed := range expandFrom {
 		for _, entity := range []string{seed.Subject, seed.Object} {
-			key := normalizeSurface(entity)
+			key := db.entityKey(entity)
 			neighbours := snap.byEntity[key]
 			// Skip hubs: too generic for their neighbours to mean anything
 			if len(neighbours) == 0 || len(neighbours) > maxHubDegree {

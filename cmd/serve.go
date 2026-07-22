@@ -10,6 +10,7 @@ import (
 
 	agentconfig "github.com/akashicode/kash/internal/config"
 	"github.com/akashicode/kash/internal/display"
+	"github.com/akashicode/kash/internal/graph"
 	"github.com/akashicode/kash/internal/server"
 )
 
@@ -71,6 +72,7 @@ func runServe(_ *cobra.Command, _ []string) error {
 		GraphDBPath:     "data/knowledge.cayley",
 		AgentYAMLPath:   serveAgentYAML,
 		ManifestPath:    "data/build.manifest.json",
+		AliasPath:       filepath.Join("data", graph.AliasFileName),
 		AppCfg:          cfg,
 	}
 
