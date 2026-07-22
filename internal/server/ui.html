@@ -99,6 +99,9 @@
   .triple .p { color: var(--muted); font-style: italic; }
   .triple .o { color: var(--accent2); font-weight: 600; }
   .triple .src { margin-left: auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .triple.hop { padding-left: 26px; background: color-mix(in srgb, var(--accent2) 6%, transparent); }
+  .triple .hopmark { color: var(--accent2); font-weight: 700; margin-left: -14px; }
+  .triple .via { color: var(--accent2); font-size: 11px; opacity: .8; }
   .listbox { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
              max-height: 340px; overflow-y: auto; }
 
@@ -640,8 +643,10 @@ async function runSearch() {
       </div>`;
     }).join("") : '<div class="empty">No chunks retrieved</div>';
     html += `<h3>Knowledge graph facts (${facts.length})</h3>`;
-    html += facts.length ? '<div class="listbox triples">' + facts.map(t => `<div class="triple">
+    html += facts.length ? '<div class="listbox triples">' + facts.map(t => `<div class="triple${t.hop ? " hop" : ""}">
+        ${t.hop ? '<span class="hopmark" title="reached by traversing one edge">↳</span>' : ""}
         <span class="s">${esc(t.subject)}</span><span class="p">${esc(t.predicate)}</span><span class="o">${esc(t.object)}</span>
+        ${t.via ? `<span class="via">via ${esc(t.via)}</span>` : ""}
         ${t.source ? `<span class="src">📖 ${esc(t.source)}</span>` : ""}
       </div>`).join("") + '</div>' : '<div class="empty">No graph facts matched</div>';
     out.innerHTML = html;

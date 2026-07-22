@@ -360,6 +360,14 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 // graphFactLimit is the number of knowledge-graph facts injected as context.
 const graphFactLimit = 10
 
+// graphHops is how far retrieval traverses from a directly matching fact.
+// 1 surfaces connected chains without letting the neighbourhood explode.
+const graphHops = 1
+
+// graphHopSharePct reserves a share of the injected facts for traversed
+// results, which would otherwise always be truncated away by their decayed score.
+const graphHopSharePct = 30
+
 // contextBoost multiplies the score of a fact whose source document also
 // surfaced in semantic retrieval.
 const contextBoost = 2.5
@@ -368,8 +376,10 @@ const contextBoost = 2.5
 // source documents that semantic retrieval selected, resolving homonyms that
 // pure string matching cannot.
 func (s *Server) searchGraphInContext(ctx context.Context, query string, chunks []vector.SearchResult, limit int) []graph.SearchResult {
-	// Pull a wider candidate pool so promotion has something to promote from
-	candidates, err := s.graphDB.Search(ctx, query, limit*4)
+	// Pull a wider candidate pool so promotion has something to promote from.
+	// One hop of traversal surfaces connected chains (A taught B, B founded C)
+	// that a flat term match would never reach.
+	candidates, err := s.graphDB.SearchWithHops(ctx, query, limit*4, graphHops)
 	if err != nil {
 		s.log.Warn("graph search failed (non-fatal)", "error", err, "query", query)
 		return nil
@@ -412,10 +422,47 @@ func rankFactsByContext(candidates []graph.SearchResult, chunks []vector.SearchR
 	sort.SliceStable(ranked, func(i, j int) bool {
 		return ranked[i].Score > ranked[j].Score
 	})
-	if len(ranked) > limit {
-		ranked = ranked[:limit]
+	if len(ranked) <= limit {
+		return ranked
 	}
-	return ranked
+
+	// Traversed facts carry a decayed score by construction, so a plain
+	// truncation would always drop them. Reserve a small quota so connected
+	// chains survive into the context, and backfill if either side is short.
+	hopQuota := limit * graphHopSharePct / 100
+	direct := make([]graph.SearchResult, 0, limit)
+	hops := make([]graph.SearchResult, 0, hopQuota)
+	for _, r := range ranked {
+		if r.Hop > 0 {
+			if len(hops) < hopQuota {
+				hops = append(hops, r)
+			}
+		} else if len(direct) < limit-hopQuota {
+			direct = append(direct, r)
+		}
+	}
+	out := append(direct, hops...)
+	if len(out) < limit {
+		for _, r := range ranked {
+			if len(out) >= limit {
+				break
+			}
+			if !containsFact(out, r) {
+				out = append(out, r)
+			}
+		}
+	}
+	return out
+}
+
+// containsFact reports whether a fact is already present in the slice.
+func containsFact(list []graph.SearchResult, r graph.SearchResult) bool {
+	for _, x := range list {
+		if x.Subject == r.Subject && x.Predicate == r.Predicate && x.Object == r.Object {
+			return true
+		}
+	}
+	return false
 }
 
 // hybridSearch runs retrieve and formats the results as a context string for
