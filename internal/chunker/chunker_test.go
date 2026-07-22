@@ -48,11 +48,14 @@ func TestChunkDocument(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			chunks, err := ChunkDocument(tt.input, tt.chunkSize)
+			c, err := NewChunker(Options{ChunkSize: tt.chunkSize, Overlap: tt.chunkSize / 5})
 			if tt.wantErr {
 				require.Error(t, err)
 				return
 			}
+			require.NoError(t, err)
+
+			chunks, err := c.ChunkText(tt.input, "")
 			require.NoError(t, err)
 			assert.GreaterOrEqual(t, len(chunks), tt.wantMin)
 		})

@@ -99,16 +99,6 @@ func applyEnv(dst *string, envKey string) {
 	}
 }
 
-// applyEnvInt overwrites dst with the int value of the environment variable if set.
-func applyEnvInt(dst *int, envKey string) {
-	if v := os.Getenv(envKey); v != "" {
-		var n int
-		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
-			*dst = n
-		}
-	}
-}
-
 // ValidateLLM checks that LLM provider settings are configured.
 func ValidateLLM(cfg *Config) error {
 	var missing []string

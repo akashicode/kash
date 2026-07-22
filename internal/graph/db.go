@@ -19,9 +19,6 @@ import (
 	"github.com/akashicode/kash/internal/llm"
 )
 
-// ErrNotFound is returned when no graph results are found.
-var ErrNotFound = errors.New("no graph results found")
-
 // Triple represents a Subject-Predicate-Object triple.
 type Triple = llm.Triple
 

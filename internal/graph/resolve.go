@@ -6,11 +6,23 @@ import (
 	"unicode"
 )
 
-// diacriticFolder maps IAST/ITRANS transliteration characters to plain ASCII.
+// latinFolder maps common European diacritics to plain ASCII, so
+// "Kármán"/"Karman" and "Söderberg"/"Soderberg" group together.
+var latinFolder = strings.NewReplacer(
+	"á", "a", "à", "a", "â", "a", "ä", "a", "ã", "a", "å", "a",
+	"é", "e", "è", "e", "ê", "e", "ë", "e",
+	"í", "i", "ì", "i", "î", "i", "ï", "i",
+	"ó", "o", "ò", "o", "ô", "o", "ö", "o", "õ", "o", "ø", "o",
+	"ú", "u", "ù", "u", "û", "u", "ü", "u",
+	"ç", "c", "ñ", "n", "ý", "y", "ÿ", "y",
+	"š", "s", "ž", "z", "ð", "d", "þ", "t",
+)
+
+// iastFolder maps IAST/ITRANS transliteration characters to plain ASCII.
 // This is deliberately high-recall: in Sanskrit, diacritics ARE meaning-bearing
 // (brahma vs brahmā, dhanya vs dhānya), so folding them generates candidates
 // for review rather than decisions.
-var diacriticFolder = strings.NewReplacer(
+var iastFolder = strings.NewReplacer(
 	"ā", "a", "Ā", "a", "ī", "i", "Ī", "i", "ū", "u", "Ū", "u",
 	"ṛ", "r", "Ṛ", "r", "ṝ", "r", "ḷ", "l", "ḹ", "l",
 	"ṃ", "m", "Ṃ", "m", "ṁ", "m", "ḥ", "h", "Ḥ", "h",
@@ -19,32 +31,44 @@ var diacriticFolder = strings.NewReplacer(
 	"ḍ", "d", "Ḍ", "d", "ḻ", "l", "ē", "e", "ō", "o",
 )
 
-// honorificPrefixes are titles that never change which entity is referred to.
-var honorificPrefixes = []string{
-	"sri ", "shri ", "srī ", "śrī ", "shree ",
-	"acharya ", "ācārya ", "acarya ", "ācārya ",
-	"swami ", "svami ", "svāmī ", "swāmī ",
-	"mahamahopadhyaya ", "mahāmahopādhyāya ",
-	"pandit ", "paṇḍit ", "panditji ",
-	"bhagavan ", "bhagavān ", "lord ", "the ",
-	"guru ", "gurudev ", "mahatma ", "mahātmā ", "yogi ", "yogī ",
+// resolver holds the corpus-specific rules for grouping entity variants,
+// built from configuration so the same code serves a Sanskrit corpus, an
+// aerospace corpus, or anything else.
+type resolver struct {
+	honorifics      []string
+	foldDiacritics  func(string) string
+	stripFinalVowel bool
+	properNoun      map[string]bool
 }
 
-// properNounPredicates indicate an entity is a person or a titled work.
-// For proper nouns, diacritic differences are almost always transliteration
-// variants rather than distinct words, so those clusters can be auto-approved.
-var properNounPredicates = map[string]bool{
-	"authored":        true,
-	"was written by":  true,
-	"commented on":    true,
-	"translated":      true,
-	"was disciple of": true,
-	"was teacher of":  true,
+// newResolver builds a resolver from ResolveOptions.
+func newResolver(opts ResolveOptions) *resolver {
+	r := &resolver{
+		honorifics:      opts.Honorifics,
+		stripFinalVowel: opts.StripFinalVowel,
+		properNoun:      map[string]bool{},
+	}
+
+	switch opts.FoldDiacritics {
+	case DiacriticNone:
+		r.foldDiacritics = func(s string) string { return s }
+	case DiacriticIAST:
+		r.foldDiacritics = iastFolder.Replace
+	case DiacriticBoth:
+		r.foldDiacritics = func(s string) string { return latinFolder.Replace(iastFolder.Replace(s)) }
+	default: // DiacriticLatin, and anything unrecognised
+		r.foldDiacritics = latinFolder.Replace
+	}
+
+	for _, p := range opts.ProperNounPredicates {
+		r.properNoun[CanonicalPredicate(p)] = true
+	}
+	return r
 }
 
 // stripHonorific removes a single leading honorific title.
-func stripHonorific(s string) string {
-	for _, h := range honorificPrefixes {
+func (r *resolver) stripHonorific(s string) string {
+	for _, h := range r.honorifics {
 		if rest, ok := strings.CutPrefix(s, h); ok {
 			return strings.TrimSpace(rest)
 		}
@@ -53,32 +77,36 @@ func stripHonorific(s string) string {
 }
 
 // hasHonorific reports whether a surface form carries a leading title.
-func hasHonorific(s string) bool {
+func (r *resolver) hasHonorific(s string) bool {
 	n := normalizeSurface(s)
-	return stripHonorific(n) != n
+	return r.stripHonorific(n) != n
 }
 
-// stripFinalA drops a trailing Sanskrit stem vowel, folding the common
-// Gorakhnath/Gorakhnatha style variation.
-func stripFinalA(s string) string {
+// stripStemVowel drops a trailing stem vowel when the corpus uses a convention
+// that permits it (Sanskrit: Gorakhnath/Gorakhnatha). Off by default, because
+// in most languages dropping a final "a" changes the word.
+func (r *resolver) stripStemVowel(s string) string {
+	if !r.stripFinalVowel {
+		return s
+	}
 	if len(s) > 5 && strings.HasSuffix(s, "a") && !strings.HasSuffix(s, "aa") {
 		return s[:len(s)-1]
 	}
 	return s
 }
 
-// safeKey applies only transformations that cannot change meaning:
-// case, whitespace, honorific titles and the final stem vowel. Diacritics are
-// preserved.
-func safeKey(s string) string {
-	return stripFinalA(stripHonorific(normalizeSurface(s)))
+// safeKey applies only transformations that cannot change meaning: case,
+// whitespace, honorific titles and (where enabled) the stem vowel.
+// Diacritics are preserved.
+func (r *resolver) safeKey(s string) string {
+	return r.stripStemVowel(r.stripHonorific(normalizeSurface(s)))
 }
 
 // blockingKey is the high-recall grouping key. It additionally folds
 // diacritics, so it may group genuinely distinct words — which is why
 // clusters formed only at this level need review.
-func blockingKey(s string) string {
-	return stripFinalA(stripHonorific(diacriticFolder.Replace(normalizeSurface(s))))
+func (r *resolver) blockingKey(s string) string {
+	return r.stripStemVowel(r.stripHonorific(r.foldDiacritics(normalizeSurface(s))))
 }
 
 // entityStat accumulates what is known about one surface form.
@@ -88,30 +116,60 @@ type entityStat struct {
 	properNoun bool
 }
 
-// ResolveOptions tunes cluster building.
+// DiacriticMode selects which alphabets' diacritics are folded when grouping
+// entity variants. Mirrors config.DiacriticMode so this package stays free of
+// a config dependency.
+type DiacriticMode = string
+
+// Diacritic folding modes.
+const (
+	DiacriticNone  DiacriticMode = "none"
+	DiacriticLatin DiacriticMode = "latin"
+	DiacriticIAST  DiacriticMode = "iast"
+	DiacriticBoth  DiacriticMode = "both"
+)
+
+// ResolveOptions tunes cluster building. The zero value is not useful; build
+// one with DefaultResolveOptions and override from configuration.
 type ResolveOptions struct {
 	// MinDegree skips clusters whose members appear in fewer than this many
 	// triples in total. Measured on the merged entity, since merging two
 	// singleton variants produces a degree-2 node that can form a chain.
 	MinDegree int
+	// Honorifics are leading titles stripped when comparing names.
+	Honorifics []string
+	// FoldDiacritics selects which diacritics are folded: none, latin, iast, both.
+	FoldDiacritics DiacriticMode
+	// StripFinalVowel enables Sanskrit-style stem-vowel folding.
+	StripFinalVowel bool
+	// ProperNounPredicates identify entities that are people, works or
+	// products, whose diacritic variants are safe to merge automatically.
+	ProperNounPredicates []string
 }
 
-// DefaultResolveOptions returns sensible defaults.
+// DefaultResolveOptions returns domain-neutral defaults: Latin diacritics
+// folded, no stem-vowel rule, generic English titles.
 func DefaultResolveOptions() ResolveOptions {
-	return ResolveOptions{MinDegree: 2}
+	return ResolveOptions{
+		MinDegree:            2,
+		Honorifics:           []string{"the ", "a ", "an ", "dr. ", "dr ", "prof. ", "prof ", "mr. ", "mrs. ", "ms. ", "sir "},
+		FoldDiacritics:       DiacriticLatin,
+		ProperNounPredicates: []string{"created by", "authored", "was written by", "designed by", "developed by"},
+	}
 }
 
 // BuildClusters groups entity surface forms that likely name the same thing.
 //
-// Clusters whose members differ only by case, whitespace, honorific or final
-// stem vowel are auto-approved — those transformations cannot change meaning.
-// Clusters that required diacritic folding are auto-approved only when the
-// entity is a proper noun; otherwise they are held for review, because
-// diacritics distinguish real Sanskrit words.
+// Clusters whose members differ only by case, whitespace, honorific or (where
+// the corpus enables it) stem vowel are auto-approved — those transformations
+// cannot change meaning. Clusters that required diacritic folding are
+// auto-approved only when the entity is a proper noun; otherwise they are held
+// for review, since in many languages diacritics distinguish real words.
 func BuildClusters(triples []SearchResult, opts ResolveOptions) []Cluster {
 	if opts.MinDegree <= 0 {
 		opts.MinDegree = 1
 	}
+	res := newResolver(opts)
 
 	stats := map[string]*entityStat{}
 	note := func(surface, predicate string) {
@@ -129,7 +187,7 @@ func BuildClusters(triples []SearchResult, opts ResolveOptions) []Cluster {
 		if diacriticCount(surface) > diacriticCount(st.surface) {
 			st.surface = surface
 		}
-		if properNounPredicates[CanonicalPredicate(predicate)] {
+		if res.properNoun[CanonicalPredicate(predicate)] {
 			st.properNoun = true
 		}
 	}
@@ -144,7 +202,7 @@ func BuildClusters(triples []SearchResult, opts ResolveOptions) []Cluster {
 	// worth merging (three variants of Gorakhnath at degree 1 each).
 	groups := map[string][]*entityStat{}
 	for _, st := range stats {
-		k := blockingKey(st.surface)
+		k := res.blockingKey(st.surface)
 		if k == "" {
 			continue
 		}
@@ -171,7 +229,7 @@ func BuildClusters(triples []SearchResult, opts ResolveOptions) []Cluster {
 		//  2. most diacritics — prefer the scholarly transliteration
 		//  3. most frequent, then alphabetical for determinism
 		sort.Slice(members, func(i, j int) bool {
-			hi, hj := hasHonorific(members[i].surface), hasHonorific(members[j].surface)
+			hi, hj := res.hasHonorific(members[i].surface), res.hasHonorific(members[j].surface)
 			if hi != hj {
 				return !hi
 			}
@@ -191,7 +249,7 @@ func BuildClusters(triples []SearchResult, opts ResolveOptions) []Cluster {
 			aliases = append(aliases, m.surface)
 		}
 
-		approved, reason := judge(members)
+		approved, reason := res.judge(members)
 		clusters = append(clusters, Cluster{
 			Key:       key,
 			Canonical: canonical,
@@ -206,12 +264,12 @@ func BuildClusters(triples []SearchResult, opts ResolveOptions) []Cluster {
 }
 
 // judge decides whether a cluster can be auto-approved.
-func judge(members []*entityStat) (bool, string) {
+func (r *resolver) judge(members []*entityStat) (bool, string) {
 	// Did the cluster form without folding diacritics?
-	base := safeKey(members[0].surface)
+	base := r.safeKey(members[0].surface)
 	safeOnly := true
 	for _, m := range members[1:] {
-		if safeKey(m.surface) != base {
+		if r.safeKey(m.surface) != base {
 			safeOnly = false
 			break
 		}

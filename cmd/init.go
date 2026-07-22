@@ -164,6 +164,50 @@ build:
   # Changing these after a build only affects new/changed documents; run
   # 'kash build --rebuild' to re-chunk the whole corpus consistently.
 
+# Knowledge graph extraction — TUNE THIS TO YOUR SUBJECT MATTER.
+# The predicate list is CLOSED: the extractor must pick one of these for every
+# fact, and DROPS facts that fit none. Constraining it is what stops the model
+# inventing a new phrasing for every fact — but it also means the list has to
+# cover the relations your documents actually contain.
+extraction:
+  predicates:
+    - "is a type of"
+    - "is part of"
+    - "contains"
+    - "is defined as"
+    - "causes"
+    - "requires"
+    - "describes"
+    - "located in"
+    - "created by"
+    - "used for"
+    - "associated with"
+    - "preceded by"
+  # Relation types to favour, most important first (free text, guides the model)
+  priorities:
+    - "Relations between people and organisations (who created, led, or influenced what)"
+    - "Conceptual relations (X is a type of Y, X causes Y, X requires Y)"
+    - "Structural facts (X contains Y, X is part of Y)"
+
+# Entity resolution — used by 'kash resolve-entities' to merge spelling
+# variants of the same entity so graph chains connect across them.
+resolution:
+  # Leading titles stripped when comparing names. These never change which
+  # entity is meant, so clusters formed by removing them are auto-approved.
+  honorifics: ["the ", "a ", "an ", "dr. ", "dr ", "prof. ", "prof ", "mr. ", "mrs. ", "ms. ", "sir "]
+  # Which diacritics to fold when finding candidates: none | latin | iast | both
+  #   latin -> Kármán/Karman, Söderberg/Soderberg
+  #   iast  -> Kṣemarāja/Ksemaraja (Sanskrit transliteration)
+  fold_diacritics: latin
+  # Fold a trailing stem vowel (Gorakhnath/Gorakhnatha). This is a Sanskrit
+  # convention — leave false for most corpora, where dropping a final "a"
+  # changes the word (plasma/plasm, corona/coron).
+  strip_final_vowel: false
+  # Predicates that mark an entity as a person, work or product. For proper
+  # nouns, diacritic-only differences are almost always spelling variants, so
+  # those merges are auto-approved instead of held for review.
+  proper_noun_predicates: ["created by", "authored", "was written by", "designed by", "developed by"]
+
 # MCP tool definitions (auto-populated by 'kash build')
 mcp:
   tools:

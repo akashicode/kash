@@ -21,9 +21,6 @@ import (
 // ErrNilConfig is returned when a nil config is provided.
 var ErrNilConfig = errors.New("vector store config is nil")
 
-// ErrNotFound is returned when a query returns no results.
-var ErrNotFound = errors.New("no results found")
-
 // Document represents a document stored in the vector store.
 type Document struct {
 	ID       string
@@ -46,28 +43,6 @@ type Store struct {
 	db         *chromem.DB
 	collection *chromem.Collection
 	embedCfg   *config.ProviderConfig
-}
-
-// NewStore creates a new vector Store backed by an in-memory chromem-go database.
-func NewStore(embedCfg *config.ProviderConfig) (*Store, error) {
-	if embedCfg == nil {
-		return nil, ErrNilConfig
-	}
-
-	db := chromem.NewDB()
-
-	embeddingFunc := newEmbeddingFuncWithDimensions(embedCfg)
-
-	collection, err := db.CreateCollection("documents", nil, embeddingFunc)
-	if err != nil {
-		return nil, fmt.Errorf("create collection: %w", err)
-	}
-
-	return &Store{
-		db:         db,
-		collection: collection,
-		embedCfg:   embedCfg,
-	}, nil
 }
 
 // NewStoreFromPath loads a persisted chromem-go database from disk.

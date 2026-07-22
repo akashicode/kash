@@ -47,8 +47,6 @@ type AliasFile struct {
 type AliasSet struct {
 	// canonical maps a normalized variant to its normalized canonical key.
 	canonical map[string]string
-	// display maps a normalized canonical key to its display form.
-	display map[string]string
 }
 
 // Len reports how many aliases are active.
@@ -73,29 +71,9 @@ func (a *AliasSet) Resolve(entity string) string {
 	return key
 }
 
-// Display returns the canonical display form for an entity, or the entity
-// unchanged when no alias applies.
-func (a *AliasSet) Display(entity string) string {
-	if a == nil {
-		return entity
-	}
-	key := normalizeSurface(entity)
-	c, ok := a.canonical[key]
-	if !ok {
-		return entity
-	}
-	if d, ok := a.display[c]; ok {
-		return d
-	}
-	return entity
-}
-
 // NewAliasSet builds a query-time lookup from approved clusters only.
 func NewAliasSet(clusters []Cluster) *AliasSet {
-	a := &AliasSet{
-		canonical: map[string]string{},
-		display:   map[string]string{},
-	}
+	a := &AliasSet{canonical: map[string]string{}}
 	for _, c := range clusters {
 		if !c.Approved || c.Canonical == "" {
 			continue
@@ -104,7 +82,6 @@ func NewAliasSet(clusters []Cluster) *AliasSet {
 		if canonKey == "" {
 			continue
 		}
-		a.display[canonKey] = c.Canonical
 		for _, alias := range c.Aliases {
 			k := normalizeSurface(alias)
 			if k == "" || k == canonKey {

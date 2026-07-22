@@ -10,9 +10,6 @@ import (
 // ErrInvalidChunkSize is returned when an invalid chunk size is specified.
 var ErrInvalidChunkSize = errors.New("chunk size must be greater than 0")
 
-// ErrNilInput is returned when a nil source is provided.
-var ErrNilInput = errors.New("input source is nil")
-
 // Chunk represents a single chunk of text from a document.
 type Chunk struct {
 	// ID is a unique identifier for the chunk (e.g., "source_file_0")
@@ -140,18 +137,6 @@ func (c *Chunker) ChunkText(text, source string) ([]Chunk, error) {
 	return chunks, nil
 }
 
-// ChunkDocument is a convenience function for chunking with default options.
-func ChunkDocument(text string, chunkSize int) ([]Chunk, error) {
-	if chunkSize <= 0 {
-		return nil, ErrInvalidChunkSize
-	}
-	c, err := NewChunker(Options{ChunkSize: chunkSize, Overlap: chunkSize / 5})
-	if err != nil {
-		return nil, err
-	}
-	return c.ChunkText(text, "")
-}
-
 // SplitBySentence splits text into sentence-aware chunks, attempting to break
 // at sentence boundaries when possible. Oversized paragraphs are sub-split
 // at sentence boundaries; truly huge sentences fall back to character-level
@@ -169,7 +154,7 @@ func (c *Chunker) SplitBySentence(text, source string) ([]Chunk, error) {
 	paragraphs := strings.Split(text, "\n\n")
 
 	var builder strings.Builder
-	runeLen := 0     // rune length of builder content (builder.Len() is bytes)
+	runeLen := 0      // rune length of builder content (builder.Len() is bytes)
 	carryOnly := true // builder holds only overlap carry — never emit it alone
 	chunks := []Chunk{}
 	idx := 0

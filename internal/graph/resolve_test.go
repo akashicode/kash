@@ -9,6 +9,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// sanskritOptions is the Indic preset: IAST diacritics, Sanskrit stem-vowel
+// folding, and Indic honorific titles. A corpus declares this in agent.yaml;
+// the built-in defaults are deliberately domain-neutral.
+func sanskritOptions() ResolveOptions {
+	o := DefaultResolveOptions()
+	o.FoldDiacritics = DiacriticIAST
+	o.StripFinalVowel = true
+	o.Honorifics = []string{
+		"sri ", "shri ", "śrī ", "acharya ", "ācārya ", "swami ", "svāmī ",
+		"bhagavan ", "bhagavān ", "lord ", "the ", "guru ", "yogi ",
+	}
+	o.ProperNounPredicates = []string{
+		"authored", "was written by", "commented on", "translated",
+		"was disciple of", "was teacher of",
+	}
+	return o
+}
+
 func clusterByKey(clusters []Cluster, key string) *Cluster {
 	for i := range clusters {
 		if clusters[i].Key == key {
@@ -29,7 +47,7 @@ func TestBuildClustersMergesSpellingVariants(t *testing.T) {
 		{Subject: "Matsyendranatha", Predicate: "authored", Object: "Kaulajnana"},
 	}
 
-	clusters := BuildClusters(triples, DefaultResolveOptions())
+	clusters := BuildClusters(triples, sanskritOptions())
 
 	g := clusterByKey(clusters, "gorakhnath")
 	require.NotNil(t, g, "Gorakhnath variants must cluster")
@@ -55,7 +73,7 @@ func TestBuildClustersHoldsAmbiguousDiacritics(t *testing.T) {
 		{Subject: "brahmā", Predicate: "describes", Object: "creation"},
 	}
 
-	clusters := BuildClusters(triples, DefaultResolveOptions())
+	clusters := BuildClusters(triples, sanskritOptions())
 	c := clusterByKey(clusters, "brahm")
 	require.NotNil(t, c, "the cluster should be surfaced for review")
 	assert.False(t, c.Approved, "diacritic-only common-noun merges must not auto-apply")
@@ -70,7 +88,7 @@ func TestBuildClustersApprovesHonorifics(t *testing.T) {
 		{Subject: "śrī Kṣemarāja", Predicate: "describes", Object: "Pratyabhijna"},
 		{Subject: "ācārya Kṣemarāja", Predicate: "describes", Object: "Shaivism"},
 	}
-	clusters := BuildClusters(triples, DefaultResolveOptions())
+	clusters := BuildClusters(triples, sanskritOptions())
 	require.Len(t, clusters, 1)
 	assert.True(t, clusters[0].Approved)
 	assert.Contains(t, clusters[0].Reason, "honorific")
@@ -115,11 +133,9 @@ func TestAliasSetResolvesAndIgnoresUnapproved(t *testing.T) {
 
 	assert.Equal(t, normalizeSurface("Gorakhnātha"), set.Resolve("Gorakhnath"))
 	assert.Equal(t, normalizeSurface("Gorakhnātha"), set.Resolve("Gorakhnatha"))
-	assert.Equal(t, "Gorakhnātha", set.Display("Gorakhnath"))
 
 	// Unapproved clusters must have no effect
 	assert.Equal(t, "brahma", set.Resolve("brahma"))
-	assert.Equal(t, "brahma", set.Display("brahma"))
 }
 
 // TestNilAliasSetIsIdentity is the "works without the file" guarantee.
@@ -127,7 +143,6 @@ func TestNilAliasSetIsIdentity(t *testing.T) {
 	var set *AliasSet
 	assert.Equal(t, 0, set.Len())
 	assert.Equal(t, "gorakhnath", set.Resolve("Gorakhnath"))
-	assert.Equal(t, "Gorakhnath", set.Display("Gorakhnath"))
 }
 
 // TestLoadAliasFileMissingIsNotAnError is the other half of that guarantee:

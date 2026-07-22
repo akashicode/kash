@@ -124,6 +124,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Corpus-specific extraction vocabulary (falls back to generic defaults
+	// when agent.yaml has no extraction section)
+	domainCfg := agentconfig.LoadDomainConfig("agent.yaml")
+
 	// Chunk options — priority: explicit build.chunk_size in agent.yaml,
 	// then auto-tune from runtime.embedder.max_tokens, then defaults.
 	chunkSize, chunkOverlap := agentconfig.AgentYAMLChunkOptions("agent.yaml")
@@ -180,6 +184,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	display.KeyValue("Embed Endpoint", cfg.Embedder.BaseURL, display.Dim+display.White)
 	display.KeyValue("Chunk Size (chars)", chunkOpts.ChunkSize, display.Dim+display.White)
 	display.KeyValue("Chunk Overlap (chars)", chunkOpts.Overlap, display.Dim+display.White)
+	display.KeyValue("Extraction Predicates", len(domainCfg.Extraction.Predicates), display.Dim+display.White)
 	fmt.Println()
 
 	// Step 1: Load documents
@@ -292,6 +297,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	parallelEmbed := agentconfig.AgentYAMLParallelEmbedding("agent.yaml")
+	extractSpec := llm.ExtractionSpec{
+		Predicates: domainCfg.Extraction.Predicates,
+		Priorities: domainCfg.Extraction.Priorities,
+	}
 	batchSize := 10
 	incomplete := []string{}
 	var sampleChunks []chunker.Chunk
@@ -401,7 +410,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 				var extractErr error
 				maxRetries := 2
 				for attempt := 0; attempt <= maxRetries; attempt++ {
-					triples, extractErr = llmClient.ExtractTriples(ctx, combined.String())
+					triples, extractErr = llmClient.ExtractTriples(ctx, combined.String(), extractSpec)
 					if extractErr == nil {
 						break
 					}

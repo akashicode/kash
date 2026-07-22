@@ -81,19 +81,37 @@ func (c *Client) Complete(ctx context.Context, systemPrompt, userMessage string)
 	return resp.Choices[0].Message.Content, nil
 }
 
+// ExtractionSpec describes the corpus-specific vocabulary the extractor must
+// use. Supplied from agent.yaml so the same code serves any subject matter.
+type ExtractionSpec struct {
+	// Predicates is the closed vocabulary of allowed relations.
+	Predicates []string
+	// Priorities lists the relation types to favour, most important first.
+	Priorities []string
+}
+
 // ExtractTriples uses the LLM to extract knowledge graph triples from text.
 // The text may contain several delimited passages; relationships must not be
 // inferred across passage boundaries (see the provenance rule below).
-func (c *Client) ExtractTriples(ctx context.Context, text string) ([]Triple, error) {
-	system := `You are a knowledge graph extraction expert working on scholarly, historical and philosophical texts.
+func (c *Client) ExtractTriples(ctx context.Context, text string, spec ExtractionSpec) ([]Triple, error) {
+	if len(spec.Predicates) == 0 {
+		return nil, errors.New("extraction predicate vocabulary is empty")
+	}
+
+	var priorities strings.Builder
+	for i, p := range spec.Priorities {
+		fmt.Fprintf(&priorities, "%d. %s\n", i+1, p)
+	}
+	if priorities.Len() == 0 {
+		priorities.WriteString("1. Relations that connect two named entities.\n")
+	}
+
+	system := `You are a knowledge graph extraction expert.
 Extract factual relationships that are EXPLICITLY STATED in the passages as Subject-Predicate-Object triples.
 
 PRIORITIZE, in this order:
-1. Relations between people — teacher/disciple lineage, commentator, author, translator.
-   These are the most valuable relations in a scholarly corpus. Never skip a stated
-   lineage relation ("X was the disciple of Y", "Y initiated X") in favour of trivia.
-2. Conceptual relations — X is a type of Y, X causes Y, X is part of Y, X is defined as Y.
-3. Structural facts about texts — X contains chapter Y, X is a commentary on Y.
+` + priorities.String() + `
+Never skip a stated relation between two named entities in favour of trivia.
 
 CRITICAL RULES:
 - Extract ONLY what a passage explicitly states. Never infer, never guess.
@@ -110,15 +128,12 @@ CRITICAL RULES:
 - Never emit the same fact twice with different wording.
 
 PREDICATE VOCABULARY — this list is CLOSED. Every triple MUST use one of these
-exact predicate strings, in English, even when the source text is in Sanskrit or
-Hindi. Choose the closest fit. If no predicate fits, DROP the fact rather than
+exact predicate strings, in English, whatever language the source text is in.
+Choose the closest fit. If no predicate fits, DROP the fact rather than
 inventing a new predicate:
-  authored, was written by, commented on, translated,
-  was disciple of, was teacher of,
-  contains, is part of, is a type of, is defined as,
-  describes, causes, requires, located in, associated with
-Do not use vague predicates like "is" or "is a" — use "is a type of" or
-"is defined as". Never emit a non-English predicate.
+  ` + strings.Join(spec.Predicates, ", ") + `
+Do not use vague predicates like "is" or "is a" — use the closest specific one
+from the list above. Never emit a non-English predicate.
 
 OUTPUT:
 - Return ONLY a valid JSON array, no explanation, no markdown fences.

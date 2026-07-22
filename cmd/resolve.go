@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	agentconfig "github.com/akashicode/kash/internal/config"
 	"github.com/akashicode/kash/internal/display"
 	"github.com/akashicode/kash/internal/graph"
 )
@@ -85,7 +86,17 @@ func runResolve(_ *cobra.Command, _ []string) error {
 	display.StepResult("Loaded", fmt.Sprintf("%d triples", len(triples)))
 
 	display.Step(2, 3, "Grouping entity spelling variants...")
-	fresh := graph.BuildClusters(triples, graph.ResolveOptions{MinDegree: resolveMinDegree})
+	domainCfg := agentconfig.LoadDomainConfig("agent.yaml")
+	opts := graph.ResolveOptions{
+		MinDegree:            resolveMinDegree,
+		Honorifics:           domainCfg.Resolution.Honorifics,
+		FoldDiacritics:       string(domainCfg.Resolution.FoldDiacritics),
+		StripFinalVowel:      domainCfg.Resolution.StripFinalVowel,
+		ProperNounPredicates: domainCfg.Resolution.ProperNounPredicates,
+	}
+	display.StepDetail(fmt.Sprintf("diacritics: %s · stem-vowel folding: %v · %d honorifics",
+		opts.FoldDiacritics, opts.StripFinalVowel, len(opts.Honorifics)))
+	fresh := graph.BuildClusters(triples, opts)
 
 	existingFile, _, err := graph.LoadAliasFile(aliasPath)
 	if err != nil {
