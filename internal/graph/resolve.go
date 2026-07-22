@@ -313,6 +313,7 @@ func MergeClusters(existing, fresh []Cluster) []Cluster {
 			// Respect manual edits: keep the human's canonical and verdict
 			f.Approved = prev.Approved
 			f.Note = prev.Note
+			f.DecidedBy = prev.DecidedBy
 			if prev.Canonical != "" {
 				f.Canonical = prev.Canonical
 				f.Aliases = mergeAliases(f, prev.Canonical)

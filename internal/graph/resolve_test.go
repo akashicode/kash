@@ -125,6 +125,47 @@ func TestMergeClustersPreservesManualEdits(t *testing.T) {
 	assert.False(t, b.Approved)
 }
 
+// TestClusterSettled defines exactly what --llm may touch. Hand edits and
+// prior verdicts must always win over a fresh adjudication.
+func TestClusterSettled(t *testing.T) {
+	tests := []struct {
+		name string
+		c    Cluster
+		want bool
+	}{
+		{"fresh, held for review", Cluster{Approved: false}, false},
+		{"approved merge", Cluster{Approved: true}, true},
+		{"already adjudicated", Cluster{Approved: false, DecidedBy: "llm"}, true},
+		{"human annotated", Cluster{Approved: false, Note: "keep separate"}, true},
+		{"whitespace-only note is not an annotation", Cluster{Approved: false, Note: "   "}, false},
+		{"auto-decided but unapproved is still open", Cluster{Approved: false, DecidedBy: "auto"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.c.Settled())
+		})
+	}
+}
+
+// TestMergeClustersPreservesLLMVerdict ensures a cached verdict survives
+// regeneration, so re-running never re-pays for the same decision.
+func TestMergeClustersPreservesLLMVerdict(t *testing.T) {
+	existing := []Cluster{{
+		Key: "brahm", Canonical: "brahmā", Aliases: []string{"brahma"},
+		Approved: false, DecidedBy: "llm", Reason: "LLM: distinct words",
+	}}
+	fresh := []Cluster{{
+		Key: "brahm", Canonical: "brahmā", Aliases: []string{"brahma"},
+		Approved: false, Reason: "differs by diacritics — review",
+	}}
+
+	merged := MergeClusters(existing, fresh)
+	b := clusterByKey(merged, "brahm")
+	require.NotNil(t, b)
+	assert.Equal(t, "llm", b.DecidedBy, "cached verdict must survive regeneration")
+	assert.True(t, b.Settled(), "an adjudicated cluster must not be re-adjudicated")
+}
+
 func TestAliasSetResolvesAndIgnoresUnapproved(t *testing.T) {
 	set := NewAliasSet([]Cluster{
 		{Canonical: "Gorakhnātha", Aliases: []string{"Gorakhnath", "Gorakhnatha"}, Approved: true},

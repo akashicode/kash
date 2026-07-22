@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -13,7 +14,8 @@ const AliasFileName = "entity_aliases.json"
 
 // AliasFileNote is written into the file to explain hand-editing.
 const AliasFileNote = "Entity resolution map. Only clusters with \"approved\": true are applied. " +
-	"Edit freely: change canonical, add/remove aliases, or flip approved. " +
+	"Edit freely: change canonical, add/remove aliases, or flip approved — your edits survive regeneration. " +
+	"Writing anything in \"note\" marks a cluster as human-reviewed, so 'resolve-entities --llm' will leave it alone. " +
 	"Delete this file to disable entity resolution entirely — the agent works fine without it."
 
 // Cluster is a group of surface forms judged to name the same entity.
@@ -29,8 +31,20 @@ type Cluster struct {
 	Approved bool `json:"approved"`
 	// Reason records why the cluster was auto-approved or held for review.
 	Reason string `json:"reason,omitempty"`
-	// Note is free text; hand-written notes survive regeneration.
+	// DecidedBy records what settled this cluster: "auto" for the
+	// deterministic rules, "llm" for model adjudication. A cluster already
+	// decided by the model is not re-adjudicated on later runs.
+	DecidedBy string `json:"decided_by,omitempty"`
+	// Note is free text. A non-empty note marks the cluster as human-reviewed:
+	// regeneration preserves it and --llm leaves it alone.
 	Note string `json:"note,omitempty"`
+}
+
+// Settled reports whether a cluster already has a decision that should not be
+// overwritten by model adjudication: approved merges, clusters the model has
+// already judged, and anything a human annotated.
+func (c Cluster) Settled() bool {
+	return c.Approved || c.DecidedBy == "llm" || strings.TrimSpace(c.Note) != ""
 }
 
 // AliasFile is the on-disk entity resolution map.
