@@ -70,7 +70,7 @@ func (s *Server) handleAPIInfo(w http.ResponseWriter, r *http.Request) {
 // handleAPIGraph returns triples for the graph explorer. With ?q= it runs a
 // graph search; without it, it returns a uniform sample of the whole graph.
 func (s *Server) handleAPIGraph(w http.ResponseWriter, r *http.Request) {
-	limit := clampQueryInt(r, "limit", 150, 1, 500)
+	limit := clampQueryInt(r, "limit", 300, 1, 5000)
 	query := r.URL.Query().Get("q")
 
 	ctx := r.Context()

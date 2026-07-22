@@ -82,19 +82,50 @@ func (c *Client) Complete(ctx context.Context, systemPrompt, userMessage string)
 }
 
 // ExtractTriples uses the LLM to extract knowledge graph triples from text.
+// The text may contain several delimited passages; relationships must not be
+// inferred across passage boundaries (see the provenance rule below).
 func (c *Client) ExtractTriples(ctx context.Context, text string) ([]Triple, error) {
-	system := `You are a knowledge extraction expert. Extract factual relationships from the provided text as Subject-Predicate-Object triples.
+	system := `You are a knowledge graph extraction expert working on scholarly, historical and philosophical texts.
+Extract factual relationships that are EXPLICITLY STATED in the passages as Subject-Predicate-Object triples.
 
-Rules:
-- Extract only factual, verifiable relationships
-- Subjects and Objects should be named entities (people, places, organizations, concepts)
-- Predicates should be concise verb phrases
-- Return ONLY valid JSON array, no explanation
+PRIORITIZE, in this order:
+1. Relations between people — teacher/disciple lineage, commentator, author, translator.
+   These are the most valuable relations in a scholarly corpus. Never skip a stated
+   lineage relation ("X was the disciple of Y", "Y initiated X") in favour of trivia.
+2. Conceptual relations — X is a type of Y, X causes Y, X is part of Y, X is defined as Y.
+3. Structural facts about texts — X contains chapter Y, X is a commentary on Y.
+
+CRITICAL RULES:
+- Extract ONLY what a passage explicitly states. Never infer, never guess.
+- DO NOT CONFLATE PROVENANCE WITH CONTENT. Title pages, colophons, publisher blurbs
+  and translator credits describe the document you are reading — not other works that
+  happen to be mentioned inside it. If a passage credits a translator or editor, that
+  credit belongs ONLY to the work that passage is about. Never bind a translator,
+  editor, commentator or publisher to a different text merely because both appear
+  nearby. If the passage does not literally assert "A translated B", do not emit it.
+- Each passage below is a SEPARATE excerpt. Do not combine facts across passages.
+- Skip commercial metadata entirely: distributors, booksellers, prices, ISBNs, print runs.
+- Use the shortest unambiguous name for an entity, and use it consistently
+  (e.g. "Abhinavagupta", not "the great master Abhinavagupta").
+- Never emit the same fact twice with different wording.
+
+PREDICATE VOCABULARY — this list is CLOSED. Every triple MUST use one of these
+exact predicate strings, in English, even when the source text is in Sanskrit or
+Hindi. Choose the closest fit. If no predicate fits, DROP the fact rather than
+inventing a new predicate:
+  authored, was written by, commented on, translated,
+  was disciple of, was teacher of,
+  contains, is part of, is a type of, is defined as,
+  describes, causes, requires, located in, associated with
+Do not use vague predicates like "is" or "is a" — use "is a type of" or
+"is defined as". Never emit a non-English predicate.
+
+OUTPUT:
+- Return ONLY a valid JSON array, no explanation, no markdown fences.
 - Format: [{"subject": "X", "predicate": "Y", "object": "Z"}]
-- Extract 5-20 triples per chunk
-- If no clear triples exist, return []`
+- Extract 5-20 triples. If nothing is explicitly stated, return [].`
 
-	prompt := fmt.Sprintf("Extract knowledge graph triples from this text:\n\n%s", text)
+	prompt := fmt.Sprintf("Extract knowledge graph triples from these passages:\n\n%s", text)
 
 	raw, err := c.Complete(ctx, system, prompt)
 	if err != nil {

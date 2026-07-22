@@ -6,69 +6,112 @@
 <title>Kash Agent</title>
 <style>
   :root {
-    --bg: #0d1017; --panel: #151a24; --panel2: #1c2230; --border: #2a3244;
-    --text: #e6e9f0; --muted: #8a93a6; --accent: #f5b942; --accent2: #8b7cf8;
-    --good: #4ade80; --warn: #fbbf24;
+    --bg: #0b0e14; --panel: #141922; --panel2: #1b2230; --border: #29334a;
+    --text: #e6e9f0; --muted: #8590a6; --accent: #f5b942; --accent2: #8b7cf8;
+    --good: #4ade80; --warn: #fbbf24; --bad: #f87171;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f7f8fa; --panel: #ffffff; --panel2: #f0f2f6; --border: #dde1e9;
+      --text: #16191f; --muted: #6b7280; --accent: #b17d09; --accent2: #6d55e0;
+    }
   }
   * { box-sizing: border-box; margin: 0; }
-  body { background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  a { color: var(--accent); }
+  body { background: var(--bg); color: var(--text); font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
 
-  header { display: flex; align-items: center; gap: 14px; padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
-  header .logo { font-size: 22px; }
-  header h1 { font-size: 18px; font-weight: 650; }
-  header .desc { color: var(--muted); font-size: 13px; flex: 1 1 200px; }
-  .badge { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--accent); color: #1a1405; white-space: nowrap; }
+  header {
+    display: flex; align-items: center; gap: 14px; padding: 14px 24px;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+    flex-wrap: wrap; position: sticky; top: 0; z-index: 20;
+  }
+  header .logo { font-size: 20px; }
+  header h1 { font-size: 17px; font-weight: 650; }
+  header .desc { color: var(--muted); font-size: 13px; flex: 1 1 200px; min-width: 0;
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+           background: var(--accent); color: #1a1405; white-space: nowrap; }
   .badge.alt { background: var(--panel2); color: var(--muted); border: 1px solid var(--border); }
 
-  main { max-width: 1100px; margin: 0 auto; padding: 20px 24px 60px; }
+  main { max-width: 1200px; margin: 0 auto; padding: 20px 24px 60px; }
 
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
-  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; }
-  .stat .v { font-size: 20px; font-weight: 700; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; }
+  .stat .v { font-size: 19px; font-weight: 700; color: var(--accent);
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stat .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
 
-  nav.tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
-  nav.tabs button { background: none; border: none; color: var(--muted); font: inherit; font-weight: 600; padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent; }
+  nav.tabs { display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+  nav.tabs button { background: none; border: none; color: var(--muted); font: inherit; font-weight: 600;
+                    padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent; }
+  nav.tabs button:hover { color: var(--text); }
   nav.tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
 
   section { display: none; } section.on { display: block; }
 
-  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
-  th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); background: var(--panel2); }
+  table { width: 100%; border-collapse: collapse; background: var(--panel);
+          border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th, td { padding: 9px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+       background: var(--panel2); cursor: pointer; user-select: none; }
+  th:hover { color: var(--text); }
   tr:last-child td { border-bottom: none; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .ok { color: var(--good); } .part { color: var(--warn); }
 
-  .bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-  input[type=text], select { background: var(--panel2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 12px; font: inherit; flex: 1 1 240px; }
-  input[type=text]:focus { outline: none; border-color: var(--accent2); }
-  button.go { background: var(--accent); color: #1a1405; border: none; border-radius: 8px; padding: 8px 18px; font: inherit; font-weight: 700; cursor: pointer; }
-  button.go:hover { filter: brightness(1.1); }
+  .bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+  input[type=text], select {
+    background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 8px 12px; font: inherit;
+  }
+  input[type=text] { flex: 1 1 260px; min-width: 180px; }
+  input[type=text]:focus, select:focus { outline: none; border-color: var(--accent2); }
+  button.go { background: var(--accent); color: #1a1405; border: none; border-radius: 8px;
+              padding: 8px 18px; font: inherit; font-weight: 700; cursor: pointer; }
+  button.go:hover { filter: brightness(1.08); }
+  button.go:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+                 border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; }
+  button.ghost:hover { border-color: var(--accent2); }
 
-  #canvasWrap { position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-  #graphCanvas { display: block; width: 100%; height: 520px; cursor: grab; }
-  #graphHint { position: absolute; bottom: 8px; left: 12px; color: var(--muted); font-size: 12px; pointer-events: none; }
+  #canvasWrap { position: relative; background: var(--panel); border: 1px solid var(--border);
+                border-radius: 10px; overflow: hidden; }
+  #graphCanvas { display: block; width: 100%; height: 620px; cursor: grab; touch-action: none; }
+  #graphCanvas.grabbing { cursor: grabbing; }
+  .overlay { position: absolute; pointer-events: none; font-size: 11.5px; color: var(--muted); }
+  #graphHint { bottom: 8px; left: 12px; }
+  #graphStatus { top: 8px; left: 12px; font-variant-numeric: tabular-nums; }
+  #zoomBox { top: 8px; right: 10px; display: flex; gap: 6px; pointer-events: auto; }
+  #zoomBox button { background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+                    border-radius: 6px; width: 28px; height: 28px; font: inherit; cursor: pointer; line-height: 1; }
+  #zoomBox button:hover { border-color: var(--accent2); }
+  #zoomBox button.wide { width: auto; padding: 0 10px; font-size: 12px; }
 
-  .triples { margin-top: 14px; }
-  .triple { display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; padding: 7px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  #legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 11.5px; color: var(--muted); }
+  #legend span.item { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+  #legend span.item.off { opacity: .35; }
+  #legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+  .triples { margin-top: 12px; }
+  .triple { display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline;
+            padding: 7px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
   .triple:last-child { border-bottom: none; }
   .triple .s { color: var(--accent); font-weight: 600; }
   .triple .p { color: var(--muted); font-style: italic; }
   .triple .o { color: var(--accent2); font-weight: 600; }
-  .triple .src { margin-left: auto; color: var(--muted); font-size: 11px; }
-  .listbox { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; max-height: 300px; overflow-y: auto; }
+  .triple .src { margin-left: auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .listbox { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+             max-height: 340px; overflow-y: auto; }
 
-  .chunk { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
-  .chunk .meta { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 12px; }
+  .chunk { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+           padding: 13px 16px; margin-bottom: 10px; }
+  .chunk .meta { display: flex; gap: 10px; align-items: center; margin-bottom: 7px; font-size: 12px; flex-wrap: wrap; }
   .chunk .rank { background: var(--accent2); color: #fff; border-radius: 6px; padding: 1px 8px; font-weight: 700; }
   .chunk .src { color: var(--accent); font-weight: 600; }
   .chunk .sim { color: var(--muted); }
-  .chunk .body { color: var(--text); font-size: 13px; white-space: pre-wrap; max-height: 180px; overflow-y: auto; }
+  .chunk .body { font-size: 13px; white-space: pre-wrap; max-height: 190px; overflow-y: auto; }
 
-  .empty { color: var(--muted); padding: 30px; text-align: center; }
-  h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 8px; }
+  .empty { color: var(--muted); padding: 28px; text-align: center; }
+  h3 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 18px 0 8px; }
 </style>
 </head>
 <body>
@@ -91,21 +134,42 @@
 
   <section id="tab-books" class="on">
     <table>
-      <thead><tr><th>Document</th><th class="num">Chunks</th><th class="num">Triples</th><th>Status</th><th>Built</th></tr></thead>
+      <thead><tr>
+        <th data-sort="name">Document</th>
+        <th data-sort="chunks" class="num">Chunks</th>
+        <th data-sort="triples" class="num">Triples</th>
+        <th data-sort="done">Status</th>
+        <th data-sort="completed_at">Built</th>
+      </tr></thead>
       <tbody id="bookRows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
     </table>
   </section>
 
   <section id="tab-graph">
     <div class="bar">
-      <input type="text" id="graphQ" placeholder="Filter graph by search terms (empty = random sample of whole corpus)">
-      <select id="graphLimit"><option>50</option><option selected>150</option><option>300</option><option>500</option></select>
+      <input type="text" id="graphQ" placeholder="Filter by search terms (empty = random sample across whole corpus)">
+      <select id="graphLimit" title="Number of facts to load">
+        <option value="100">100 facts</option>
+        <option value="300" selected>300 facts</option>
+        <option value="750">750 facts</option>
+        <option value="1500">1500 facts</option>
+        <option value="3000">3000 facts</option>
+        <option value="5000">5000 facts</option>
+      </select>
       <button class="go" id="graphGo">Explore</button>
+      <button class="ghost" id="graphRelayout" title="Restart the layout simulation">↻ Relayout</button>
     </div>
     <div id="canvasWrap">
       <canvas id="graphCanvas"></canvas>
-      <div id="graphHint">drag nodes · hover for labels · click a node to see its facts</div>
+      <div class="overlay" id="graphStatus"></div>
+      <div class="overlay" id="zoomBox">
+        <button id="zoomIn" title="Zoom in">+</button>
+        <button id="zoomOut" title="Zoom out">−</button>
+        <button id="zoomFit" class="wide" title="Fit graph to view">Fit</button>
+      </div>
+      <div class="overlay" id="graphHint">scroll to zoom · drag background to pan · drag a node to pin · click to focus</div>
     </div>
+    <div id="legend"></div>
     <h3>Facts <span id="tripleCount"></span></h3>
     <div class="listbox triples" id="tripleList"><div class="empty">Explore the graph to list facts</div></div>
   </section>
@@ -113,7 +177,9 @@
   <section id="tab-search">
     <div class="bar">
       <input type="text" id="searchQ" placeholder="Ask something — see exactly what the RAG pipeline retrieves">
-      <select id="searchK"><option>3</option><option selected>5</option><option>8</option><option>12</option></select>
+      <select id="searchK">
+        <option>3</option><option selected>5</option><option>8</option><option>12</option><option>20</option>
+      </select>
       <button class="go" id="searchGo">Retrieve</button>
     </div>
     <div id="searchOut"><div class="empty">Run a query to inspect retrieval</div></div>
@@ -123,7 +189,7 @@
 <script>
 "use strict";
 
-/* ---------- API helper with optional bearer key ---------- */
+/* ---------------- API ---------------- */
 async function api(path) {
   const key = localStorage.getItem("kashKey");
   const res = await fetch(path, key ? { headers: { Authorization: "Bearer " + key } } : {});
@@ -132,206 +198,425 @@ async function api(path) {
     if (k) { localStorage.setItem("kashKey", k); return api(path); }
     throw new Error("unauthorized");
   }
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error((await res.text()).slice(0, 200));
   return res.json();
 }
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-/* ---------- Tabs ---------- */
+/* ---------------- Tabs ---------------- */
 document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => {
   document.querySelectorAll("nav.tabs button").forEach(x => x.classList.toggle("on", x === b));
   document.querySelectorAll("main section").forEach(s => s.classList.toggle("on", s.id === "tab-" + b.dataset.tab));
+  if (b.dataset.tab === "graph") { resizeCanvas(); if (!nodes.length) loadGraph(); else kick(); }
 });
 
-/* ---------- Info + books ---------- */
+/* ---------------- Info + books ---------------- */
+let bookData = [], bookSort = { key: "name", dir: 1 };
+function renderBooks() {
+  const d = [...bookData].sort((a, b) => {
+    const k = bookSort.key;
+    let va = a[k], vb = b[k];
+    if (k === "done") { va = va ? 1 : 0; vb = vb ? 1 : 0; }
+    if (typeof va === "string") return bookSort.dir * va.localeCompare(vb);
+    return bookSort.dir * ((va || 0) - (vb || 0));
+  });
+  document.getElementById("bookRows").innerHTML = d.length ? d.map(x => `<tr>
+    <td>${esc(x.name)}</td>
+    <td class="num">${x.chunks.toLocaleString()}</td>
+    <td class="num">${x.triples.toLocaleString()}</td>
+    <td>${x.done ? '<span class="ok">✓ built</span>' : '<span class="part">⟳ partial</span>'}</td>
+    <td>${x.completed_at ? new Date(x.completed_at).toLocaleDateString() : "—"}</td>
+  </tr>`).join("") : '<tr><td colspan="5" class="empty">No build manifest found — run kash build.</td></tr>';
+}
+document.querySelectorAll("th[data-sort]").forEach(th => th.onclick = () => {
+  const k = th.dataset.sort;
+  bookSort = { key: k, dir: bookSort.key === k ? -bookSort.dir : 1 };
+  renderBooks();
+});
+
 async function loadInfo() {
   try {
     const info = await api("/api/info");
-    document.title = info.agent + " · Kash";
+    document.title = (info.agent || "Kash") + " · Kash";
     document.getElementById("agentName").textContent = info.agent || "Kash Agent";
     document.getElementById("agentDesc").textContent = info.description || "";
     document.getElementById("corpusV").textContent = "corpus v" + (info.corpus_version || 0);
     document.getElementById("agentV").textContent = info.version ? "agent " + info.version : "";
+    const n = v => typeof v === "number" ? v.toLocaleString() : v;
     const stats = [
-      [info.vectors, "vector chunks"],
-      [info.triples, "graph triples"],
-      [(info.documents || []).length, "documents"],
-      [info.embed_model || "?", "embedder"],
-      [info.llm_model || "?", "llm"],
-      [info.reranker_enabled ? "on" : "off", "reranker"],
+      [n(info.vectors), "vector chunks"], [n(info.triples), "graph triples"],
+      [(info.documents || []).length, "documents"], [info.embed_model || "?", "embedder"],
+      [info.llm_model || "?", "llm"], [info.reranker_enabled ? "on" : "off", "reranker"],
     ];
     document.getElementById("stats").innerHTML = stats.map(([v, k]) =>
       `<div class="stat"><div class="v" title="${esc(v)}">${esc(v)}</div><div class="k">${esc(k)}</div></div>`).join("");
-
-    const rows = (info.documents || []).map(d => `<tr>
-      <td>${esc(d.name)}</td>
-      <td class="num">${d.chunks}</td>
-      <td class="num">${d.triples}</td>
-      <td>${d.done ? '<span class="ok">✓ built</span>' : '<span class="part">⟳ partial — rerun kash build</span>'}</td>
-      <td>${d.completed_at ? new Date(d.completed_at).toLocaleString() : "—"}</td>
-    </tr>`);
-    document.getElementById("bookRows").innerHTML = rows.length ? rows.join("")
-      : '<tr><td colspan="5" class="empty">No build manifest found — corpus was built before manifest support. Run kash build --rebuild.</td></tr>';
+    bookData = info.documents || [];
+    renderBooks();
   } catch (e) {
     document.getElementById("bookRows").innerHTML = `<tr><td colspan="5" class="empty">Failed to load: ${esc(e.message)}</td></tr>`;
   }
 }
 loadInfo();
 
-/* ---------- Force-directed graph ---------- */
+/* ================= Knowledge graph ================= */
 const canvas = document.getElementById("graphCanvas");
 const ctx = canvas.getContext("2d");
-let nodes = [], edges = [], nodeIndex = new Map(), dragging = null, hover = null, selected = null, anim = null;
+let nodes = [], edges = [], nodeIndex = new Map();
+let dragNode = null, panning = false, panStart = null, hover = null, selected = null;
+let anim = null, alpha = 0, lastTriples = [], sourceColors = new Map(), hiddenSources = new Set();
+const view = { scale: 1, tx: 0, ty: 0 };
+const H = () => 620;
+const W = () => canvas.clientWidth || 1000;
 
 function resizeCanvas() {
   const r = canvas.getBoundingClientRect();
-  if (r.width === 0) return; // tab hidden — keep previous backing store
-  canvas.width = r.width * devicePixelRatio;
-  canvas.height = 520 * devicePixelRatio;
+  if (r.width === 0) return;
+  canvas.width = Math.round(r.width * devicePixelRatio);
+  canvas.height = Math.round(H() * devicePixelRatio);
   ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
 }
-window.addEventListener("resize", () => { resizeCanvas(); });
+window.addEventListener("resize", () => { resizeCanvas(); draw(); });
+
+function colorFor(src) {
+  if (!src) return "#8590a6";
+  if (sourceColors.has(src)) return sourceColors.get(src);
+  let h = 0;
+  for (let i = 0; i < src.length; i++) h = (h * 31 + src.charCodeAt(i)) % 360;
+  const c = `hsl(${h}, 62%, 62%)`;
+  sourceColors.set(src, c);
+  return c;
+}
 
 function buildGraph(triples) {
-  nodes = []; edges = []; nodeIndex = new Map(); selected = null;
-  const W = canvas.clientWidth || 1000, H = 520;
-  const getNode = label => {
-    if (nodeIndex.has(label)) return nodeIndex.get(label);
-    // Deterministic golden-angle spiral placement — spreads nodes evenly and
-    // avoids the exploding start random placement causes
-    const i = nodes.length, ang = i * 2.39996, rad = 26 + 9 * Math.sqrt(i);
-    const n = { label, x: W / 2 + Math.cos(ang) * rad, y: H / 2 + Math.sin(ang) * rad, vx: 0, vy: 0, deg: 0 };
+  nodes = []; edges = []; nodeIndex = new Map(); selected = null; hover = null;
+  const cx = W() / 2, cy = H() / 2;
+  const getNode = (label, src) => {
+    let n = nodeIndex.get(label);
+    if (n) { n.deg++; return n; }
+    // Golden-angle spiral seed: evenly spread, deterministic, no initial explosion
+    const i = nodes.length, ang = i * 2.39996, rad = 12 * Math.sqrt(i + 1);
+    n = { label, src, x: cx + Math.cos(ang) * rad, y: cy + Math.sin(ang) * rad,
+          vx: 0, vy: 0, dx: 0, dy: 0, deg: 1, pinned: false };
     nodeIndex.set(label, n); nodes.push(n);
     return n;
   };
   for (const t of triples) {
-    const a = getNode(t.subject), b = getNode(t.object);
-    a.deg++; b.deg++;
-    edges.push({ a, b, p: t.predicate, src: t.source || "" });
+    if (hiddenSources.has(t.source || "")) continue;
+    const a = getNode(t.subject, t.source), b = getNode(t.object, t.source);
+    if (a !== b) edges.push({ a, b, p: t.predicate, src: t.source || "" });
+  }
+  fitView();
+  alpha = 1;
+}
+
+/* ---- Fruchterman-Reingold with spatial hashing ----
+   Forces are scaled to the ideal distance k = sqrt(area/n), so density stays
+   constant regardless of node count. Displacement is capped by a cooling
+   temperature, and a centering force keeps components from drifting outward —
+   this is what stops nodes from piling up against the edges. */
+let grid = new Map(), cellSize = 60, K = 50;
+
+function rebuildGrid() {
+  grid.clear();
+  cellSize = Math.max(20, K * 1.6);
+  for (const n of nodes) {
+    const cx = Math.floor(n.x / cellSize), cy = Math.floor(n.y / cellSize);
+    const key = cx + "," + cy;
+    let cell = grid.get(key);
+    if (!cell) { cell = []; grid.set(key, cell); }
+    cell.push(n);
   }
 }
 
-const REST = 85, SPRING = 0.03, REPULSE = 1800, DAMP = 0.82, MAXV = 6;
 function tick() {
-  const W = canvas.clientWidth, H = 520;
-  if (!W || !nodes.length) return; // tab hidden — don't run physics against a 0-width box
-  // repulsion (capped, with distance cutoff)
-  for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
-    const a = nodes[i], b = nodes[j];
-    let dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
-    if (d2 > 90000) continue; // >300px apart — negligible
-    if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = 1; }
-    const d = Math.sqrt(d2), f = Math.min(REPULSE / d2, 8);
-    dx = dx / d * f; dy = dy / d * f;
-    a.vx += dx; a.vy += dy; b.vx -= dx; b.vy -= dy;
-  }
-  // springs (linear in displacement from rest length)
-  for (const e of edges) {
-    let dx = e.b.x - e.a.x, dy = e.b.y - e.a.y;
-    const d = Math.sqrt(dx * dx + dy * dy) || 1;
-    const f = (d - REST) * SPRING;
-    dx = dx / d * f; dy = dy / d * f;
-    e.a.vx += dx; e.a.vy += dy; e.b.vx -= dx; e.b.vy -= dy;
-  }
-  // gravity toward center + damped, speed-capped integration
-  for (const n of nodes) {
-    if (n === dragging) { n.vx = n.vy = 0; continue; }
-    n.vx += (W / 2 - n.x) * 0.0015; n.vy += (H / 2 - n.y) * 0.0015;
-    n.vx = Math.max(-MAXV, Math.min(MAXV, n.vx * DAMP));
-    n.vy = Math.max(-MAXV, Math.min(MAXV, n.vy * DAMP));
-    n.x += n.vx; n.y += n.vy;
-    n.x = Math.max(14, Math.min(W - 14, n.x)); n.y = Math.max(14, Math.min(H - 14, n.y));
-  }
-}
+  const n = nodes.length;
+  if (!n || alpha <= 0.005) return false;
 
-function draw() {
-  const W = canvas.clientWidth, H = 520;
-  if (!W) return; // tab hidden
-  if (Math.abs(W * devicePixelRatio - canvas.width) > 1) resizeCanvas(); // heal stale sizing
-  ctx.clearRect(0, 0, W, H);
-  const active = selected || hover;
-  for (const e of edges) {
-    const on = active && (e.a === active || e.b === active);
-    ctx.strokeStyle = on ? "rgba(245,185,66,0.85)" : "rgba(120,130,155,0.25)";
-    ctx.lineWidth = on ? 1.6 : 1;
-    ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke();
-  }
-  for (const n of nodes) {
-    const r = 4 + Math.min(8, Math.sqrt(n.deg) * 2);
-    const on = n === active;
-    ctx.fillStyle = on ? "#f5b942" : "#8b7cf8";
-    ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 7); ctx.fill();
-    if (on || n.deg >= 3 || nodes.length <= 40) {
-      ctx.fillStyle = on ? "#f5b942" : "rgba(230,233,240,0.75)";
-      ctx.font = (on ? "600 " : "") + "11px system-ui";
-      const label = n.label.length > 28 ? n.label.slice(0, 28) + "…" : n.label;
-      ctx.fillText(label, n.x + r + 4, n.y + 4);
+  const w = W(), h = H();
+  K = Math.sqrt((w * h) / n) * 0.85;
+  const temp = alpha * Math.min(w, h) * 0.12;
+
+  for (const nd of nodes) { nd.dx = 0; nd.dy = 0; }
+
+  // Repulsion — only against nodes in neighbouring grid cells (beyond ~2K the
+  // force is negligible), which keeps this near-linear instead of O(n^2).
+  rebuildGrid();
+  const K2 = K * K;
+  for (const nd of nodes) {
+    const cx = Math.floor(nd.x / cellSize), cy = Math.floor(nd.y / cellSize);
+    for (let gx = cx - 1; gx <= cx + 1; gx++) {
+      for (let gy = cy - 1; gy <= cy + 1; gy++) {
+        const cell = grid.get(gx + "," + gy);
+        if (!cell) continue;
+        for (const o of cell) {
+          if (o === nd) continue;
+          let dx = nd.x - o.x, dy = nd.y - o.y;
+          let d2 = dx * dx + dy * dy;
+          if (d2 < 0.01) { dx = (Math.random() - 0.5); dy = (Math.random() - 0.5); d2 = 0.01; }
+          const d = Math.sqrt(d2);
+          const f = K2 / d;              // FR repulsion
+          nd.dx += (dx / d) * f; nd.dy += (dy / d) * f;
+        }
+      }
     }
   }
-}
 
-function loop() { tick(); draw(); anim = requestAnimationFrame(loop); }
-
-function nodeAt(x, y) {
-  for (let i = nodes.length - 1; i >= 0; i--) {
-    const n = nodes[i], r = 6 + Math.min(8, Math.sqrt(n.deg) * 2);
-    if ((n.x - x) ** 2 + (n.y - y) ** 2 <= r * r) return n;
+  // Attraction along edges
+  for (const e of edges) {
+    let dx = e.a.x - e.b.x, dy = e.a.y - e.b.y;
+    const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+    const f = (d * d) / K;               // FR attraction
+    const ux = (dx / d) * f, uy = (dy / d) * f;
+    e.a.dx -= ux; e.a.dy -= uy;
+    e.b.dx += ux; e.b.dy += uy;
   }
-  return null;
+
+  // Centering: proportional to distance from centre, so nothing escapes outward
+  const ccx = w / 2, ccy = h / 2;
+  for (const nd of nodes) {
+    nd.dx += (ccx - nd.x) * 0.06 * Math.sqrt(nd.deg);
+    nd.dy += (ccy - nd.y) * 0.06 * Math.sqrt(nd.deg);
+  }
+
+  // Integrate, limited by temperature
+  for (const nd of nodes) {
+    if (nd === dragNode || nd.pinned) continue;
+    const d = Math.sqrt(nd.dx * nd.dx + nd.dy * nd.dy) || 1;
+    const lim = Math.min(d, temp);
+    nd.x += (nd.dx / d) * lim;
+    nd.y += (nd.dy / d) * lim;
+  }
+
+  alpha *= 0.975;
+  return true;
 }
+
+function nodeRadius(n) { return 3.5 + Math.min(11, Math.sqrt(n.deg) * 2.1); }
+
+function draw() {
+  const w = W(), h = H();
+  if (!w) return;
+  if (Math.abs(w * devicePixelRatio - canvas.width) > 1) resizeCanvas();
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.save();
+  ctx.translate(view.tx, view.ty);
+  ctx.scale(view.scale, view.scale);
+
+  const active = dragNode || selected || hover;
+  const neighbours = new Set();
+  if (active) for (const e of edges) {
+    if (e.a === active) neighbours.add(e.b);
+    if (e.b === active) neighbours.add(e.a);
+  }
+
+  // Edges
+  ctx.lineWidth = 1 / view.scale;
+  for (const e of edges) {
+    const on = active && (e.a === active || e.b === active);
+    if (active && !on) continue;
+    ctx.strokeStyle = "rgba(245,185,66,0.75)";
+    ctx.lineWidth = 1.5 / view.scale;
+    ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke();
+  }
+  if (!active) {
+    ctx.strokeStyle = "rgba(125,140,170,0.22)";
+    ctx.lineWidth = 1 / view.scale;
+    ctx.beginPath();
+    for (const e of edges) { ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); }
+    ctx.stroke();
+  }
+
+  // Nodes
+  for (const n of nodes) {
+    const r = nodeRadius(n);
+    const on = n === active, near = neighbours.has(n);
+    if (active && !on && !near) {
+      ctx.globalAlpha = 0.22;
+    } else { ctx.globalAlpha = 1; }
+    ctx.fillStyle = on ? "#f5b942" : colorFor(n.src);
+    ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 6.2832); ctx.fill();
+    if (n.pinned) {
+      ctx.strokeStyle = "#f5b942"; ctx.lineWidth = 1.5 / view.scale; ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // Labels: only where they can be read — high-degree nodes, or when zoomed in
+  const fs = 11 / view.scale;
+  ctx.font = `${fs}px system-ui`;
+  ctx.textBaseline = "middle";
+  const labelMin = view.scale > 1.6 ? 1 : (nodes.length > 250 ? 6 : nodes.length > 90 ? 3 : 1);
+  for (const n of nodes) {
+    const on = n === active, near = neighbours.has(n);
+    if (!on && !near && n.deg < labelMin) continue;
+    if (active && !on && !near) continue;
+    ctx.fillStyle = on ? "#f5b942" : "rgba(190,200,220,0.9)";
+    const max = 30;
+    const label = n.label.length > max ? n.label.slice(0, max) + "…" : n.label;
+    ctx.fillText(label, n.x + nodeRadius(n) + 3 / view.scale, n.y);
+  }
+
+  ctx.restore();
+}
+
+function loop() {
+  const moving = tick();
+  draw();
+  if (moving) { anim = requestAnimationFrame(loop); }
+  else { anim = null; updateStatus(); }
+}
+function kick(a = 0.6) {
+  alpha = Math.max(alpha, a);
+  if (!anim) anim = requestAnimationFrame(loop);
+}
+function updateStatus() {
+  document.getElementById("graphStatus").textContent =
+    nodes.length ? `${nodes.length.toLocaleString()} nodes · ${edges.length.toLocaleString()} edges` + (anim ? " · settling…" : "") : "";
+}
+
+/* ---- view helpers ---- */
+function fitView() {
+  if (!nodes.length) return;
+  let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+  for (const n of nodes) {
+    minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x);
+    minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y);
+  }
+  const pad = 50;
+  const bw = Math.max(1, maxX - minX), bh = Math.max(1, maxY - minY);
+  view.scale = Math.min((W() - pad * 2) / bw, (H() - pad * 2) / bh, 2.5);
+  view.scale = Math.max(0.05, view.scale);
+  view.tx = W() / 2 - ((minX + maxX) / 2) * view.scale;
+  view.ty = H() / 2 - ((minY + maxY) / 2) * view.scale;
+}
+function toWorld(sx, sy) { return { x: (sx - view.tx) / view.scale, y: (sy - view.ty) / view.scale }; }
 function canvasPos(ev) {
   const r = canvas.getBoundingClientRect();
   return { x: ev.clientX - r.left, y: ev.clientY - r.top };
 }
-canvas.addEventListener("mousedown", ev => { const p = canvasPos(ev); dragging = nodeAt(p.x, p.y); });
+function nodeAt(sx, sy) {
+  const p = toWorld(sx, sy);
+  let best = null, bestD = Infinity;
+  for (const n of nodes) {
+    const r = nodeRadius(n) + 4 / view.scale;
+    const d = (n.x - p.x) ** 2 + (n.y - p.y) ** 2;
+    if (d <= r * r && d < bestD) { best = n; bestD = d; }
+  }
+  return best;
+}
+
+canvas.addEventListener("mousedown", ev => {
+  const p = canvasPos(ev);
+  const n = nodeAt(p.x, p.y);
+  if (n) { dragNode = n; n.pinned = true; }
+  else { panning = true; panStart = { x: ev.clientX - view.tx, y: ev.clientY - view.ty }; canvas.classList.add("grabbing"); }
+});
 canvas.addEventListener("mousemove", ev => {
   const p = canvasPos(ev);
-  if (dragging) { dragging.x = p.x; dragging.y = p.y; }
-  else { hover = nodeAt(p.x, p.y); canvas.style.cursor = hover ? "pointer" : "grab"; }
-});
-window.addEventListener("mouseup", ev => {
-  if (dragging) {
-    const p = canvasPos(ev), n = nodeAt(p.x, p.y);
-    if (n === dragging) { selected = (selected === n) ? null : n; renderTriples(); }
-    dragging = null;
+  if (dragNode) {
+    const w = toWorld(p.x, p.y);
+    dragNode.x = w.x; dragNode.y = w.y;
+    kick(0.25);
+  } else if (panning) {
+    view.tx = ev.clientX - panStart.x; view.ty = ev.clientY - panStart.y;
+    draw();
+  } else {
+    const n = nodeAt(p.x, p.y);
+    if (n !== hover) { hover = n; canvas.style.cursor = n ? "pointer" : "grab"; if (!anim) draw(); }
   }
 });
+window.addEventListener("mouseup", ev => {
+  if (dragNode) {
+    const p = canvasPos(ev), n = nodeAt(p.x, p.y);
+    if (n === dragNode && Math.abs(dragNode.vx) < 1) {
+      selected = (selected === dragNode) ? null : dragNode;
+      renderTriples();
+    }
+    dragNode = null;
+    if (!anim) draw();
+  }
+  panning = false; canvas.classList.remove("grabbing");
+});
+canvas.addEventListener("dblclick", ev => {
+  const p = canvasPos(ev), n = nodeAt(p.x, p.y);
+  if (n) { n.pinned = false; kick(0.4); }
+});
+canvas.addEventListener("wheel", ev => {
+  ev.preventDefault();
+  const p = canvasPos(ev);
+  const before = toWorld(p.x, p.y);
+  const factor = ev.deltaY < 0 ? 1.15 : 1 / 1.15;
+  view.scale = Math.max(0.05, Math.min(8, view.scale * factor));
+  const after = toWorld(p.x, p.y);
+  view.tx += (after.x - before.x) * view.scale;
+  view.ty += (after.y - before.y) * view.scale;
+  draw();
+}, { passive: false });
 
-let lastTriples = [];
+document.getElementById("zoomIn").onclick = () => { view.scale = Math.min(8, view.scale * 1.3); draw(); };
+document.getElementById("zoomOut").onclick = () => { view.scale = Math.max(0.05, view.scale / 1.3); draw(); };
+document.getElementById("zoomFit").onclick = () => { fitView(); draw(); };
+document.getElementById("graphRelayout").onclick = () => {
+  for (const n of nodes) n.pinned = false;
+  kick(1);
+};
+
+/* ---- legend + facts ---- */
+function renderLegend() {
+  const counts = new Map();
+  for (const t of lastTriples) {
+    const s = t.source || "(unattributed)";
+    counts.set(s, (counts.get(s) || 0) + 1);
+  }
+  const items = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 14);
+  document.getElementById("legend").innerHTML = items.map(([s, c]) =>
+    `<span class="item ${hiddenSources.has(s === "(unattributed)" ? "" : s) ? "off" : ""}" data-src="${esc(s)}">
+       <i style="background:${colorFor(s === "(unattributed)" ? "" : s)}"></i>${esc(s.length > 34 ? s.slice(0, 34) + "…" : s)} (${c})
+     </span>`).join("");
+  document.querySelectorAll("#legend .item").forEach(el => el.onclick = () => {
+    const s = el.dataset.src === "(unattributed)" ? "" : el.dataset.src;
+    if (hiddenSources.has(s)) hiddenSources.delete(s); else hiddenSources.add(s);
+    buildGraph(lastTriples); renderLegend(); renderTriples(); kick(1);
+  });
+}
+
 function renderTriples() {
   const list = document.getElementById("tripleList");
-  const shown = selected
-    ? lastTriples.filter(t => t.subject === selected.label || t.object === selected.label)
-    : lastTriples;
+  let shown = lastTriples.filter(t => !hiddenSources.has(t.source || ""));
+  if (selected) shown = shown.filter(t => t.subject === selected.label || t.object === selected.label);
   document.getElementById("tripleCount").textContent =
-    `(${shown.length}${selected ? " · " + selected.label : ""})`;
-  list.innerHTML = shown.length ? shown.map(t => `<div class="triple">
+    `(${shown.length.toLocaleString()}${selected ? " · " + selected.label : ""})`;
+  const cap = 400;
+  const slice = shown.slice(0, cap);
+  list.innerHTML = slice.length ? slice.map(t => `<div class="triple">
       <span class="s">${esc(t.subject)}</span><span class="p">${esc(t.predicate)}</span><span class="o">${esc(t.object)}</span>
       ${t.source ? `<span class="src">📖 ${esc(t.source)}</span>` : ""}
-    </div>`).join("") : '<div class="empty">No facts</div>';
+    </div>`).join("") + (shown.length > cap ? `<div class="empty">… ${(shown.length - cap).toLocaleString()} more</div>` : "")
+    : '<div class="empty">No facts</div>';
 }
 
 async function loadGraph() {
   const q = document.getElementById("graphQ").value.trim();
   const limit = document.getElementById("graphLimit").value;
   const btn = document.getElementById("graphGo");
-  btn.disabled = true; btn.textContent = "…";
+  btn.disabled = true; btn.textContent = "Loading…";
   try {
     const data = await api(`/api/graph?limit=${limit}${q ? "&q=" + encodeURIComponent(q) : ""}`);
     lastTriples = data.triples || [];
+    hiddenSources.clear();
     resizeCanvas();
     buildGraph(lastTriples);
-    renderTriples();
-    if (!anim) loop();
+    renderLegend(); renderTriples(); updateStatus();
+    kick(1);
   } catch (e) {
     document.getElementById("tripleList").innerHTML = `<div class="empty">Failed: ${esc(e.message)}</div>`;
   } finally { btn.disabled = false; btn.textContent = "Explore"; }
 }
 document.getElementById("graphGo").onclick = loadGraph;
 document.getElementById("graphQ").addEventListener("keydown", e => { if (e.key === "Enter") loadGraph(); });
-document.querySelector('[data-tab=graph]').addEventListener("click", () => { if (!nodes.length) loadGraph(); }, { once: true });
 
-/* ---------- Retrieval tester ---------- */
+/* ---------------- Retrieval tester ---------------- */
 async function runSearch() {
   const q = document.getElementById("searchQ").value.trim();
   if (!q) return;
@@ -342,21 +627,23 @@ async function runSearch() {
   out.innerHTML = '<div class="empty">Retrieving…</div>';
   try {
     const r = await api(`/api/search?q=${encodeURIComponent(q)}&top_k=${k}`);
-    let html = "";
     const chunks = r.chunks || [], facts = r.facts || [];
-    html += `<h3>Retrieved chunks (${chunks.length})</h3>`;
-    html += chunks.length ? chunks.map((c, i) => `<div class="chunk">
+    let html = `<h3>Retrieved chunks (${chunks.length})</h3>`;
+    html += chunks.length ? chunks.map((c, i) => {
+      const sim = c.Similarity ?? c.similarity;
+      return `<div class="chunk">
         <div class="meta"><span class="rank">#${i + 1}</span>
           <span class="src">📖 ${esc(c.Source || c.source || "unknown")}</span>
-          ${c.Similarity ? `<span class="sim">similarity ${(c.Similarity).toFixed(3)}</span>` : ""}
+          ${sim ? `<span class="sim">similarity ${Number(sim).toFixed(3)}</span>` : ""}
         </div>
         <div class="body">${esc(c.Content || c.content || "")}</div>
-      </div>`).join("") : '<div class="empty">No chunks retrieved</div>';
+      </div>`;
+    }).join("") : '<div class="empty">No chunks retrieved</div>';
     html += `<h3>Knowledge graph facts (${facts.length})</h3>`;
-    html += facts.length ? `<div class="listbox triples">` + facts.map(t => `<div class="triple">
+    html += facts.length ? '<div class="listbox triples">' + facts.map(t => `<div class="triple">
         <span class="s">${esc(t.subject)}</span><span class="p">${esc(t.predicate)}</span><span class="o">${esc(t.object)}</span>
         ${t.source ? `<span class="src">📖 ${esc(t.source)}</span>` : ""}
-      </div>`).join("") + `</div>` : '<div class="empty">No graph facts matched</div>';
+      </div>`).join("") + '</div>' : '<div class="empty">No graph facts matched</div>';
     out.innerHTML = html;
   } catch (e) {
     out.innerHTML = `<div class="empty">Failed: ${esc(e.message)}</div>`;

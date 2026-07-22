@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -323,15 +324,6 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 	}
 	s.log.Info("vector search completed", "candidates", len(vectorResults), "query", query)
 
-	// Graph search
-	graphResults, err := s.graphDB.Search(ctx, query, 10)
-	if err != nil {
-		s.log.Warn("graph search failed (non-fatal)", "error", err, "query", query)
-		graphResults = nil
-	} else {
-		s.log.Info("graph search completed", "results", len(graphResults), "query", query)
-	}
-
 	// Narrow candidates: rerank when configured, similarity order otherwise.
 	ranked := vectorResults
 	if s.reranker != nil && len(vectorResults) > 0 {
@@ -354,7 +346,76 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 
 	selected := diversifyBySource(ranked, topK)
 
+	// Graph search runs last so it can be disambiguated by the vector layer.
+	// Graph matching is lexical: a query about saṃskāra in its alchemical sense
+	// matches triples about saṃskāra as karmic residue equally well. The
+	// embedding layer does understand the distinction, so facts coming from the
+	// documents semantic retrieval actually selected are promoted, and facts
+	// from unrelated documents are demoted.
+	graphResults := s.searchGraphInContext(ctx, query, selected, graphFactLimit)
+
 	return retrievalResult{Chunks: selected, Facts: graphResults}, nil
+}
+
+// graphFactLimit is the number of knowledge-graph facts injected as context.
+const graphFactLimit = 10
+
+// contextBoost multiplies the score of a fact whose source document also
+// surfaced in semantic retrieval.
+const contextBoost = 2.5
+
+// searchGraphInContext runs a graph search and re-ranks the results using the
+// source documents that semantic retrieval selected, resolving homonyms that
+// pure string matching cannot.
+func (s *Server) searchGraphInContext(ctx context.Context, query string, chunks []vector.SearchResult, limit int) []graph.SearchResult {
+	// Pull a wider candidate pool so promotion has something to promote from
+	candidates, err := s.graphDB.Search(ctx, query, limit*4)
+	if err != nil {
+		s.log.Warn("graph search failed (non-fatal)", "error", err, "query", query)
+		return nil
+	}
+
+	ranked := rankFactsByContext(candidates, chunks, limit)
+	s.log.Info("graph search completed", "results", len(ranked),
+		"candidates", len(candidates), "query", query)
+	return ranked
+}
+
+// rankFactsByContext promotes facts whose source document also surfaced in
+// semantic retrieval, then truncates to limit. This is what separates the
+// alchemical sense of a term from its karmic sense: both match the query
+// string, but only one appears in the documents the embedder selected.
+func rankFactsByContext(candidates []graph.SearchResult, chunks []vector.SearchResult, limit int) []graph.SearchResult {
+	// No semantic signal to disambiguate with — return as-is
+	if len(chunks) == 0 {
+		if len(candidates) > limit {
+			return candidates[:limit]
+		}
+		return candidates
+	}
+
+	inContext := make(map[string]bool, len(chunks))
+	for _, c := range chunks {
+		if c.Source != "" {
+			inContext[c.Source] = true
+		}
+	}
+
+	ranked := make([]graph.SearchResult, len(candidates))
+	copy(ranked, candidates)
+	for i := range ranked {
+		if ranked[i].Source != "" && inContext[ranked[i].Source] {
+			ranked[i].Score *= contextBoost
+		}
+	}
+
+	sort.SliceStable(ranked, func(i, j int) bool {
+		return ranked[i].Score > ranked[j].Score
+	})
+	if len(ranked) > limit {
+		ranked = ranked[:limit]
+	}
+	return ranked
 }
 
 // hybridSearch runs retrieve and formats the results as a context string for

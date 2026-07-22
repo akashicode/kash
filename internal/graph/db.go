@@ -76,18 +76,40 @@ func (db *DB) AddTriples(ctx context.Context, triples []Triple, source string) e
 	}
 
 	quads := make([]quad.Quad, 0, len(triples))
+	seen := map[string]bool{}
 	for _, t := range triples {
-		if t.Subject == "" || t.Predicate == "" || t.Object == "" {
+		subj := NormalizeEntity(t.Subject)
+		pred := CanonicalPredicate(t.Predicate)
+		obj := NormalizeEntity(t.Object)
+
+		if subj == "" || pred == "" || obj == "" {
 			continue
 		}
-		quads = append(quads, quad.Make(
-			normalise(t.Subject),
-			normalise(t.Predicate),
-			normalise(t.Object),
-			label,
-		))
+		// Drop junk and commercial metadata rather than spending retrieval
+		// budget on "Randhir Book Sales distributes X"
+		if !hasLetters(subj) || !hasLetters(obj) {
+			continue
+		}
+		if IsNoisePredicate(t.Predicate) || looksLikeMetadataEntity(subj) || looksLikeMetadataEntity(obj) {
+			continue
+		}
+		// A self-referential triple carries no information
+		if normalizeSurface(subj) == normalizeSurface(obj) {
+			continue
+		}
+		// Collapse near-duplicates that differ only in case or predicate wording
+		key := FoldKey(subj, pred, obj)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		quads = append(quads, quad.Make(subj, pred, obj, label))
 	}
 
+	if len(quads) == 0 {
+		return nil
+	}
 	if err := db.store.AddQuadSet(quads); err != nil {
 		return fmt.Errorf("add quads: %w", err)
 	}
@@ -178,7 +200,10 @@ func (db *DB) Search(ctx context.Context, query string, topK int) ([]SearchResul
 		pred := quadValueStr(q.Predicate)
 		obj := quadValueStr(q.Object)
 
-		key := subj + "|" + pred + "|" + obj
+		// Fold on a case- and predicate-normalized key so facts already in the
+		// graph that differ only in wording ("has X" vs "contains X") collapse
+		// to one result — no rebuild required.
+		key := FoldKey(subj, pred, obj)
 		if seen[key] {
 			continue
 		}

@@ -388,10 +388,13 @@ func runBuild(cmd *cobra.Command, args []string) error {
 				}
 				batch := chunks[i:end]
 
+				// Delimit passages explicitly. Concatenating raw chunks let the
+				// extractor bind facts across unrelated excerpts — most damagingly
+				// title-page credits (translator, editor) onto texts merely
+				// mentioned further down. The prompt forbids crossing these markers.
 				var combined strings.Builder
-				for _, ch := range batch {
-					combined.WriteString(ch.Content)
-					combined.WriteString("\n\n")
+				for j, ch := range batch {
+					fmt.Fprintf(&combined, "--- PASSAGE %d ---\n%s\n\n", j+1, ch.Content)
 				}
 
 				var triples []llm.Triple
