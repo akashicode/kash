@@ -11,6 +11,7 @@ import (
 	agentconfig "github.com/akashicode/kash/internal/config"
 	"github.com/akashicode/kash/internal/display"
 	"github.com/akashicode/kash/internal/graph"
+	"github.com/akashicode/kash/internal/lexical"
 	"github.com/akashicode/kash/internal/server"
 )
 
@@ -68,12 +69,13 @@ func runServe(_ *cobra.Command, _ []string) error {
 	}
 
 	srvCfg := server.Config{
-		VectorStorePath: "data/memory.chromem",
-		GraphDBPath:     "data/knowledge.cayley",
-		AgentYAMLPath:   serveAgentYAML,
-		ManifestPath:    "data/build.manifest.json",
-		AliasPath:       filepath.Join("data", graph.AliasFileName),
-		AppCfg:          cfg,
+		VectorStorePath:  "data/memory.chromem",
+		LexicalIndexPath: filepath.Join("data", lexical.FileName),
+		GraphDBPath:      "data/knowledge.cayley",
+		AgentYAMLPath:    serveAgentYAML,
+		ManifestPath:     "data/build.manifest.json",
+		AliasPath:        filepath.Join("data", graph.AliasFileName),
+		AppCfg:           cfg,
 	}
 
 	srv, err := server.New(srvCfg)

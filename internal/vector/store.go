@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	chromem "github.com/philippgille/chromem-go"
@@ -17,6 +19,10 @@ import (
 	"github.com/akashicode/kash/internal/chunker"
 	"github.com/akashicode/kash/internal/config"
 )
+
+// warnTruncation ensures the dimension-truncation warning is printed once per
+// process rather than once per embedded chunk.
+var warnTruncation sync.Once
 
 // ErrNilConfig is returned when a nil config is provided.
 var ErrNilConfig = errors.New("vector store config is nil")
@@ -103,6 +109,23 @@ func NewPersistentStore(path string, embedCfg *config.ProviderConfig) (*Store, e
 	}, nil
 }
 
+// chunkMetadata builds the stored metadata for a chunk: the structural fields
+// the chunker derived (book, breadcrumb, verse, content type, noise score) plus
+// the source and index every chunk carries. Structure is stored because a query
+// naming a verse number is an exact match against metadata but carries almost no
+// signal in a dense embedding.
+func chunkMetadata(ch chunker.Chunk) map[string]string {
+	meta := make(map[string]string, len(ch.Metadata)+2)
+	for k, v := range ch.Metadata {
+		if v != "" {
+			meta[k] = v
+		}
+	}
+	meta["source"] = ch.Source
+	meta["index"] = fmt.Sprintf("%d", ch.Index)
+	return meta
+}
+
 // AddChunks adds a batch of document chunks to the vector store.
 // When parallel is true, all documents are embedded concurrently using all CPU
 // cores (ideal for local embedders). When false, documents are added in small
@@ -123,12 +146,9 @@ func (s *Store) addChunksParallel(ctx context.Context, chunks []chunker.Chunk) e
 	docs := make([]chromem.Document, len(chunks))
 	for i, ch := range chunks {
 		docs[i] = chromem.Document{
-			ID:      ch.ID,
-			Content: ch.Content,
-			Metadata: map[string]string{
-				"source": ch.Source,
-				"index":  fmt.Sprintf("%d", ch.Index),
-			},
+			ID:       ch.ID,
+			Content:  ch.Content,
+			Metadata: chunkMetadata(ch),
 		}
 	}
 	if err := s.collection.AddDocuments(ctx, docs, runtime.NumCPU()); err != nil {
@@ -152,12 +172,9 @@ func (s *Store) addChunksSequential(ctx context.Context, chunks []chunker.Chunk)
 		docs := make([]chromem.Document, end-i)
 		for j, ch := range chunks[i:end] {
 			docs[j] = chromem.Document{
-				ID:      ch.ID,
-				Content: ch.Content,
-				Metadata: map[string]string{
-					"source": ch.Source,
-					"index":  fmt.Sprintf("%d", ch.Index),
-				},
+				ID:       ch.ID,
+				Content:  ch.Content,
+				Metadata: chunkMetadata(ch),
 			}
 		}
 
@@ -219,6 +236,22 @@ func (s *Store) Query(ctx context.Context, query string, topK int) ([]SearchResu
 		}
 	}
 	return searchResults, nil
+}
+
+// GetByID fetches a single stored chunk. Lexical search returns chunk IDs
+// without content, so fusion uses this to materialize hits that keyword search
+// found but vector search missed — which is the whole point of running both.
+func (s *Store) GetByID(ctx context.Context, id string) (SearchResult, error) {
+	doc, err := s.collection.GetByID(ctx, id)
+	if err != nil {
+		return SearchResult{}, fmt.Errorf("get chunk %q: %w", id, err)
+	}
+	return SearchResult{
+		ID:       doc.ID,
+		Content:  doc.Content,
+		Source:   doc.Metadata["source"],
+		Metadata: doc.Metadata,
+	}, nil
 }
 
 // Count returns the number of documents in the store.
@@ -316,8 +349,23 @@ func newEmbeddingFuncWithDimensions(cfg *config.ProviderConfig) chromem.Embeddin
 
 		v := embedResp.Data[0].Embedding
 
-		// Truncate or validate dimension
+		// Truncate to the configured dimension.
+		//
+		// chromem re-normalizes vectors on both add and query, so the magnitude
+		// is handled downstream. What it cannot fix is meaning: truncation is
+		// only safe for Matryoshka-trained models, which are explicitly trained
+		// so that a prefix of the vector is a usable embedding. For any other
+		// model, dropping the tail silently degrades every similarity score in
+		// the corpus — so say so once rather than never.
 		if cfg.Dimensions > 0 && len(v) > cfg.Dimensions {
+			warnTruncation.Do(func() {
+				fmt.Fprintf(os.Stderr,
+					"warning: embedder returned %d dimensions but agent.yaml requests %d; "+
+						"truncating. This is only safe for Matryoshka-capable models "+
+						"(voyage-3/4, text-embedding-3). For any other model, set "+
+						"runtime.embedder.dimensions to the model's native size.\n",
+					len(v), cfg.Dimensions)
+			})
 			v = v[:cfg.Dimensions]
 		}
 

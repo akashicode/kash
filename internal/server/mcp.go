@@ -10,16 +10,16 @@ import (
 
 // MCPTool represents an MCP tool definition.
 type MCPTool struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	InputSchema MCPSchema   `json:"inputSchema"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	InputSchema MCPSchema `json:"inputSchema"`
 }
 
 // MCPSchema represents a JSON schema for tool inputs.
 type MCPSchema struct {
-	Type       string              `json:"type"`
-	Properties map[string]MCPProp  `json:"properties"`
-	Required   []string            `json:"required"`
+	Type       string             `json:"type"`
+	Properties map[string]MCPProp `json:"properties"`
+	Required   []string           `json:"required"`
 }
 
 // MCPProp represents a single parameter property.

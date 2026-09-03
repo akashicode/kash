@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/cayleygraph/cayley"
 	"github.com/cayleygraph/cayley/graph"
@@ -518,7 +519,10 @@ func scoreMatch(terms []string, values ...string) float64 {
 
 	score := 0.0
 	for _, term := range terms {
-		if len(term) < 3 {
+		// Measured in runes, not bytes. len() counts bytes, so this discarded
+		// short Latin terms like "om" and "ka" while admitting any single
+		// Devanagari character (3 bytes) — backwards for a Sanskrit corpus.
+		if utf8.RuneCountInString(term) < 2 {
 			continue
 		}
 		switch {

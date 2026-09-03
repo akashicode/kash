@@ -90,6 +90,14 @@ build_providers:
     model: "voyage-3"
 ```
 
+### Retrieval (agent.yaml, optional)
+```yaml
+retrieval:
+  top_k: 5          # chunks injected as context
+  graph_facts: 10   # knowledge-graph facts injected
+```
+Both were compile-time constants; omit the block to keep the defaults shown.
+
 ### Runtime Environment Variables
 ```bash
 LLM_BASE_URL, LLM_API_KEY, LLM_MODEL
@@ -104,7 +112,12 @@ RERANK_ENDPOINT  # optional: full URL override, takes priority over RERANK_BASE_
 
 1. **`kash init <name>`** - Scaffold project with `data/`, `agent.yaml`, `Dockerfile`
 2. **Add documents** to `data/` directory (PDFs, Markdown, etc.)
-3. **`kash build`** - Chunk documents, call embedder API, extract graph triples via LLM, generate MCP tool descriptions
+3. **`kash build`** - Chunk documents, call embedder API, extract graph triples via LLM, build the BM25 lexical index, generate MCP tool descriptions
+
+   Chunk boundaries and metadata are fixed at build time, so changing
+   `build.chunk_size` (or upgrading a version that changes chunking) needs
+   `kash build --rebuild` — a plain incremental build leaves existing documents
+   on their old chunking.
 4. **`docker build`** - Package into ~50MB container with baked databases
 5. **`docker run`** with user's runtime API keys
 
@@ -124,8 +137,10 @@ Kash/
 │   ├── graph/             # cayley graph operations
 │   ├── llm/               # go-openai wrappers
 │   ├── mcp/               # MCP protocol server
-│   ├── chunker/           # Document chunking
-│   └── server/            # HTTP server (REST, MCP, A2A)
+│   ├── chunker/           # Structure-aware chunking + citation metadata
+│   ├── lexical/           # Pure-Go BM25 index (keyword + exact-reference)
+│   ├── reader/            # Document loading + text-quality gate
+│   └── server/            # HTTP server (REST, MCP, A2A) + RRF fusion
 ├── api/                   # OpenAPI schemas/types
 ├── docs/                  # Documentation
 ├── test/                  # Integration test fixtures

@@ -215,6 +215,13 @@ mcp:
       description: "Search the expert knowledge base for relevant information. Use this tool when the user asks about topics covered in the agent's domain."
       # NOTE: This description will be auto-optimized by 'kash build'
 
+# Retrieval tuning (optional — these are the defaults)
+retrieval:
+  # Chunks injected as context per query.
+  top_k: 5
+  # Knowledge-graph facts injected per query.
+  graph_facts: 10
+
 # Server configuration
 server:
   port: 8000

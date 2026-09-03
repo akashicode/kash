@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -18,6 +19,7 @@ import (
 	agentconfig "github.com/akashicode/kash/internal/config"
 	"github.com/akashicode/kash/internal/display"
 	"github.com/akashicode/kash/internal/graph"
+	"github.com/akashicode/kash/internal/lexical"
 	"github.com/akashicode/kash/internal/llm"
 	"github.com/akashicode/kash/internal/manifest"
 	"github.com/akashicode/kash/internal/reader"
@@ -109,10 +111,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	vectorPath := filepath.Join("data", "memory.chromem")
 	graphPath := filepath.Join("data", "knowledge.cayley")
 	manifestPath := filepath.Join("data", manifest.FileName)
+	lexicalPath := filepath.Join("data", lexical.FileName)
 
 	if buildRebuild {
 		display.StepWarn("--rebuild: discarding existing databases and manifest")
-		for _, p := range []string{vectorPath, graphPath, manifestPath} {
+		for _, p := range []string{vectorPath, graphPath, manifestPath, lexicalPath} {
 			if err := os.RemoveAll(p); err != nil {
 				return fmt.Errorf("remove %q: %w", p, err)
 			}
@@ -188,8 +191,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Step 1: Load documents
-	display.Step(1, 4, "Loading documents from data/...")
-	docs, err := reader.LoadDirectory("data")
+	display.Step(1, 5, "Loading documents from data/...")
+	docs, rejected, err := reader.LoadDirectory("data")
 	if err != nil {
 		return fmt.Errorf("load documents: %w", err)
 	}
@@ -198,8 +201,14 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	display.StepResult("Loaded", fmt.Sprintf("%d document(s)", len(docs)))
 
+	// Rejections are reported, never swallowed: a document that silently fails
+	// to load is indistinguishable from one that was never added.
+	for _, r := range rejected {
+		display.StepWarn(fmt.Sprintf("not indexed: %s — %s", r.Path, r.Reason))
+	}
+
 	// Step 2: Plan — decide per document whether to skip, add, replace, or resume
-	display.Step(2, 4, "Planning incremental build...")
+	display.Step(2, 5, "Planning incremental build...")
 	var pending []docPlan
 	unchanged := 0
 	docNames := map[string]bool{}
@@ -251,7 +260,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 3: Process documents (embed + extract triples per document)
-	display.Step(3, 4, "Building documents (embeddings + knowledge graph)...")
+	display.Step(3, 5, "Building documents (embeddings + knowledge graph)...")
 
 	vs, err := vector.NewPersistentStore(vectorPath, &cfg.Embedder)
 	if err != nil {
@@ -303,21 +312,13 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	batchSize := 10
 	incomplete := []string{}
-	var sampleChunks []chunker.Chunk
 
 	for _, p := range pending {
 		name := p.Doc.Name
 
-		chunks, err := ck.SplitBySentence(p.Doc.Content, name)
+		chunks, err := ck.SplitStructured(p.Doc.Content, name)
 		if err != nil {
 			return fmt.Errorf("chunk document %q: %w", name, err)
-		}
-		if len(sampleChunks) == 0 {
-			limit := 3
-			if len(chunks) < limit {
-				limit = len(chunks)
-			}
-			sampleChunks = chunks[:limit]
 		}
 
 		state := m.Documents[name]
@@ -464,13 +465,40 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	display.StepResult("Indexed", fmt.Sprintf("%d vectors, %d triples total", vs.Count(), gdb.Count()))
 
-	// Step 4: Generate MCP tool description (only when the corpus changed)
-	display.Step(4, 4, "Generating optimized MCP tool descriptions...")
-	var sampleContent strings.Builder
-	for _, ch := range sampleChunks {
-		sampleContent.WriteString(ch.Content)
-		sampleContent.WriteString("\n\n")
+	// Build the lexical index over the whole corpus.
+	//
+	// It is rebuilt from every document rather than updated incrementally:
+	// chunking is local and takes a few seconds for a corpus this size, whereas
+	// a partial lexical index would silently answer keyword queries from only
+	// the documents that happened to change in the last build.
+	if corpusChanged || !fileExists(lexicalPath) {
+		display.Step(4, 5, "Building lexical index...")
+		lx := lexical.New()
+		for _, doc := range docs {
+			chunks, err := ck.SplitStructured(doc.Content, doc.Name)
+			if err != nil {
+				return fmt.Errorf("chunk document %q for lexical index: %w", doc.Name, err)
+			}
+			for _, c := range chunks {
+				lx.Add(c.ID, c.Content, chunkLexicalMeta(c))
+			}
+		}
+		lx.Finalize()
+		if err := lx.Save(lexicalPath); err != nil {
+			return fmt.Errorf("save lexical index: %w", err)
+		}
+		display.StepResult("Indexed", fmt.Sprintf("%d chunks for keyword search", lx.Len()))
 	}
+
+	// Step 5: Generate MCP tool description (only when the corpus changed)
+	//
+	// The sample must span the WHOLE corpus, not the documents this run happened
+	// to process. Sampling the first pending document made an incremental build
+	// that touched one book rewrite the description to be about only that book —
+	// a 61-document Tantra corpus advertised itself as being about a single text,
+	// which is the only description an MCP client ever sees.
+	display.Step(5, 5, "Generating optimized MCP tool descriptions...")
+	sampleContent := buildCorpusSample(docs, mcpSampleBudget)
 
 	agentYAMLData, err := os.ReadFile("agent.yaml")
 	if err != nil {
@@ -489,8 +517,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if sampleContent.Len() > 0 {
-		mcpDesc, err := llmClient.GenerateMCPDescription(ctx, agentName, sampleContent.String())
+	if sampleContent != "" {
+		mcpDesc, err := llmClient.GenerateMCPDescription(ctx, agentName, sampleContent)
 		if err != nil {
 			display.StepWarn(fmt.Sprintf("MCP description generation failed: %v", err))
 			mcpDesc = fmt.Sprintf("Search the %s expert knowledge base for relevant information.", agentName)
@@ -520,6 +548,9 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	display.KeyValue("Vector index", fmt.Sprintf("%s (%d documents)", vectorPath, vs.Count()), display.BrightGreen)
 	display.KeyValue("Graph store", fmt.Sprintf("%s (%d triples)", graphPath, gdb.Count()), display.BrightGreen)
+	if fileExists(lexicalPath) {
+		display.KeyValue("Lexical index", lexicalPath, display.BrightGreen)
+	}
 	display.KeyValue("Manifest", manifestPath, display.BrightGreen)
 
 	display.NextSteps([]string{
@@ -527,6 +558,82 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	})
 
 	return nil
+}
+
+// fileExists reports whether a path exists.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// chunkLexicalMeta copies the metadata the lexical index needs for exact-match
+// lookups: structural references plus the source.
+func chunkLexicalMeta(c chunker.Chunk) map[string]string {
+	meta := make(map[string]string, len(c.Metadata)+1)
+	for k, v := range c.Metadata {
+		if v != "" {
+			meta[k] = v
+		}
+	}
+	meta["source"] = c.Source
+	return meta
+}
+
+// mcpSampleBudget caps the corpus excerpt handed to the description generator.
+const mcpSampleBudget = 12000
+
+// buildCorpusSample builds a description sample that spans every document in the
+// corpus. Each document contributes its title and a short opening excerpt, with
+// the per-document share derived from the total budget so a large corpus still
+// yields a representative spread rather than a deep look at one book.
+func buildCorpusSample(docs []reader.Document, budget int) string {
+	if len(docs) == 0 || budget <= 0 {
+		return ""
+	}
+
+	perDoc := budget / len(docs)
+	if perDoc < 120 {
+		perDoc = 120
+	}
+
+	var sb strings.Builder
+	for _, doc := range docs {
+		if sb.Len() >= budget {
+			break
+		}
+		excerpt := documentExcerpt(doc.Content, perDoc)
+		if excerpt == "" {
+			continue
+		}
+		fmt.Fprintf(&sb, "--- %s ---\n%s\n\n", doc.Name, excerpt)
+	}
+	return sb.String()
+}
+
+// documentExcerpt returns up to n runes of meaningful text from the start of a
+// document, skipping blank and separator-only lines so the excerpt is prose
+// rather than front-matter rules.
+func documentExcerpt(content string, n int) string {
+	var sb strings.Builder
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.Trim(line, "-=_*# ") == "" {
+			continue
+		}
+		if sb.Len() > 0 {
+			sb.WriteString(" ")
+		}
+		sb.WriteString(line)
+		if utf8.RuneCountInString(sb.String()) >= n {
+			break
+		}
+	}
+
+	runes := []rune(sb.String())
+	if len(runes) > n {
+		runes = runes[:n]
+	}
+	return strings.TrimSpace(string(runes))
 }
 
 func updateAgentYAMLMCPDescription(path, agentName, description string) error {

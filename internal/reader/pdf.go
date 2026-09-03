@@ -33,6 +33,15 @@ func extractPDFText(path string) (string, error) {
 		return "", fmt.Errorf("no text extracted from PDF")
 	}
 
+	// Emptiness is not a sufficient check. A PDF whose embedded font subsets
+	// carry no usable ToUnicode CMap yields glyph indices rendered as arbitrary
+	// letters — valid UTF-8, non-empty, and a substitution cipher. Indexing it
+	// costs a full pass of embedding API calls and produces chunks no query can
+	// ever retrieve, with nothing anywhere reporting a problem.
+	if q := AssessText(text); q.Suspect {
+		return "", fmt.Errorf("extracted text does not look like language: %s", q.Reason)
+	}
+
 	// Sanitize: replace any remaining invalid UTF-8 sequences with the
 	// Unicode replacement character so downstream processing never fails.
 	if !utf8.ValidString(text) {

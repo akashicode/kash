@@ -21,12 +21,25 @@ func parseTriples(raw string) ([]Triple, error) {
 		raw = strings.TrimSpace(raw)
 	}
 
-	// Find JSON array boundaries
+	// Find JSON array boundaries.
+	//
+	// "No facts here" and "the response was unusable" must not look alike. An
+	// empty result is checkpointed as a completed batch and never revisited, so
+	// treating a truncated or refused response as zero facts silently discards
+	// that batch's passages from the graph forever. An explicitly empty array
+	// is the only response that means no facts.
 	start := strings.Index(raw, "[")
 	end := strings.LastIndex(raw, "]")
-	if start == -1 || end == -1 || end < start {
-		// No JSON array found; return empty rather than error
-		return []Triple{}, nil
+	switch {
+	case start == -1 && strings.Contains(raw, "]"):
+		return nil, fmt.Errorf("malformed response: closing bracket without opening")
+	case start >= 0 && end < start:
+		return nil, fmt.Errorf("truncated response: array opened at %d but never closed", start)
+	case start == -1 || end == -1:
+		if raw == "" {
+			return nil, fmt.Errorf("empty response")
+		}
+		return nil, fmt.Errorf("no JSON array in response: %.120q", raw)
 	}
 	raw = raw[start : end+1]
 

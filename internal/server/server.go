@@ -17,6 +17,7 @@ import (
 	agentconfig "github.com/akashicode/kash/internal/config"
 	"github.com/akashicode/kash/internal/display"
 	"github.com/akashicode/kash/internal/graph"
+	"github.com/akashicode/kash/internal/lexical"
 	"github.com/akashicode/kash/internal/llm"
 	"github.com/akashicode/kash/internal/manifest"
 	"github.com/akashicode/kash/internal/vector"
@@ -45,11 +46,20 @@ type AgentConfig struct {
 		Port        int      `yaml:"port"`
 		CORSOrigins []string `yaml:"cors_origins"`
 	} `yaml:"server"`
+	// Retrieval tunes how much context is injected. Both were compile-time
+	// constants, so no deployment could widen retrieval without a rebuild.
+	Retrieval struct {
+		// TopK is the number of chunks injected as context.
+		TopK int `yaml:"top_k"`
+		// GraphFacts is the number of knowledge-graph facts injected.
+		GraphFacts int `yaml:"graph_facts"`
+	} `yaml:"retrieval"`
 }
 
 // Server is the Kash runtime HTTP server.
 type Server struct {
 	vectorStore   *vector.Store
+	lexicalIndex  *lexical.Index
 	graphDB       *graph.DB
 	llmClient     *llm.Client
 	reranker      *llm.Reranker
@@ -74,7 +84,11 @@ type Config struct {
 	// AliasPath is the optional entity resolution map. When absent, entity
 	// spelling variants are simply not merged.
 	AliasPath string
-	AppCfg    *agentconfig.Config
+	// LexicalIndexPath is the optional BM25 index. When absent, retrieval
+	// falls back to vector search alone — which is what a corpus built before
+	// the lexical index existed will do until it is rebuilt.
+	LexicalIndexPath string
+	AppCfg           *agentconfig.Config
 }
 
 // New creates and initializes a new runtime Server.
@@ -118,6 +132,17 @@ func New(cfg Config) (*Server, error) {
 		}
 	}
 
+	// Lexical index is optional: a corpus built before it existed still serves,
+	// with vector search alone. A corrupt index must not take the agent down.
+	lexIndex := lexical.New()
+	if cfg.LexicalIndexPath != "" {
+		if ix, lexErr := lexical.Load(cfg.LexicalIndexPath); lexErr != nil {
+			slog.Warn("ignoring lexical index", "error", lexErr, "path", cfg.LexicalIndexPath)
+		} else {
+			lexIndex = ix
+		}
+	}
+
 	// Initialize LLM client
 	llmClient, err := llm.NewClient(&cfg.AppCfg.LLM)
 	if err != nil {
@@ -126,7 +151,7 @@ func New(cfg Config) (*Server, error) {
 
 	// Initialize reranker (optional — skip if not configured)
 	var reranker *llm.Reranker
-	if cfg.AppCfg.Reranker.BaseURL != "" {
+	if rerankerConfigured(cfg.AppCfg) {
 		reranker, err = llm.NewReranker(&cfg.AppCfg.Reranker)
 		if err != nil {
 			return nil, fmt.Errorf("create reranker: %w", err)
@@ -150,6 +175,7 @@ func New(cfg Config) (*Server, error) {
 
 	s := &Server{
 		vectorStore:   vs,
+		lexicalIndex:  lexIndex,
 		graphDB:       gdb,
 		llmClient:     llmClient,
 		reranker:      reranker,
@@ -166,6 +192,7 @@ func New(cfg Config) (*Server, error) {
 	logger.Info("server initialized",
 		"agent", agentCfg.Agent.Name,
 		"vectors", vs.Count(),
+		"lexical", lexIndex.Len(),
 		"triples", gdb.Count(),
 		"entity_aliases", aliasCount,
 		"llm_model", cfg.AppCfg.LLM.Model,
@@ -298,6 +325,36 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/rpc/agent", s.handleA2A)
 }
 
+// rerankerConfigured reports whether a reranker can actually be built.
+//
+// llm.NewReranker requires both a base URL and a model, and returns (nil, nil)
+// otherwise. Gating construction on the base URL alone meant setting
+// RERANK_BASE_URL without RERANK_MODEL silently disabled reranking while
+// /health went on reporting it as enabled.
+func rerankerConfigured(cfg *agentconfig.Config) bool {
+	return cfg.Reranker.BaseURL != "" && cfg.Reranker.Model != ""
+}
+
+// topKOrDefault returns the configured chunk count when the caller did not
+// specify one.
+func (s *Server) topKOrDefault(topK int) int {
+	if topK > 0 {
+		return topK
+	}
+	if s.agentCfg != nil && s.agentCfg.Retrieval.TopK > 0 {
+		return s.agentCfg.Retrieval.TopK
+	}
+	return defaultTopK
+}
+
+// graphFactLimit returns the number of graph facts to inject.
+func (s *Server) graphFactLimit() int {
+	if s.agentCfg != nil && s.agentCfg.Retrieval.GraphFacts > 0 {
+		return s.agentCfg.Retrieval.GraphFacts
+	}
+	return defaultGraphFactLimit
+}
+
 // defaultTopK is the number of chunks injected as context when the caller
 // does not specify one.
 const defaultTopK = 5
@@ -315,23 +372,10 @@ type retrievalResult struct {
 // topK — by the reranker when configured, by similarity order otherwise —
 // with a per-source cap so a single document cannot monopolize the context.
 func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrievalResult, error) {
-	if topK <= 0 {
-		topK = defaultTopK
-	}
+	topK = s.topKOrDefault(topK)
 	s.log.Debug("hybrid search starting", "query", query, "top_k", topK)
 
-	// Candidate pool: 4x the requested results (min 20, max 40), capped at
-	// the collection size — chromem errors when nResults exceeds it.
-	candidateK := topK * 4
-	if candidateK < 20 {
-		candidateK = 20
-	}
-	if candidateK > 40 {
-		candidateK = 40
-	}
-	if count := s.vectorStore.Count(); candidateK > count {
-		candidateK = count
-	}
+	candidateK := candidateDepth(topK, s.vectorStore.Count())
 
 	var vectorResults []vector.SearchResult
 	if candidateK > 0 {
@@ -342,29 +386,65 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 			return retrievalResult{}, fmt.Errorf("vector search: %w", err)
 		}
 	}
-	s.log.Info("vector search completed", "candidates", len(vectorResults), "query", query)
 
-	// Narrow candidates: rerank when configured, similarity order otherwise.
-	ranked := vectorResults
-	if s.reranker != nil && len(vectorResults) > 0 {
-		docs := make([]string, len(vectorResults))
-		for i, r := range vectorResults {
-			docs[i] = r.Content
-		}
-		rerankResults, rerankErr := s.reranker.Rerank(ctx, query, docs)
-		if rerankErr != nil {
-			s.log.Warn("reranker failed (using similarity order)", "error", rerankErr)
-		} else {
-			s.log.Info("reranker completed", "candidates", len(rerankResults),
-				"top_score", fmt.Sprintf("%.3f", rerankResults[0].RelevanceScore))
-			ranked = make([]vector.SearchResult, len(rerankResults))
-			for i, r := range rerankResults {
-				ranked[i] = vectorResults[r.Index]
-			}
-		}
+	// Rerank before fusion so the semantic route contributes its best ordering.
+	vectorResults = s.rerank(ctx, query, vectorResults)
+
+	// Routes 2 and 3: BM25, and exact structural lookup. Dense embeddings
+	// cannot match an exact token, so a query naming a verse number is
+	// unanswerable by similarity alone.
+	lexIDs, exact := lexicalRoutes(s.lexicalIndex, query, candidateK)
+
+	s.log.Info("routes completed", "query", query,
+		"vector", len(vectorResults), "lexical", len(lexIDs), "exact", len(exact))
+
+	lists := map[string][]string{}
+	byID := map[string]vector.SearchResult{}
+
+	vecIDs := make([]string, 0, len(vectorResults))
+	for _, r := range vectorResults {
+		vecIDs = append(vecIDs, r.ID)
+		byID[r.ID] = r
+	}
+	lists["vector"] = vecIDs
+
+	lists["lexical"] = lexIDs
+	if len(exact) > 0 {
+		lists["exact"] = exact
 	}
 
-	selected := diversifyBySource(ranked, topK)
+	cands := fuseRankLists(lists)
+
+	// Materialize any candidate that only a non-vector route found.
+	for id, c := range cands {
+		if r, ok := byID[id]; ok {
+			c.result = r
+			continue
+		}
+		r, err := s.vectorStore.GetByID(ctx, id)
+		if err != nil {
+			s.log.Debug("could not materialize chunk", "id", id, "error", err)
+			delete(cands, id)
+			continue
+		}
+		c.result = r
+	}
+
+	for _, c := range cands {
+		if containsRoute(c.routes, "exact") {
+			c.score += exactRefBoost
+		}
+		applyNoisePenalty(c)
+	}
+
+	ranked := rankCandidates(cands)
+	ranked = dedupeNearDuplicates(ranked, nearDuplicateThreshold)
+	selected := selectDiverse(ranked, topK)
+
+	chunks := make([]vector.SearchResult, 0, len(selected))
+	for _, c := range selected {
+		chunks = append(chunks, c.result)
+	}
 
 	// Graph search runs last so it can be disambiguated by the vector layer.
 	// Graph matching is lexical: a query about saṃskāra in its alchemical sense
@@ -372,13 +452,94 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 	// embedding layer does understand the distinction, so facts coming from the
 	// documents semantic retrieval actually selected are promoted, and facts
 	// from unrelated documents are demoted.
-	graphResults := s.searchGraphInContext(ctx, query, selected, graphFactLimit)
+	graphResults := s.searchGraphInContext(ctx, query, chunks, s.graphFactLimit())
 
-	return retrievalResult{Chunks: selected, Facts: graphResults}, nil
+	return retrievalResult{Chunks: chunks, Facts: graphResults}, nil
 }
 
-// graphFactLimit is the number of knowledge-graph facts injected as context.
-const graphFactLimit = 10
+// nearDuplicateThreshold is the shingle overlap above which two chunks are
+// treated as the same passage. Chunks carry a build-time overlap tail, so
+// adjacent chunks are genuinely near-identical.
+const nearDuplicateThreshold = 0.8
+
+// candidateDepth sizes the candidate pool.
+//
+// The previous fixed ceiling of 40 was the hard recall limit for the whole
+// system: no chunk outside the top-40 cosine neighbours could ever be reranked
+// or fused in, so top_k=1000 and top_k=10 fetched exactly the same candidates.
+// Depth now scales with the request and with corpus size.
+func candidateDepth(topK, corpusSize int) int {
+	depth := topK * 20
+	if depth < minCandidateDepth {
+		depth = minCandidateDepth
+	}
+	if depth > maxCandidateDepth {
+		depth = maxCandidateDepth
+	}
+	if corpusSize > 0 && depth > corpusSize {
+		depth = corpusSize
+	}
+	return depth
+}
+
+const (
+	minCandidateDepth = 200
+	maxCandidateDepth = 2000
+)
+
+// rerank reorders candidates with the configured reranker, falling back to
+// similarity order on any failure.
+func (s *Server) rerank(ctx context.Context, query string, in []vector.SearchResult) []vector.SearchResult {
+	if s.reranker == nil || len(in) == 0 {
+		return in
+	}
+
+	docs := make([]string, len(in))
+	for i, r := range in {
+		docs[i] = r.Content
+	}
+
+	out, err := s.reranker.Rerank(ctx, query, docs)
+	if err != nil {
+		s.log.Warn("reranker failed (using similarity order)", "error", err)
+		return in
+	}
+	if len(out) == 0 {
+		s.log.Warn("reranker returned no results (using similarity order)")
+		return in
+	}
+
+	ranked := make([]vector.SearchResult, 0, len(out))
+	for _, r := range out {
+		// A provider echoing an index from a different document set would
+		// otherwise panic the request, and there is no recover middleware.
+		if r.Index < 0 || r.Index >= len(in) {
+			s.log.Warn("reranker returned out-of-range index", "index", r.Index, "candidates", len(in))
+			continue
+		}
+		ranked = append(ranked, in[r.Index])
+	}
+	if len(ranked) == 0 {
+		return in
+	}
+
+	s.log.Info("reranker completed", "candidates", len(ranked),
+		"top_score", fmt.Sprintf("%.3f", out[0].RelevanceScore))
+	return ranked
+}
+
+func containsRoute(routes []string, want string) bool {
+	for _, r := range routes {
+		if r == want {
+			return true
+		}
+	}
+	return false
+}
+
+// defaultGraphFactLimit is the number of knowledge-graph facts injected as
+// context when agent.yaml does not override it.
+const defaultGraphFactLimit = 10
 
 // graphHops is how far retrieval traverses from a directly matching fact.
 // 1 surfaces connected chains without letting the neighbourhood explode.
@@ -512,46 +673,6 @@ func (s *Server) hybridSearch(ctx context.Context, query string, topK int) (stri
 	return sb.String(), nil
 }
 
-// diversifyBySource picks up to topK results from a ranked list while capping
-// how many may come from a single source document. Remaining slots are
-// backfilled in rank order when the cap leaves them unfilled.
-func diversifyBySource(ranked []vector.SearchResult, topK int) []vector.SearchResult {
-	if len(ranked) <= topK {
-		return ranked
-	}
-
-	maxPerSource := (topK + 1) / 2
-	if maxPerSource < 1 {
-		maxPerSource = 1
-	}
-
-	selected := make([]vector.SearchResult, 0, topK)
-	perSource := map[string]int{}
-	skipped := []vector.SearchResult{}
-
-	for _, r := range ranked {
-		if len(selected) >= topK {
-			break
-		}
-		if perSource[r.Source] >= maxPerSource {
-			skipped = append(skipped, r)
-			continue
-		}
-		perSource[r.Source]++
-		selected = append(selected, r)
-	}
-
-	// Backfill from skipped results if the cap left slots open
-	for _, r := range skipped {
-		if len(selected) >= topK {
-			break
-		}
-		selected = append(selected, r)
-	}
-
-	return selected
-}
-
 // handleHealth returns a detailed health status including all key metrics.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -567,7 +688,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"embed_dimensions": s.appCfg.Embedder.Dimensions,
 		"llm_model":        s.appCfg.LLM.Model,
 		"embed_model":      s.appCfg.Embedder.Model,
-		"reranker_enabled": s.appCfg.Reranker.BaseURL != "",
+		"reranker_enabled": s.reranker != nil,
 		"auth_enabled":     s.apiKey != "",
 		"time":             time.Now().UTC().Format(time.RFC3339),
 	}

@@ -3,6 +3,7 @@ package reader
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,45 +22,64 @@ type Document struct {
 	Content string
 }
 
-// LoadDirectory reads all supported documents from a directory.
-func LoadDirectory(dir string) ([]Document, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("read directory %q: %w", dir, err)
-	}
+// Rejection records a file that was found but could not be indexed, so the
+// caller can report it rather than let the document vanish from the corpus.
+type Rejection struct {
+	// Path is the file that was rejected.
+	Path string
+	// Reason explains why, in terms a user can act on.
+	Reason string
+}
 
-	var docs []Document
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
+// LoadDirectory reads all supported documents from a directory tree.
+//
+// It recurses: documents in subdirectories used to be skipped entirely, which
+// silently shrank the corpus. Files that are found but unusable are returned as
+// rejections instead of being dropped, because a document that disappears
+// without a trace is indistinguishable from one that was never added.
+func LoadDirectory(dir string) ([]Document, []Rejection, error) {
+	var (
+		docs     []Document
+		rejected []Rejection
+	)
+
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
 		}
 
-		path := filepath.Join(dir, entry.Name())
-		ext := strings.ToLower(filepath.Ext(entry.Name()))
-
-		switch ext {
+		switch strings.ToLower(filepath.Ext(d.Name())) {
 		case ".md", ".txt", ".markdown":
 			doc, err := loadTextFile(path)
 			if err != nil {
-				return nil, fmt.Errorf("load text file %q: %w", path, err)
+				return fmt.Errorf("load text file %q: %w", path, err)
 			}
 			docs = append(docs, doc)
 
 		case ".pdf":
 			doc, err := loadPDF(path)
 			if err != nil {
-				// Log and skip PDFs that can't be read
-				fmt.Fprintf(os.Stderr, "warning: skipping PDF %q: %v\n", path, err)
-				continue
+				rejected = append(rejected, Rejection{Path: path, Reason: err.Error()})
+				return nil
 			}
 			docs = append(docs, doc)
 
 		default:
-			// Skip unsupported formats silently
-			continue
+			rejected = append(rejected, Rejection{
+				Path:   path,
+				Reason: "unsupported format (supported: .md, .markdown, .txt, .pdf)",
+			})
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("walk directory %q: %w", dir, err)
 	}
-	return docs, nil
+
+	return docs, rejected, nil
 }
 
 // LoadFile reads a single document from the given path.

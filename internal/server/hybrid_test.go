@@ -11,43 +11,6 @@ import (
 	"github.com/akashicode/kash/internal/vector"
 )
 
-// TestDiversifyBySource ensures a single source document cannot monopolize
-// the selected context when other sources have relevant chunks.
-func TestDiversifyBySource(t *testing.T) {
-	ranked := []vector.SearchResult{}
-	for i := 0; i < 6; i++ {
-		ranked = append(ranked, vector.SearchResult{ID: fmt.Sprintf("a%d", i), Source: "bookA.pdf"})
-	}
-	ranked = append(ranked,
-		vector.SearchResult{ID: "b0", Source: "bookB.pdf"},
-		vector.SearchResult{ID: "c0", Source: "bookC.pdf"},
-	)
-
-	selected := diversifyBySource(ranked, 5)
-
-	assert.Len(t, selected, 5)
-	perSource := map[string]int{}
-	for _, r := range selected {
-		perSource[r.Source]++
-	}
-	// topK=5 → max 3 per source; bookB and bookC must both make it in
-	assert.Equal(t, 3, perSource["bookA.pdf"])
-	assert.Equal(t, 1, perSource["bookB.pdf"])
-	assert.Equal(t, 1, perSource["bookC.pdf"])
-}
-
-// TestDiversifyBySourceBackfill ensures slots are backfilled from a single
-// source when no other sources are available.
-func TestDiversifyBySourceBackfill(t *testing.T) {
-	ranked := []vector.SearchResult{}
-	for i := 0; i < 8; i++ {
-		ranked = append(ranked, vector.SearchResult{ID: fmt.Sprintf("a%d", i), Source: "onlybook.pdf"})
-	}
-
-	selected := diversifyBySource(ranked, 5)
-	assert.Len(t, selected, 5)
-}
-
 // TestGraphContextBoostResolvesHomonyms models the reported saṃskāra failure:
 // a query about the alchemical sense matched facts about the karmic sense
 // equally well, because graph matching is purely lexical. Facts from documents
@@ -88,11 +51,84 @@ func TestGraphContextBoostWithoutChunksIsPassthrough(t *testing.T) {
 	assert.Equal(t, candidates, ranked)
 }
 
-func TestDiversifyBySourceFewerThanTopK(t *testing.T) {
-	ranked := []vector.SearchResult{
-		{ID: "a0", Source: "bookA.pdf"},
-		{ID: "b0", Source: "bookB.pdf"},
+func cands(specs ...[2]string) []*candidate {
+	var out []*candidate
+	for _, sp := range specs {
+		out = append(out, &candidate{
+			id: sp[0],
+			result: vector.SearchResult{
+				ID:       sp[0],
+				Source:   sp[1],
+				Content:  "content of " + sp[0],
+				Metadata: map[string]string{"source": sp[1]},
+			},
+		})
 	}
-	selected := diversifyBySource(ranked, 5)
-	assert.Equal(t, ranked, selected)
+	return out
+}
+
+// TestSelectDiverseSpreadsAcrossWorks keeps the original guarantee: when the
+// evidence really is spread across books, one book must not monopolize.
+func TestSelectDiverseSpreadsAcrossWorks(t *testing.T) {
+	var specs [][2]string
+	for i := 0; i < 4; i++ {
+		specs = append(specs, [2]string{fmt.Sprintf("a%d", i), "Rasarnavam.md"})
+	}
+	specs = append(specs,
+		[2]string{"b0", "Yogini Tantra.md"}, [2]string{"b1", "Yogini Tantra.md"},
+		[2]string{"c0", "Goraksh Paddhati.md"}, [2]string{"c1", "Goraksh Paddhati.md"},
+		[2]string{"d0", "Sambodhi.md"}, [2]string{"d1", "Sambodhi.md"},
+	)
+
+	selected := selectDiverse(cands(specs...), 5)
+
+	assert.Len(t, selected, 5)
+	g := newWorkGrouper()
+	perWork := map[string]int{}
+	for _, c := range selected {
+		perWork[g.Key(c.result)]++
+	}
+	assert.LessOrEqual(t, perWork[g.Key(selected[0].result)], 3)
+	assert.Greater(t, len(perWork), 1, "a spread result set must stay spread")
+}
+
+// TestSelectDiverseAllowsDominantWork covers the regression this replaced: for
+// a focused question about one text, the per-source cap discarded the
+// best-ranked chunks in favour of lower-ranked ones from unrelated books.
+func TestSelectDiverseAllowsDominantWork(t *testing.T) {
+	var specs [][2]string
+	for i := 0; i < 9; i++ {
+		specs = append(specs, [2]string{fmt.Sprintf("v%d", i), "vigyan-bhairava-tantra.md"})
+	}
+	specs = append(specs, [2]string{"x0", "Merutantra.txt"})
+
+	selected := selectDiverse(cands(specs...), 5)
+
+	require.Len(t, selected, 5)
+	for _, c := range selected {
+		assert.Equal(t, "vigyan-bhairava-tantra.md", c.result.Source,
+			"a question concentrated in one text must be answered from that text")
+	}
+}
+
+// TestWorkKeyGroupsEditions is the mechanism behind the reported symptom: six
+// editions of one text under six filenames were treated as six independent
+// books, so they competed for the same slots.
+func TestWorkKeyGroupsEditions(t *testing.T) {
+	editions := []string{
+		"vigyan-bhairava-tantra_FINAL_iast.md",
+		"vigyan-bhairav-tantra-hindi_FINAL_iast.md",
+		"VijnanaBhairava-khemraj_FINAL_iast.md",
+	}
+	g := newWorkGrouper()
+	keys := map[string]bool{}
+	for _, e := range editions {
+		keys[g.Key(vector.SearchResult{Source: e})] = true
+	}
+	assert.Len(t, keys, 1, "editions of one work must share a key, got %v", keys)
+}
+
+func TestSelectDiverseFewerThanTopK(t *testing.T) {
+	in := cands([2]string{"a0", "bookA.pdf"}, [2]string{"b0", "bookB.pdf"})
+	assert.Equal(t, in, selectDiverse(in, 5))
 }

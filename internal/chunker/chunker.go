@@ -20,6 +20,10 @@ type Chunk struct {
 	Source string
 	// Index is the position of this chunk within the source
 	Index int
+	// Metadata carries structural facts about the chunk — book, heading
+	// breadcrumb, verse/dhāraṇā number, content type and noise score. Retrieval
+	// filters and ranks on these; see the Meta* constants in structure.go.
+	Metadata map[string]string
 }
 
 // Options configures the chunking behavior.
