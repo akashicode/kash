@@ -231,7 +231,22 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	if profErr != nil {
 		display.StepWarn(fmt.Sprintf("could not read existing profile (regenerating): %v", profErr))
 	}
-	if profStatus != profile.StatusLoaded {
+	// A profile is enriched when it is new, or when a previous run's model call
+	// failed. Detection is not repeated in the retry case — only the judgment
+	// fields are missing.
+	if profStatus != profile.StatusLoaded || !prof.Complete {
+		if profStatus == profile.StatusLoaded {
+			display.StepDetail("• retrying model-derived fields from the previous build")
+		}
+		if llmClient, llmErr := llm.NewClient(&cfg.LLM); llmErr == nil {
+			profile.Enrich(ctx, prof, profDocs, llmClient)
+		} else {
+			prof.LLMStatus = "skipped — no model configured: " + llmErr.Error()
+		}
+		if !prof.Complete {
+			display.StepWarn("corpus profile incomplete (" + prof.LLMStatus +
+				") — extraction vocabulary stays generic; the next build retries")
+		}
 		prof.Corpus = profile.Fingerprint(names, sizes)
 		if err := prof.Save(profilePath); err != nil {
 			return fmt.Errorf("save corpus profile: %w", err)

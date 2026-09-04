@@ -2,6 +2,7 @@ package profile
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -270,4 +271,110 @@ func runeSet(rs []rune) map[rune]bool {
 		m[r] = true
 	}
 	return m
+}
+
+// --- Honorific candidates --------------------------------------------------
+
+// honorificRe finds a capitalised word immediately before another capitalised
+// word — the shape of "Sri Gorakhnath", "Dr Smith", "Justice Kapoor".
+var honorificRe = regexp.MustCompile(`(?:^|[^\p{L}])(\p{Lu}\p{L}{1,14})\.?\s+\p{Lu}\p{L}{2,}`)
+
+// minHonorificHits is how often a leading word must precede a name before it is
+// offered as a candidate.
+const minHonorificHits = 15
+
+// MineHonorificCandidates finds words that repeatedly precede names.
+//
+// This only produces candidates. Deciding which are titles ("Swami") and which
+// are given names ("Ram") is judgment, so the model filters this list — and,
+// because it is a list the model was handed, it can only ever remove from it.
+func MineHonorificCandidates(docs []Doc, limit int) []string {
+	counts := map[string]int{}
+	for _, d := range docs {
+		for _, m := range honorificRe.FindAllStringSubmatch(d.Content, -1) {
+			counts[strings.ToLower(m[1])]++
+		}
+	}
+
+	type kv struct {
+		word string
+		n    int
+	}
+	var rows []kv
+	for w, n := range counts {
+		if n >= minHonorificHits && len([]rune(w)) >= 2 {
+			rows = append(rows, kv{w, n})
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].n != rows[j].n {
+			return rows[i].n > rows[j].n
+		}
+		return rows[i].word < rows[j].word
+	})
+
+	out := make([]string, 0, limit)
+	for i, r := range rows {
+		if i >= limit {
+			break
+		}
+		out = append(out, r.word+" ")
+	}
+	return out
+}
+
+// --- Evidence sample -------------------------------------------------------
+
+// EvidenceSample builds a corpus-wide text sample for the model.
+//
+// It differs from the sample used for tool descriptions in two ways that matter
+// here. It takes windows from the middle and end of each document as well as
+// the start, because a document's opening is title pages and tables of
+// contents — predicates derived from those would describe publishing rather
+// than the subject. And it budgets in runes while walking documents
+// round-robin, so a non-ASCII corpus does not exhaust the budget on its first
+// few documents.
+func EvidenceSample(docs []Doc, budget int) string {
+	if len(docs) == 0 || budget <= 0 {
+		return ""
+	}
+
+	const windowsPerDoc = 3
+	window := budget / (len(docs) * windowsPerDoc)
+	if window < 200 {
+		window = 200
+	}
+
+	var b strings.Builder
+	used := 0
+
+	// Round-robin: every document contributes one window before any contributes
+	// a second, so a long first document cannot crowd the rest out.
+	for pass := 0; pass < windowsPerDoc && used < budget; pass++ {
+		for _, d := range docs {
+			if used >= budget {
+				break
+			}
+			runes := []rune(d.Content)
+			if len(runes) < 200 {
+				continue
+			}
+			// Offsets at roughly 10%, 50% and 80% of the document.
+			offset := len(runes) * []int{10, 50, 80}[pass] / 100
+			end := offset + window
+			if end > len(runes) {
+				end = len(runes)
+			}
+			if offset >= end {
+				continue
+			}
+			text := strings.TrimSpace(string(runes[offset:end]))
+			if text == "" {
+				continue
+			}
+			fmt.Fprintf(&b, "--- %s ---\n%s\n\n", d.Name, text)
+			used += len([]rune(text))
+		}
+	}
+	return b.String()
 }

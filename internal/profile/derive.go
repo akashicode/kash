@@ -1,9 +1,13 @@
 package profile
 
 import (
+	"context"
 	"fmt"
+	"strings"
 
+	"github.com/akashicode/kash/internal/chunker"
 	"github.com/akashicode/kash/internal/config"
+	"github.com/akashicode/kash/internal/llm"
 )
 
 // Status describes what LoadOrDerive did, so the caller can report it.
@@ -138,4 +142,145 @@ func PredicateSignature(cfg config.DomainConfig) string {
 		h += p + ";"
 	}
 	return shortHash(h)
+}
+
+// evidenceBudget caps the corpus text handed to the model.
+const evidenceBudget = 12000
+
+// maxHonorificCandidates caps the mined list the model filters.
+const maxHonorificCandidates = 30
+
+// Suggester is the model-backed half of derivation. Satisfied by *llm.Client;
+// an interface so derivation can be tested without a network call.
+type Suggester interface {
+	SuggestDomainConfig(ctx context.Context, ev llm.DomainEvidence) (llm.DomainSuggestion, error)
+}
+
+// Enrich adds the judgment fields to a profile: extraction vocabulary,
+// priorities, honorifics, and names for detected numbering schemes.
+//
+// Failure is never fatal. The profile keeps everything detection established
+// and is marked incomplete, so the next build retries the model without redoing
+// the measurements. That distinction is the point: a profile marked complete
+// with default predicates would extract a whole corpus with generic vocabulary
+// and never revisit it.
+func Enrich(ctx context.Context, p *Profile, docs []Doc, s Suggester) {
+	if s == nil {
+		p.LLMStatus = "skipped — no model configured"
+		return
+	}
+
+	defaults := config.DefaultDomainConfig()
+	candidates := MineHonorificCandidates(docs, maxHonorificCandidates)
+
+	var labels []string
+	if sig, ok := p.SignalFor("chunker.ref_patterns"); ok && sig.DecidedBy == DecidedDetected {
+		labels = refLabelsFromEvidence(sig.Evidence)
+	}
+
+	sug, err := s.SuggestDomainConfig(ctx, llm.DomainEvidence{
+		FoldDiacritics:      foldModeOf(p),
+		NumberingLabels:     labels,
+		TitleTokens:         overlayStrings(p.Config.Chunker.TitleStopwords),
+		HonorificCandidates: candidates,
+		DefaultPredicates:   defaults.Extraction.Predicates,
+		Sample:              EvidenceSample(docs, evidenceBudget),
+	})
+	if err != nil {
+		p.Complete = false
+		p.LLMStatus = "failed: " + err.Error()
+		return
+	}
+
+	// Every value is validated against what the model was allowed to produce.
+	// The sample is untrusted corpus text and this output becomes configuration
+	// that runs against every query.
+	predicates := llm.MergePredicates(defaults.Extraction.Predicates, sug.Predicates)
+	p.Config.Extraction.Predicates = &predicates
+	p.AddSignal("extraction.predicates", fmt.Sprintf("%d predicates", len(predicates)), DecidedLLM,
+		fmt.Sprintf("%d generic + %d suggested for this corpus", len(defaults.Extraction.Predicates),
+			len(predicates)-len(defaults.Extraction.Predicates)))
+
+	if len(sug.Priorities) > 0 {
+		priorities := sug.Priorities
+		p.Config.Extraction.Priorities = &priorities
+		p.AddSignal("extraction.priorities", fmt.Sprintf("%d priorities", len(priorities)), DecidedLLM,
+			"relation types to favour, from the corpus sample")
+	}
+
+	if honorifics := llm.FilterToCandidates(sug.Honorifics, candidates); len(honorifics) > 0 {
+		p.Config.Resolution.Honorifics = &honorifics
+		p.AddSignal("resolution.honorifics", fmt.Sprintf("%d honorifics", len(honorifics)), DecidedLLM,
+			fmt.Sprintf("chosen from %d candidates mined from the text", len(candidates)))
+	}
+
+	if pnp := llm.SubsetOf(sug.ProperNounPredicates, predicates); len(pnp) > 0 {
+		p.Config.Resolution.ProperNounPredicates = &pnp
+		p.AddSignal("resolution.proper_noun_predicates", fmt.Sprintf("%d predicates", len(pnp)),
+			DecidedLLM, "predicates whose object names a person, work or product")
+	}
+
+	if renamed := applyMetaKeyNames(p, sug.MetaKeys); renamed > 0 {
+		p.AddSignal("chunker.ref_patterns.meta_keys", fmt.Sprintf("%d renamed", renamed),
+			DecidedLLMNamed, "transliterated numbering labels given readable keys")
+	}
+
+	p.Complete = true
+	p.LLMStatus = ""
+}
+
+// applyMetaKeyNames renames detected reference keys using the model's
+// suggestions, rejecting anything that is not a safe metadata key.
+func applyMetaKeyNames(p *Profile, names map[string]string) int {
+	if p.Config.Chunker.RefPatterns == nil || len(names) == 0 {
+		return 0
+	}
+	patterns := *p.Config.Chunker.RefPatterns
+	renamed := 0
+
+	for label, key := range names {
+		key = strings.ToLower(strings.TrimSpace(key))
+		if !metaKeyRe.MatchString(key) || reservedMetaKeys[key] {
+			continue
+		}
+		for i := range patterns {
+			// Only rename a key detection could not name itself.
+			if patterns[i].MetaKey == chunker.MetaSection &&
+				strings.Contains(strings.ToLower(patterns[i].Pattern), strings.ToLower(label)) {
+				patterns[i].MetaKey = key
+				renamed++
+			}
+		}
+	}
+	if renamed > 0 {
+		p.Config.Chunker.RefPatterns = &patterns
+	}
+	return renamed
+}
+
+func foldModeOf(p *Profile) string {
+	if p.Config.Resolution.FoldDiacritics == nil {
+		return string(config.DiacriticLatin)
+	}
+	return string(*p.Config.Resolution.FoldDiacritics)
+}
+
+func overlayStrings(p *[]string) []string {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
+// refLabelsFromEvidence pulls the quoted labels out of the reference-detection
+// evidence string, so the model can be asked to name them.
+func refLabelsFromEvidence(evidence string) []string {
+	var out []string
+	for _, part := range strings.Split(evidence, `"`) {
+		if part != "" && !strings.Contains(part, "(") && !strings.Contains(part, ";") &&
+			!strings.Contains(part, " ") {
+			out = append(out, part)
+		}
+	}
+	return out
 }

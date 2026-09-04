@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	agentconfig "github.com/akashicode/kash/internal/config"
 	"github.com/akashicode/kash/internal/display"
+	"github.com/akashicode/kash/internal/llm"
 	"github.com/akashicode/kash/internal/profile"
 	"github.com/akashicode/kash/internal/reader"
 )
@@ -37,12 +39,14 @@ var (
 	profileDir     string
 	profileDryRun  bool
 	profileRefresh bool
+	profileNoLLM   bool
 )
 
 func init() {
 	profileCmd.Flags().StringVarP(&profileDir, "dir", "d", ".", "Path to the agent project directory")
 	profileCmd.Flags().BoolVar(&profileDryRun, "dry-run", false, "Print the derived profile without writing it")
 	profileCmd.Flags().BoolVar(&profileRefresh, "refresh", false, "Re-derive over an existing profile")
+	profileCmd.Flags().BoolVar(&profileNoLLM, "no-llm", false, "Measure only; skip the model-derived extraction vocabulary")
 	rootCmd.AddCommand(profileCmd)
 }
 
@@ -93,6 +97,16 @@ func runProfile(_ *cobra.Command, _ []string) error {
 	})
 	if loadErr != nil {
 		display.StepWarn(fmt.Sprintf("could not read existing profile: %v", loadErr))
+	}
+	if !profileNoLLM && (status != profile.StatusLoaded || !prof.Complete) {
+		cfg, cfgErr := agentconfig.Load()
+		if cfgErr == nil {
+			if client, clientErr := llm.NewClient(&cfg.LLM); clientErr == nil {
+				profile.Enrich(context.Background(), prof, profDocs, client)
+			} else {
+				prof.LLMStatus = "skipped — no model configured"
+			}
+		}
 	}
 	prof.Corpus = profile.Fingerprint(names, sizes)
 
