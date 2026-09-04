@@ -231,3 +231,9 @@ func (p *Profile) Save(path string) error {
 	}
 	return nil
 }
+
+// shortHash returns a stable short digest, used for the drift signatures.
+func shortHash(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])[:16]
+}

@@ -22,6 +22,7 @@ import (
 	"github.com/akashicode/kash/internal/lexical"
 	"github.com/akashicode/kash/internal/llm"
 	"github.com/akashicode/kash/internal/manifest"
+	"github.com/akashicode/kash/internal/profile"
 	"github.com/akashicode/kash/internal/reader"
 	"github.com/akashicode/kash/internal/vector"
 )
@@ -45,15 +46,17 @@ version (v1, v2, ...).`,
 }
 
 var (
-	buildDir     string
-	buildRebuild bool
-	buildPrune   bool
+	buildDir            string
+	buildRebuild        bool
+	buildPrune          bool
+	buildRefreshProfile bool
 )
 
 func init() {
 	buildCmd.Flags().StringVarP(&buildDir, "dir", "d", ".", "Path to the agent project directory")
 	buildCmd.Flags().BoolVar(&buildRebuild, "rebuild", false, "Discard existing databases and manifest, rebuild the corpus from scratch")
 	buildCmd.Flags().BoolVar(&buildPrune, "prune", false, "Remove data for documents that no longer exist in data/")
+	buildCmd.Flags().BoolVar(&buildRefreshProfile, "refresh-profile", false, "Re-derive the corpus profile instead of reusing the existing one")
 }
 
 // buildReason describes why a document needs processing.
@@ -112,6 +115,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	graphPath := filepath.Join("data", "knowledge.cayley")
 	manifestPath := filepath.Join("data", manifest.FileName)
 	lexicalPath := filepath.Join("data", lexical.FileName)
+	profilePath := filepath.Join("data", profile.FileName)
 
 	if buildRebuild {
 		display.StepWarn("--rebuild: discarding existing databases and manifest")
@@ -125,18 +129,6 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	m, err := manifest.LoadOrNew(manifestPath)
 	if err != nil {
 		return err
-	}
-
-	// Corpus-specific extraction vocabulary (falls back to generic defaults
-	// when agent.yaml has no extraction section)
-	domainCfg := agentconfig.LoadDomainConfig("agent.yaml")
-
-	// Compile the corpus-specific structural reference matchers once, then
-	// reuse them for every document. A bad pattern in agent.yaml is skipped
-	// (not fatal) so a typo in one pattern doesn't break the whole build.
-	refMatchers, refWarnings := chunker.CompileRefMatchersVerbose(domainCfg.Chunker.RefPatterns)
-	for _, w := range refWarnings {
-		display.StepWarn("chunker: " + w)
 	}
 
 	// Chunk options — priority: explicit build.chunk_size in agent.yaml,
@@ -186,6 +178,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	m.EmbedDimensions = cfg.Embedder.Dimensions
 	m.ChunkSize = chunkOpts.ChunkSize
 	m.ChunkOverlap = chunkOpts.Overlap
+	m.KashVersion = version
 
 	display.Header("⚡ Kash Build Pipeline")
 	fmt.Println()
@@ -195,11 +188,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	display.KeyValue("Embed Endpoint", cfg.Embedder.BaseURL, display.Dim+display.White)
 	display.KeyValue("Chunk Size (chars)", chunkOpts.ChunkSize, display.Dim+display.White)
 	display.KeyValue("Chunk Overlap (chars)", chunkOpts.Overlap, display.Dim+display.White)
-	display.KeyValue("Extraction Predicates", len(domainCfg.Extraction.Predicates), display.Dim+display.White)
 	fmt.Println()
 
 	// Step 1: Load documents
-	display.Step(1, 6, "Loading documents from data/...")
+	display.Step(1, 7, "Loading documents from data/...")
 	docs, rejected, err := reader.LoadDirectory("data")
 	if err != nil {
 		return fmt.Errorf("load documents: %w", err)
@@ -215,8 +207,77 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		display.StepWarn(fmt.Sprintf("not indexed: %s — %s", r.Path, r.Reason))
 	}
 
-	// Step 2: Plan — decide per document whether to skip, add, replace, or resume
-	display.Step(2, 6, "Planning incremental build...")
+	// Step 2: Derive the corpus profile.
+	//
+	// This must run before the "corpus up to date" early return below: an
+	// existing agent has a full manifest and zero pending documents, so placing
+	// it later would mean it never acquires a profile and serves on generic
+	// defaults forever.
+	display.Step(2, 7, "Deriving corpus profile...")
+
+	profDocs := make([]profile.Doc, 0, len(docs))
+	names := make([]string, 0, len(docs))
+	sizes := make([]int64, 0, len(docs))
+	for _, d := range docs {
+		profDocs = append(profDocs, profile.Doc{Name: d.Name, Content: d.Content})
+		names = append(names, d.Name)
+		sizes = append(sizes, int64(len(d.Content)))
+	}
+
+	prof, profStatus, profErr := profile.LoadOrDerive(profilePath, profDocs, profile.Options{
+		Refresh:     buildRefreshProfile,
+		KashVersion: version,
+	})
+	if profErr != nil {
+		display.StepWarn(fmt.Sprintf("could not read existing profile (regenerating): %v", profErr))
+	}
+	if profStatus != profile.StatusLoaded {
+		prof.Corpus = profile.Fingerprint(names, sizes)
+		if err := prof.Save(profilePath); err != nil {
+			return fmt.Errorf("save corpus profile: %w", err)
+		}
+	}
+
+	domainCfg, layers := agentconfig.ResolveDomainConfig(prof.Overlay(), "agent.yaml")
+
+	refMatchers, refWarnings := chunker.CompileRefMatchersVerbose(domainCfg.Chunker.RefPatterns)
+	for _, w := range refWarnings {
+		display.StepWarn("chunker: " + w)
+	}
+
+	display.StepResult(string(profStatus), fmt.Sprintf("%s (%d field(s) measured)", profilePath, len(prof.Signals)))
+	for _, sig := range prof.Signals {
+		if sig.DecidedBy == profile.DecidedDetected {
+			display.StepDetail(fmt.Sprintf("• %s = %s — %s", sig.Field, sig.Value, sig.Evidence))
+		}
+	}
+	for _, l := range layers {
+		if l.Layer == "agent.yaml" {
+			display.StepDetail(fmt.Sprintf("• %s overridden in agent.yaml: %s", l.Field, l.Value))
+		}
+	}
+
+	// Reference patterns and the fold mode are baked into chunk metadata at
+	// build time. If they change under an existing corpus, previously indexed
+	// documents keep their old metadata while the lexical index — rebuilt
+	// wholesale below — gets the new one, and the two disagree about the same
+	// chunk. That is a rebuild, not a warning.
+	sig := profile.Signature(domainCfg)
+	if len(m.Documents) > 0 && m.DomainSignature != "" && m.DomainSignature != sig {
+		return fmt.Errorf("corpus was indexed with different structural rules " +
+			"(reference patterns or diacritic folding changed) — run 'kash build --rebuild' to re-chunk consistently")
+	}
+	m.DomainSignature = sig
+
+	if ps := profile.PredicateSignature(domainCfg); len(m.Documents) > 0 && m.PredicateSignature != "" && m.PredicateSignature != ps {
+		display.StepWarn("extraction vocabulary changed — existing triples keep the old predicates; " +
+			"run 'kash build --rebuild' to re-extract the whole corpus")
+	} else if m.PredicateSignature == "" {
+		m.PredicateSignature = profile.PredicateSignature(domainCfg)
+	}
+
+	// Step 3: Plan — decide per document whether to skip, add, replace, or resume
+	display.Step(3, 7, "Planning incremental build...")
 	var pending []docPlan
 	unchanged := 0
 	docNames := map[string]bool{}
@@ -268,7 +329,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 3: Process documents (embed + extract triples per document)
-	display.Step(3, 6, "Building documents (embeddings + knowledge graph)...")
+	display.Step(4, 7, "Building documents (embeddings + knowledge graph)...")
 
 	vs, err := vector.NewPersistentStore(vectorPath, &cfg.Embedder)
 	if err != nil {
@@ -532,7 +593,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	// a partial lexical index would silently answer keyword queries from only
 	// the documents that happened to change in the last build.
 	if corpusChanged || !fileExists(lexicalPath) {
-		display.Step(4, 6, "Building lexical index...")
+		display.Step(5, 7, "Building lexical index...")
 		lx := lexical.NewWithFold(domainCfg.Resolution.FoldDiacritics)
 		for _, doc := range docs {
 			chunks, err := ck.SplitStructured(doc.Content, doc.Name, refMatchers)
@@ -556,7 +617,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	// conceptually even when exact keywords don't match, and seed knowledge-graph
 	// traversal with relevant starting points.
 	if corpusChanged || vs.EntityCount() == 0 {
-		display.Step(5, 6, "Generating entity descriptions & embeddings...")
+		display.Step(6, 7, "Generating entity descriptions & embeddings...")
 		minDegree := domainCfg.EntityDescription.MinDegree
 		if minDegree <= 0 {
 			minDegree = 2
@@ -648,7 +709,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	// that touched one book rewrite the description to be about only that book —
 	// a 61-document Tantra corpus advertised itself as being about a single text,
 	// which is the only description an MCP client ever sees.
-	display.Step(6, 6, "Generating optimized MCP tool descriptions...")
+	display.Step(7, 7, "Generating optimized MCP tool descriptions...")
 	sampleContent := buildCorpusSample(docs, mcpSampleBudget)
 
 	agentYAMLData, err := os.ReadFile("agent.yaml")

@@ -52,6 +52,18 @@ type Manifest struct {
 	// ChunkSize and ChunkOverlap pin the chunking options.
 	ChunkSize    int `json:"chunk_size"`
 	ChunkOverlap int `json:"chunk_overlap"`
+	// KashVersion records the binary that compiled this corpus. Chunk metadata
+	// changes across releases, so knowing the builder is what lets a later run
+	// report an incompatibility rather than behave oddly.
+	KashVersion string `json:"kash_version,omitempty"`
+	// DomainSignature pins the structural rules baked into chunk metadata —
+	// reference patterns and diacritic folding. A change makes stored metadata
+	// inconsistent with the query path, so it requires a rebuild.
+	DomainSignature string `json:"domain_signature,omitempty"`
+	// PredicateSignature pins the extraction vocabulary. A change leaves
+	// existing triples on the old vocabulary: degraded, not corrupt, so it is
+	// reported rather than enforced.
+	PredicateSignature string `json:"predicate_signature,omitempty"`
 	// Documents maps source document name to its build state.
 	Documents map[string]*DocState `json:"documents"`
 }
