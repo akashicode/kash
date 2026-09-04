@@ -315,6 +315,7 @@ Merges are applied **at query time**, never by rewriting the graph — so a bad 
 | `kash init <name>` | Scaffold a new agent project (`data/`, `agent.yaml`, `Dockerfile`) |
 | `kash build` | Compile documents into vector + graph databases (incremental) |
 | `kash profile` | Show the domain settings derived from your corpus, and why |
+| `kash verify` | Audit how much of the knowledge graph traces back to a source passage |
 | `kash resolve-entities` | Merge entity spelling variants so graph chains connect |
 | `kash serve` | Start the runtime HTTP server + dashboard |
 | `kash version` | Print the Kash version |

@@ -23,6 +23,10 @@ those are called out under **Requires rebuild**.
   vocabulary, priorities and honorifics. Configuration is layered
   `defaults < profile < agent.yaml`, so `agent.yaml` is an override you may
   never need to open.
+- **`kash verify`** audits the provenance chain. It walks the graph, fetches
+  each fact’s chunk from the vector store, and reports how much of the graph
+  can be shown to a reader in the passage it came from — with examples of
+  what cannot. On a real corpus the answer is a number, not a hope.
 - **`kash profile`** shows what was measured, the evidence behind each decision,
   and which fields `agent.yaml` overrides. `--dry-run` re-derives without
   writing, `--no-llm` measures only, `--refresh` regenerates.
@@ -104,6 +108,14 @@ those are called out under **Requires rebuild**.
   shipped 1000 and likely been rejected — silently, since a failed rerank falls
   back to cosine order. The reranker now sees the first 100 candidates and the
   rest keep their similarity order behind them.
+- **A fact’s passage citation was never checked.** The extractor reports which
+  passage it used and that report became the chunk id unconditionally, so a
+  misreported index printed a passage citation on text that does not support
+  the fact and took the chunk-level ranking boost with it. An evidence check
+  existed but ran only when the model declined to answer, which is backwards.
+  The claim is now evidence rather than authority: preferred when the passage
+  it names mentions the fact, and the batch searched otherwise. Matching folds
+  the way the corpus does, so a transliterated name still matches its source.
 - **Generated entity summaries were indistinguishable from quoted source.**
   Descriptions written by a model at build time appeared under the same
   heading style as retrieved passages, so an answer could rest on a summary

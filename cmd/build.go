@@ -403,6 +403,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		Predicates: domainCfg.Extraction.Predicates,
 		Priorities: domainCfg.Extraction.Priorities,
 	}
+	// Provenance is checked against the passage text, folded the way this
+	// corpus folds — the extractor writes "Gorakhnath" where an IAST source
+	// reads "gorakhanātha", so a raw comparison would reject correct
+	// attributions across the whole corpus.
+	evidence := graph.NewEvidenceChecker(domainCfg.Resolution.FoldDiacritics, domainCfg.Resolution.StripFinalVowel)
 	batchSize := 10
 	incomplete := []string{}
 
@@ -532,12 +537,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 				}
 
 				for ti := range triples {
-					pIdx := triples[ti].Passage - 1
-					if pIdx >= 0 && pIdx < len(batch) {
-						triples[ti].ChunkID = batch[pIdx].ID
-					} else {
-						triples[ti].ChunkID = findBestChunk(batch, triples[ti].Subject, triples[ti].Object)
-					}
+					triples[ti].ChunkID = attributeChunk(evidence, batch, triples[ti])
 				}
 
 				if err := gdb.AddTriples(ctx, triples, name); err != nil {
@@ -882,33 +882,52 @@ func documentExcerpt(content string, n int) string {
 	return strings.TrimSpace(string(runes))
 }
 
-// findBestChunk finds the chunk in batch that best matches the subject and object of a triple.
-func findBestChunk(batch []chunker.Chunk, subject, object string) string {
+// attributeChunk decides which passage a triple came from.
+//
+// The extractor reports the passage it used, and that report used to be taken
+// at its word: a claimed index inside the batch became the chunk ID with no
+// check. The check existed — findBestChunk applies one — but only on the path
+// where the model declined to answer, which is exactly backwards. A misreported
+// index then printed a passage citation on text that does not support the fact,
+// and took the chunk-level ranking boost with it.
+//
+// So the claim is now evidence, not authority: it is preferred when the passage
+// it names actually mentions the fact, and the batch is searched otherwise.
+func attributeChunk(ev *graph.EvidenceChecker, batch []chunker.Chunk, t llm.Triple) string {
 	if len(batch) == 0 {
 		return ""
 	}
-	sLow := strings.ToLower(subject)
-	oLow := strings.ToLower(object)
-	for _, ch := range batch {
-		cLow := strings.ToLower(ch.Content)
-		if sLow != "" && oLow != "" && strings.Contains(cLow, sLow) && strings.Contains(cLow, oLow) {
-			return ch.ID
+	if pIdx := t.Passage - 1; pIdx >= 0 && pIdx < len(batch) {
+		if ev.Check(batch[pIdx].Content, t.Subject, t.Object) != graph.EvidenceNone {
+			return batch[pIdx].ID
 		}
 	}
+	return findBestChunk(ev, batch, t.Subject, t.Object)
+}
+
+// findBestChunk finds the chunk in batch that best supports a relation.
+func findBestChunk(ev *graph.EvidenceChecker, batch []chunker.Chunk, subject, object string) string {
+	best := ""
+	bestLevel := graph.EvidenceNone
 	for _, ch := range batch {
-		cLow := strings.ToLower(ch.Content)
-		if (sLow != "" && strings.Contains(cLow, sLow)) || (oLow != "" && strings.Contains(cLow, oLow)) {
-			return ch.ID
+		level := ev.Check(ch.Content, subject, object)
+		if level > bestLevel {
+			best, bestLevel = ch.ID, level
+			if level == graph.EvidenceBoth {
+				return best
+			}
 		}
+	}
+	if best != "" {
+		return best
 	}
 
-	// No evidence for any chunk in this batch. Returning batch[0] here would
-	// invent provenance: the fact would print as "[passage 1]" and take the
-	// chunk-level context boost, both on a passage that does not support it.
-	// This path is common rather than rare — the extractor is asked for the
-	// shortest unambiguous entity name, so it emits "Gorakhnath" where an IAST
-	// source reads "gorakhanātha" and neither Contains pass can match. An empty
-	// ID degrades correctly: the fact keeps its document citation and the
+	// No passage in this batch mentions either endpoint. Returning batch[0]
+	// would invent provenance: the fact would print as "[passage 1]" and take
+	// the chunk-level context boost, both on text that does not support it.
+	// This still happens after folding — a transliteration variant differing by
+	// a syllable is entity resolution's job, not folding's — and an empty ID
+	// degrades correctly: the fact keeps its document citation and the
 	// document-level boost.
 	return ""
 }
