@@ -82,18 +82,18 @@ type RelationshipDoc struct {
 
 // RelationshipSearchResult represents a single result from a relationship vector search.
 type RelationshipSearchResult struct {
-	Subject     string            `json:"subject"`
-	Predicate   string            `json:"predicate"`
-	Object      string            `json:"object"`
-	Description string            `json:"description,omitempty"`
-	Source      string            `json:"source,omitempty"`
-	ChunkID     string            `json:"chunk_id,omitempty"`
-	Similarity  float32           `json:"similarity"`
+	Subject     string  `json:"subject"`
+	Predicate   string  `json:"predicate"`
+	Object      string  `json:"object"`
+	Description string  `json:"description,omitempty"`
+	Source      string  `json:"source,omitempty"`
+	ChunkID     string  `json:"chunk_id,omitempty"`
+	Similarity  float32 `json:"similarity"`
 	// Weight is the co-occurrence count stored at build time — how many raw
 	// quads (across chunks and documents) collapsed into this canonical triple.
 	// 0 means the field was absent in the index (pre-weight build); treat as 1.
-	Weight      float64           `json:"weight,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
+	Weight   float64           `json:"weight,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // Store wraps a chromem-go database for vector operations.

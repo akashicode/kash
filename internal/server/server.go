@@ -607,14 +607,33 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 		chunks = append(chunks, c.result)
 	}
 
-	// Build a weight index from the relationship results so rankFactsByContext
-	// can boost facts that have strong multi-chunk evidential support.
-	weightByKey := make(map[string]float64, len(relResults))
+	// Build a weight index so rankFactsByContext can boost facts with strong
+	// multi-chunk evidential support.
+	//
+	// The relationship vector store carries the weight recorded at build time,
+	// but it returns at most five rows while graph traversal returns hundreds.
+	// Reading only those five would leave almost every candidate on the uniform
+	// log1p(1) fallback, so the boost would exist without reaching the facts it
+	// was built to rank. The graph knows the weight of any triple it holds, from
+	// the same in-memory index the search already walked, so every candidate is
+	// filled in from there and the stored value is preferred where present.
+	weightByKey := make(map[string]float64, len(relResults)+len(graphCandidates))
 	for _, r := range relResults {
 		if r.Weight > 0 {
 			key := graph.FoldKey(r.Subject, r.Predicate, r.Object)
 			if existing := weightByKey[key]; r.Weight > existing {
 				weightByKey[key] = r.Weight
+			}
+		}
+	}
+	if s.graphDB != nil {
+		for _, f := range graphCandidates {
+			key := graph.FoldKey(f.Subject, f.Predicate, f.Object)
+			if _, ok := weightByKey[key]; ok {
+				continue
+			}
+			if w := s.graphDB.TripleWeight(f.Subject, f.Predicate, f.Object); w > 0 {
+				weightByKey[key] = float64(w)
 			}
 		}
 	}
@@ -762,14 +781,6 @@ const contextDocBoost = 2.5
 // weightByKey maps graph.FoldKey(S,P,O) to the co-occurrence count stored at build time;
 // a log1p boost is applied so triples attested in many chunks rank above those from a single one.
 func rankFactsByContext(candidates []graph.SearchResult, chunks []vector.SearchResult, limit int, weightByKey map[string]float64) []graph.SearchResult {
-	// No semantic signal to disambiguate with — return as-is
-	if len(chunks) == 0 {
-		if len(candidates) > limit {
-			return candidates[:limit]
-		}
-		return candidates
-	}
-
 	inContextChunks := make(map[string]bool, len(chunks))
 	inContextDocs := make(map[string]bool, len(chunks))
 	for _, c := range chunks {
@@ -784,16 +795,28 @@ func rankFactsByContext(candidates []graph.SearchResult, chunks []vector.SearchR
 	ranked := make([]graph.SearchResult, len(candidates))
 	copy(ranked, candidates)
 	for i := range ranked {
-		if ranked[i].ChunkID != "" && inContextChunks[ranked[i].ChunkID] {
-			ranked[i].Score *= contextChunkBoost
-		} else if ranked[i].Source != "" && inContextDocs[ranked[i].Source] {
-			ranked[i].Score *= contextDocBoost
+		// Context boosts need retrieved chunks to compare against. When nothing
+		// surfaced there is no semantic signal to disambiguate with, so they are
+		// skipped — but the weight below still applies.
+		if len(chunks) > 0 {
+			if ranked[i].ChunkID != "" && inContextChunks[ranked[i].ChunkID] {
+				ranked[i].Score *= contextChunkBoost
+			} else if ranked[i].Source != "" && inContextDocs[ranked[i].Source] {
+				ranked[i].Score *= contextDocBoost
+			}
 		}
-		// Apply the evidential weight boost: log1p(w) where w is the number of
-		// chunks this triple was extracted from. A triple attested in N chunks
-		// has w=N; log1p(1)≈0.69, log1p(5)≈1.79, log1p(20)≈3.04.
-		// When weight is absent (old corpora, weight=0) we use log1p(1) so the
-		// boost is uniform and does not change relative ordering.
+		// The evidential weight boost: log1p(w) where w is the number of chunks
+		// this triple was extracted from. A triple attested in N chunks has w=N;
+		// log1p(1)≈0.69, log1p(5)≈1.79, log1p(20)≈3.04.
+		//
+		// This is a corpus-time signal and does not depend on what retrieval
+		// returned, so unlike the context boosts it applies even when no chunks
+		// surfaced — that is exactly the query with nothing else to rank on.
+		//
+		// A weight of 0 means "not recorded" (an index built before weights
+		// existed), not "no evidence". It reads as 1, which scales every score
+		// uniformly and leaves the order the query produced untouched; log1p(0)
+		// would instead zero the score and sink the fact below everything.
 		w := weightByKey[graph.FoldKey(ranked[i].Subject, ranked[i].Predicate, ranked[i].Object)]
 		if w <= 0 {
 			w = 1

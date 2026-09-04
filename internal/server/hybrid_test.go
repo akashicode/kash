@@ -47,15 +47,26 @@ func TestGraphContextBoostResolvesHomonyms(t *testing.T) {
 	assert.Equal(t, "Anant ki Aur.md", ranked[2].Source)
 }
 
-// TestGraphContextBoostWithoutChunksIsPassthrough ensures the boost degrades
-// gracefully when there is no semantic signal to disambiguate with.
-func TestGraphContextBoostWithoutChunksIsPassthrough(t *testing.T) {
+// TestGraphContextBoostWithoutChunksPreservesOrder ensures the context boost
+// degrades gracefully when there is no semantic signal to disambiguate with.
+//
+// Scores are no longer byte-identical to the input: the evidential weight is a
+// corpus-time signal that applies with or without retrieved chunks, and an
+// unrecorded weight reads as 1, scaling every score by log1p(1). What must not
+// change is the order, since with no chunks there is nothing to reorder on.
+func TestGraphContextBoostWithoutChunksPreservesOrder(t *testing.T) {
 	candidates := []graph.SearchResult{
 		{Subject: "a", Source: "x.md", Score: 3},
 		{Subject: "b", Source: "y.md", Score: 1},
 	}
 	ranked := rankFactsByContext(candidates, nil, 10, nil)
-	assert.Equal(t, candidates, ranked)
+
+	require.Len(t, ranked, 2)
+	assert.Equal(t, "a", ranked[0].Subject)
+	assert.Equal(t, "b", ranked[1].Subject)
+	assert.Greater(t, ranked[0].Score, ranked[1].Score)
+	// Uniform factor: the 3:1 ratio the query produced survives.
+	assert.InDelta(t, 3.0, ranked[0].Score/ranked[1].Score, 1e-9)
 }
 
 func TestGraphContextBoostChunkLevel(t *testing.T) {
