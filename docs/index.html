@@ -3,457 +3,825 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kash — The AI Agent Compiler</title>
-    <meta name="description" content="Compile your documents into embedded GraphRAG brains. Ship AI agents as Docker images. Zero infrastructure.">
-    <meta name="theme-color" content="#0f0f23">
+    <title>Kash 2.0 — The AI Agent Compiler</title>
+    <meta name="description" content="Compile raw documents into embedded, pure-Go GraphRAG databases. Ship AI agents as ~50MB Docker images with 4-route hybrid retrieval and verifiable provenance. Zero infrastructure.">
+    <meta name="keywords" content="GraphRAG, AI Agent Compiler, Go, Vector Search, Knowledge Graph, BM25, RRF Fusion, Docker, MCP, Cayley, Chromem-Go">
+    <meta name="theme-color" content="#060810">
 
-    <!-- Open Graph -->
-    <meta property="og:title" content="Kash — The AI Agent Compiler">
-    <meta property="og:description" content="Compile documents into self-contained AI agents. Ship as Docker images.">
+    <!-- Open Graph / Social Media -->
+    <meta property="og:title" content="Kash 2.0 — The AI Agent Compiler">
+    <meta property="og:description" content="Compile raw documents into embedded GraphRAG brains. 4-route hybrid retrieval, verifiable provenance, and zero runtime infra in a ~50MB container.">
     <meta property="og:type" content="website">
+    <meta property="og:url" content="https://github.com/akashicode/kash">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Kash 2.0 — The AI Agent Compiler">
+    <meta name="twitter:description" content="Turn your documents into embedded GraphRAG agents. Single Go binary, ~50MB Docker container, 4-route hybrid search.">
 
-    <!-- Fonts -->
+    <!-- Modern Typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@500;600;700;800;900&display=swap" rel="stylesheet">
 
     <style>
         /* ============================================================
-           RESET & BASE
+           CSS RESET & DESIGN TOKENS
            ============================================================ */
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        :root {
-            --bg-primary: #0a0a1a;
-            --bg-secondary: #0f0f23;
-            --bg-card: #141428;
-            --bg-card-hover: #1a1a35;
-            --text-primary: #e8e8f0;
-            --text-secondary: #9090b0;
-            --text-dim: #606080;
-            --accent: #7c5cfc;
-            --accent-light: #a78bfa;
-            --accent-glow: rgba(124, 92, 252, 0.3);
-            --green: #34d399;
-            --blue: #60a5fa;
-            --orange: #fb923c;
-            --pink: #f472b6;
-            --border: rgba(255, 255, 255, 0.06);
-            --border-accent: rgba(124, 92, 252, 0.2);
-            --radius: 12px;
-            --radius-lg: 20px;
-            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
         }
 
-        html { scroll-behavior: smooth; }
+        :root {
+            --bg-base: #060810;
+            --bg-surface: #0c101d;
+            --bg-card: #111728;
+            --bg-card-hover: #172036;
+            --bg-elevated: #1b243d;
+            --bg-glass: rgba(12, 16, 29, 0.75);
+
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --text-dim: #64748b;
+
+            --primary: #8b5cf6;
+            --primary-light: #a78bfa;
+            --primary-glow: rgba(139, 92, 246, 0.35);
+
+            --cyan: #06b6d4;
+            --cyan-glow: rgba(6, 182, 212, 0.25);
+            --emerald: #10b981;
+            --emerald-glow: rgba(16, 185, 129, 0.25);
+            --amber: #f59e0b;
+            --amber-glow: rgba(245, 158, 11, 0.25);
+            --rose: #f43f5e;
+
+            --border-subtle: rgba(255, 255, 255, 0.08);
+            --border-focus: rgba(139, 92, 246, 0.4);
+            --border-cyan: rgba(6, 182, 212, 0.4);
+
+            --radius-sm: 8px;
+            --radius-md: 14px;
+            --radius-lg: 20px;
+            --radius-pill: 9999px;
+
+            --font-display: 'Outfit', sans-serif;
+            --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+
+            --transition-smooth: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        html {
+            scroll-behavior: smooth;
+            color-scheme: dark;
+        }
 
         body {
-            font-family: var(--font-sans);
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            line-height: 1.7;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: var(--font-body);
+            line-height: 1.65;
             overflow-x: hidden;
             -webkit-font-smoothing: antialiased;
         }
 
-        a { color: var(--accent-light); text-decoration: none; transition: color 0.2s; }
-        a:hover { color: #c4b5fd; }
+        a {
+            color: var(--primary-light);
+            text-decoration: none;
+            transition: var(--transition-smooth);
+        }
+        a:hover {
+            color: #d8b4fe;
+        }
 
-        /* ============================================================
-           ANIMATED BACKGROUND
-           ============================================================ */
-        .bg-grid {
+        code, pre {
+            font-family: var(--font-mono);
+        }
+
+        /* Ambient Glow & Subtle Mesh Background */
+        .ambient-canvas {
             position: fixed;
             inset: 0;
-            z-index: -1;
-            background-image:
-                linear-gradient(rgba(124, 92, 252, 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(124, 92, 252, 0.03) 1px, transparent 1px);
-            background-size: 60px 60px;
-        }
-
-        .bg-glow {
-            position: fixed;
-            width: 600px;
-            height: 600px;
-            border-radius: 50%;
-            filter: blur(120px);
-            opacity: 0.15;
             pointer-events: none;
             z-index: -1;
+            overflow: hidden;
         }
-        .bg-glow-1 { top: -200px; left: -100px; background: var(--accent); }
-        .bg-glow-2 { bottom: -200px; right: -100px; background: #4f46e5; }
+
+        .ambient-grid {
+            position: absolute;
+            inset: 0;
+            background-size: 50px 50px;
+            background-image: 
+                linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            mask-image: radial-gradient(ellipse at center, black 40%, transparent 80%);
+            -webkit-mask-image: radial-gradient(ellipse at center, black 40%, transparent 80%);
+        }
+
+        .orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(140px);
+            opacity: 0.22;
+            animation: pulseGlow 14s ease-in-out infinite alternate;
+        }
+        .orb-1 {
+            width: 700px;
+            height: 700px;
+            background: radial-gradient(circle, var(--primary) 0%, transparent 70%);
+            top: -200px;
+            left: 15%;
+        }
+        .orb-2 {
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, var(--cyan) 0%, transparent 70%);
+            top: 40%;
+            right: -100px;
+            animation-delay: -5s;
+        }
+        .orb-3 {
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, #4f46e5 0%, transparent 70%);
+            bottom: 5%;
+            left: -100px;
+            animation-delay: -8s;
+        }
+
+        @keyframes pulseGlow {
+            0% { transform: scale(1) translate(0, 0); opacity: 0.18; }
+            100% { transform: scale(1.15) translate(30px, -20px); opacity: 0.28; }
+        }
 
         /* ============================================================
-           NAVIGATION
+           HEADER & NAVIGATION
            ============================================================ */
-        nav {
+        header.site-header {
             position: fixed;
             top: 0;
-            width: 100%;
-            z-index: 100;
-            padding: 1rem 2rem;
+            left: 0;
+            right: 0;
+            z-index: 1000;
             backdrop-filter: blur(20px);
-            background: rgba(10, 10, 26, 0.8);
-            border-bottom: 1px solid var(--border);
-            transition: background 0.3s;
+            -webkit-backdrop-filter: blur(20px);
+            background: var(--bg-glass);
+            border-bottom: 1px solid var(--border-subtle);
+            transition: var(--transition-smooth);
         }
 
-        .nav-inner {
-            max-width: 1200px;
+        .nav-container {
+            max-width: 1280px;
             margin: 0 auto;
+            padding: 0.85rem 2rem;
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            justify-content: space-between;
+            gap: 1.5rem;
         }
 
-        .nav-brand {
-            font-size: 1.4rem;
+        .brand-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-family: var(--font-display);
             font-weight: 800;
-            color: var(--text-primary);
+            font-size: 1.45rem;
+            color: var(--text-main);
             letter-spacing: -0.02em;
         }
-        .nav-brand span { color: var(--accent-light); }
 
-        .nav-links { display: flex; gap: 2rem; align-items: center; }
-        .nav-links a {
-            color: var(--text-secondary);
+        .logo-symbol {
+            width: 34px;
+            height: 34px;
+            border-radius: 9px;
+            background: linear-gradient(135deg, var(--primary), #4f46e5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px var(--primary-glow);
+            color: #fff;
+            font-size: 1.1rem;
+        }
+
+        .version-tag {
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            font-weight: 600;
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.35);
+            padding: 0.15rem 0.5rem;
+            border-radius: var(--radius-pill);
+            letter-spacing: 0.05em;
+        }
+
+        .nav-menu {
+            display: flex;
+            align-items: center;
+            gap: 1.8rem;
+            list-style: none;
+        }
+
+        .nav-link {
             font-size: 0.9rem;
             font-weight: 500;
-            transition: color 0.2s;
-        }
-        .nav-links a:hover { color: var(--text-primary); }
-
-        .nav-cta {
-            padding: 0.5rem 1.2rem;
-            background: var(--accent);
-            color: #fff !important;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 0.85rem;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        .nav-cta:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 20px var(--accent-glow);
-        }
-
-        /* ============================================================
-           HERO
-           ============================================================ */
-        .hero {
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-            padding: 8rem 2rem 4rem;
+            color: var(--text-muted);
+            transition: var(--transition-smooth);
             position: relative;
         }
 
-        .hero-badge {
+        .nav-link:hover, .nav-link.active {
+            color: var(--text-main);
+        }
+
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .btn-github {
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            padding: 0.4rem 1rem;
-            border-radius: 50px;
-            background: rgba(124, 92, 252, 0.1);
-            border: 1px solid var(--border-accent);
-            font-size: 0.8rem;
-            font-weight: 500;
-            color: var(--accent-light);
+            padding: 0.45rem 1rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+            border: 1px solid var(--border-subtle);
+            transition: var(--transition-smooth);
+        }
+
+        .btn-github:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.25);
+            color: #fff;
+            transform: translateY(-1px);
+        }
+
+        /* Mobile Nav Toggle */
+        .mobile-toggle {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-main);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        /* ============================================================
+           HERO SECTION
+           ============================================================ */
+        .hero {
+            position: relative;
+            padding: 9.5rem 2rem 5rem;
+            max-width: 1280px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .hero-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.4rem 1.1rem;
+            border-radius: var(--radius-pill);
+            background: rgba(139, 92, 246, 0.12);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--primary-light);
             margin-bottom: 2rem;
-            animation: fadeInUp 0.6s ease;
+            backdrop-filter: blur(8px);
+            animation: fadeInDown 0.8s ease-out;
+        }
+
+        .hero-pill .dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--emerald);
+            box-shadow: 0 0 8px var(--emerald);
+            animation: blink 2s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
         }
 
         .hero h1 {
-            font-size: clamp(3rem, 8vw, 5.5rem);
+            font-family: var(--font-display);
+            font-size: clamp(2.8rem, 7vw, 5.2rem);
             font-weight: 900;
-            line-height: 1.05;
+            line-height: 1.06;
             letter-spacing: -0.04em;
+            max-width: 1050px;
             margin-bottom: 1.5rem;
-            animation: fadeInUp 0.6s ease 0.1s both;
+            animation: fadeInUp 0.8s ease-out 0.1s both;
         }
 
-        .hero h1 .gradient-text {
-            background: linear-gradient(135deg, var(--accent-light), var(--pink), var(--orange));
+        .gradient-headline {
+            background: linear-gradient(135deg, #ffffff 30%, var(--primary-light) 65%, var(--cyan) 100%);
             -webkit-background-clip: text;
             background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
-        .hero-subtitle {
-            font-size: clamp(1.1rem, 2.5vw, 1.35rem);
-            color: var(--text-secondary);
-            max-width: 640px;
-            margin-bottom: 1rem;
-            animation: fadeInUp 0.6s ease 0.2s both;
+        .hero-lead {
+            font-size: clamp(1.1rem, 2.3vw, 1.35rem);
+            color: var(--text-muted);
+            max-width: 760px;
+            margin-bottom: 2.5rem;
+            font-weight: 400;
+            animation: fadeInUp 0.8s ease-out 0.2s both;
         }
 
-        .hero-tagline {
-            font-family: var(--font-mono);
-            font-size: 0.9rem;
-            color: var(--text-dim);
+        .hero-badges-row {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.75rem;
             margin-bottom: 2.5rem;
-            animation: fadeInUp 0.6s ease 0.3s both;
+            animation: fadeInUp 0.8s ease-out 0.25s both;
+        }
+
+        .stat-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.4rem 0.85rem;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            font-family: var(--font-mono);
+            font-size: 0.82rem;
+            color: var(--text-muted);
+        }
+        .stat-badge strong {
+            color: var(--text-main);
+            font-weight: 600;
         }
 
         .hero-actions {
             display: flex;
-            gap: 1rem;
             flex-wrap: wrap;
             justify-content: center;
-            animation: fadeInUp 0.6s ease 0.4s both;
+            gap: 1rem;
+            margin-bottom: 3.5rem;
+            animation: fadeInUp 0.8s ease-out 0.3s both;
         }
 
         .btn {
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.6rem;
             padding: 0.85rem 1.8rem;
-            border-radius: 10px;
+            border-radius: var(--radius-sm);
             font-weight: 600;
             font-size: 0.95rem;
             cursor: pointer;
+            transition: var(--transition-smooth);
             border: none;
-            transition: all 0.2s;
+            outline: none;
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, var(--accent), #6d28d9);
-            color: #fff;
-            box-shadow: 0 4px 24px var(--accent-glow);
+            background: linear-gradient(135deg, var(--primary), #6d28d9);
+            color: #ffffff;
+            box-shadow: 0 4px 20px var(--primary-glow);
         }
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 32px var(--accent-glow);
-            color: #fff;
+            box-shadow: 0 8px 30px rgba(139, 92, 246, 0.5);
+            color: #ffffff;
         }
 
         .btn-secondary {
             background: var(--bg-card);
-            color: var(--text-primary);
-            border: 1px solid var(--border);
+            color: var(--text-main);
+            border: 1px solid var(--border-subtle);
         }
         .btn-secondary:hover {
             background: var(--bg-card-hover);
-            border-color: rgba(255, 255, 255, 0.1);
-            color: var(--text-primary);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+            color: #ffffff;
         }
 
-        /* Terminal demo */
-        .hero-terminal {
-            margin-top: 4rem;
-            max-width: 700px;
+        /* ============================================================
+           INTERACTIVE HERO TERMINAL
+           ============================================================ */
+        .terminal-container {
             width: 100%;
-            animation: fadeInUp 0.6s ease 0.5s both;
-        }
-
-        .terminal {
-            background: #0d0d1a;
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
+            max-width: 860px;
+            background: #090d16;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
             overflow: hidden;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.65), 0 0 30px rgba(139, 92, 246, 0.1);
             text-align: left;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            animation: fadeInUp 0.8s ease-out 0.4s both;
         }
 
-        .terminal-header {
+        .terminal-topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1.25rem;
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .terminal-window-controls {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 12px 16px;
-            background: rgba(255, 255, 255, 0.03);
-            border-bottom: 1px solid var(--border);
         }
 
-        .terminal-dot {
-            width: 12px;
-            height: 12px;
+        .control-dot {
+            width: 11px;
+            height: 11px;
             border-radius: 50%;
         }
-        .terminal-dot.red { background: #ff5f57; }
-        .terminal-dot.yellow { background: #febc2e; }
-        .terminal-dot.green { background: #28c840; }
+        .control-dot.close { background: #ef4444; }
+        .control-dot.minimize { background: #eab308; }
+        .control-dot.maximize { background: #22c55e; }
+
+        .terminal-tabs {
+            display: flex;
+            gap: 0.35rem;
+        }
+
+        .t-tab {
+            padding: 0.35rem 0.85rem;
+            font-size: 0.75rem;
+            font-family: var(--font-mono);
+            font-weight: 500;
+            color: var(--text-dim);
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+        }
+        .t-tab.active {
+            color: var(--text-main);
+            background: var(--bg-card);
+            border-color: var(--border-subtle);
+        }
+        .t-tab:hover:not(.active) {
+            color: var(--text-muted);
+        }
+
+        .terminal-copy-btn {
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-dim);
+            font-size: 0.75rem;
+            font-family: var(--font-mono);
+            padding: 0.3rem 0.7rem;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            transition: var(--transition-smooth);
+        }
+        .terminal-copy-btn:hover {
+            color: var(--text-main);
+            border-color: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.04);
+        }
 
         .terminal-body {
-            padding: 1.2rem 1.5rem;
+            padding: 1.5rem;
             font-family: var(--font-mono);
             font-size: 0.85rem;
             line-height: 1.8;
-            color: var(--text-secondary);
+            color: var(--text-muted);
+            min-height: 260px;
         }
 
-        .terminal-body .prompt { color: var(--green); }
-        .terminal-body .cmd { color: var(--text-primary); }
-        .terminal-body .comment { color: var(--text-dim); font-style: italic; }
-        .terminal-body .output { color: var(--accent-light); }
+        .t-pane { display: none; }
+        .t-pane.active { display: block; }
+
+        .term-prompt { color: var(--emerald); font-weight: 600; }
+        .term-cmd { color: #ffffff; font-weight: 600; }
+        .term-comment { color: var(--text-dim); font-style: italic; }
+        .term-out { color: var(--primary-light); }
+        .term-cyan { color: var(--cyan); }
+        .term-amber { color: var(--amber); }
 
         /* ============================================================
-           SECTIONS COMMON
+           COMMON SECTION STYLES
            ============================================================ */
-        section {
-            padding: 6rem 2rem;
-            max-width: 1200px;
+        section.content-section {
+            padding: 6.5rem 2rem;
+            max-width: 1280px;
             margin: 0 auto;
         }
 
-        .section-label {
-            display: inline-block;
+        .section-header {
+            margin-bottom: 3.5rem;
+        }
+
+        .section-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
             font-family: var(--font-mono);
             font-size: 0.75rem;
             font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 0.15em;
-            color: var(--accent-light);
-            margin-bottom: 1rem;
+            letter-spacing: 0.14em;
+            color: var(--cyan);
+            margin-bottom: 0.85rem;
         }
 
         .section-title {
-            font-size: clamp(2rem, 4vw, 3rem);
+            font-family: var(--font-display);
+            font-size: clamp(2rem, 4.5vw, 3.2rem);
             font-weight: 800;
+            line-height: 1.15;
             letter-spacing: -0.03em;
+            color: var(--text-main);
             margin-bottom: 1rem;
         }
 
         .section-desc {
-            font-size: 1.1rem;
-            color: var(--text-secondary);
-            max-width: 600px;
-            margin-bottom: 3rem;
+            font-size: 1.12rem;
+            color: var(--text-muted);
+            max-width: 720px;
+            line-height: 1.7;
         }
 
         /* ============================================================
-           HOW IT WORKS - PIPELINE
+           INTERACTIVE 4-ROUTE RETRIEVAL EXPLORER (Kash 2.0 Core)
            ============================================================ */
-        .pipeline {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
-            margin-top: 2rem;
-        }
-
-        .pipeline-step {
+        .retrieval-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: 2.5rem;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
             position: relative;
-            padding: 2rem 1.5rem;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            transition: all 0.3s;
+            overflow: hidden;
         }
 
-        .pipeline-step:hover {
-            background: var(--bg-card-hover);
-            border-color: var(--border-accent);
-            transform: translateY(-4px);
+        .retrieval-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--primary), var(--cyan), var(--emerald), var(--amber));
         }
 
-        .pipeline-number {
+        .query-preset-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            margin-bottom: 2rem;
+        }
+
+        .query-preset-label {
             font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .query-preset-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            padding: 0.5rem 1.1rem;
+            border-radius: var(--radius-pill);
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+        }
+        .query-preset-btn:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+            color: var(--text-main);
+        }
+        .query-preset-btn.active {
+            background: rgba(139, 92, 246, 0.15);
+            border-color: var(--primary);
+            color: #ffffff;
+            box-shadow: 0 0 15px var(--primary-glow);
+        }
+
+        .query-display-box {
+            background: var(--bg-base);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 1rem 1.5rem;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            font-family: var(--font-mono);
+            font-size: 0.92rem;
+        }
+
+        .query-text {
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .query-decomp-badge {
             font-size: 0.75rem;
-            font-weight: 700;
-            color: var(--accent);
-            margin-bottom: 0.75rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            background: rgba(6, 182, 212, 0.12);
+            color: var(--cyan);
+            border: 1px solid rgba(6, 182, 212, 0.25);
+            white-space: nowrap;
         }
 
-        .pipeline-icon {
-            font-size: 2rem;
-            margin-bottom: 0.75rem;
-        }
-
-        .pipeline-step h3 {
-            font-size: 1.1rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-
-        .pipeline-step p {
-            font-size: 0.88rem;
-            color: var(--text-secondary);
-            line-height: 1.6;
-        }
-
-        /* ============================================================
-           COMPARISON TABLE
-           ============================================================ */
-        .comparison {
+        /* 4 Routes Grid */
+        .routes-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2rem;
-            margin-top: 2rem;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.25rem;
+            margin-bottom: 2rem;
         }
 
-        .comparison-card {
-            padding: 2rem;
-            border-radius: var(--radius);
-            border: 1px solid var(--border);
+        .route-col {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 1.5rem;
+            position: relative;
+            transition: var(--transition-smooth);
         }
 
-        .comparison-card.old {
-            background: rgba(239, 68, 68, 0.04);
-            border-color: rgba(239, 68, 68, 0.15);
-        }
-        .comparison-card.new {
-            background: rgba(52, 211, 153, 0.04);
-            border-color: rgba(52, 211, 153, 0.15);
+        .route-col.highlighted {
+            border-color: var(--route-color, var(--primary));
+            box-shadow: 0 8px 25px var(--route-glow, var(--primary-glow));
+            transform: translateY(-3px);
         }
 
-        .comparison-card h3 {
-            font-size: 1rem;
+        .route-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.8rem;
+        }
+
+        .route-title {
+            font-family: var(--font-display);
             font-weight: 700;
-            margin-bottom: 1.2rem;
+            font-size: 1.05rem;
             display: flex;
             align-items: center;
             gap: 0.5rem;
         }
 
-        .comparison-card.old h3 { color: #fca5a5; }
-        .comparison-card.new h3 { color: var(--green); }
+        .route-badge {
+            font-family: var(--font-mono);
+            font-size: 0.68rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
 
-        .comparison-card ul {
-            list-style: none;
+        .route-score-meter {
+            height: 6px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: var(--radius-pill);
+            margin: 1rem 0;
+            overflow: hidden;
+        }
+
+        .score-bar {
+            height: 100%;
+            border-radius: var(--radius-pill);
+            background: var(--route-color, var(--primary));
+            transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .route-verdict {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+            min-height: 52px;
+        }
+
+        .route-match-snippet {
+            margin-top: 0.75rem;
+            padding: 0.5rem 0.75rem;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-main);
+            border-left: 2px solid var(--route-color, var(--primary));
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Fusion Stage */
+        .fusion-stage {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 1.8rem;
             display: flex;
-            flex-direction: column;
-            gap: 0.8rem;
+            align-items: center;
+            justify-content: space-between;
+            gap: 2rem;
+            flex-wrap: wrap;
         }
 
-        .comparison-card li {
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-            padding-left: 1.5rem;
-            position: relative;
-        }
-        .comparison-card.old li::before { content: "✗"; position: absolute; left: 0; color: #f87171; }
-        .comparison-card.new li::before { content: "✓"; position: absolute; left: 0; color: var(--green); font-weight: 700; }
-
-        /* ============================================================
-           FEATURE CARDS
-           ============================================================ */
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        .fusion-formula {
+            display: flex;
+            align-items: center;
             gap: 1.5rem;
         }
 
-        .feature-card {
-            padding: 2rem;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            transition: all 0.3s;
+        .fusion-symbol {
+            font-size: 2.2rem;
+            color: var(--emerald);
         }
 
-        .feature-card:hover {
-            background: var(--bg-card-hover);
-            border-color: var(--border-accent);
-            transform: translateY(-4px);
-            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        .fusion-text h4 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
         }
 
-        .feature-icon {
+        .fusion-text p {
+            font-size: 0.86rem;
+            color: var(--text-muted);
+        }
+
+        .fusion-stats-pill {
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--radius-sm);
+            text-align: right;
+        }
+
+        .fusion-stats-pill .score-strong {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--emerald);
+            line-height: 1.1;
+        }
+
+        .fusion-stats-pill .score-sub {
+            font-size: 0.75rem;
+            font-family: var(--font-mono);
+            color: var(--text-dim);
+        }
+
+        /* ============================================================
+           STRUCTURE-AWARE CHUNKING & PROVENANCE
+           ============================================================ */
+        .grid-2col {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 2rem;
+        }
+
+        .feature-box {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: 2.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: var(--transition-smooth);
+        }
+        .feature-box:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .box-icon {
             width: 48px;
             height: 48px;
             border-radius: 12px;
@@ -461,641 +829,1660 @@
             align-items: center;
             justify-content: center;
             font-size: 1.4rem;
-            margin-bottom: 1rem;
+            margin-bottom: 1.5rem;
         }
 
-        .feature-icon.purple { background: rgba(124, 92, 252, 0.15); }
-        .feature-icon.green { background: rgba(52, 211, 153, 0.15); }
-        .feature-icon.blue { background: rgba(96, 165, 250, 0.15); }
-        .feature-icon.orange { background: rgba(251, 146, 60, 0.15); }
-        .feature-icon.pink { background: rgba(244, 114, 182, 0.15); }
-        .feature-icon.cyan { background: rgba(34, 211, 238, 0.15); }
+        .box-icon.purple { background: rgba(139, 92, 246, 0.15); color: var(--primary-light); }
+        .box-icon.emerald { background: rgba(16, 185, 129, 0.15); color: var(--emerald); }
+        .box-icon.cyan { background: rgba(6, 182, 212, 0.15); color: var(--cyan); }
+        .box-icon.amber { background: rgba(245, 158, 11, 0.15); color: var(--amber); }
 
-        .feature-card h3 {
-            font-size: 1.1rem;
+        .feature-box h3 {
+            font-family: var(--font-display);
+            font-size: 1.4rem;
             font-weight: 700;
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.75rem;
+            color: var(--text-main);
         }
 
-        .feature-card p {
-            font-size: 0.9rem;
-            color: var(--text-secondary);
+        .feature-box p {
+            font-size: 0.95rem;
+            color: var(--text-muted);
+            line-height: 1.7;
+            margin-bottom: 1.5rem;
+        }
+
+        .chunk-card-preview {
+            background: var(--bg-base);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 1.25rem;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
             line-height: 1.6;
         }
 
+        .breadcrumb-header {
+            color: var(--cyan);
+            font-weight: 600;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            padding-bottom: 0.5rem;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .passage-body {
+            color: var(--text-muted);
+        }
+
+        .provenance-audit-box {
+            background: var(--bg-base);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 1.25rem;
+            font-family: var(--font-mono);
+            font-size: 0.82rem;
+        }
+
+        .audit-stat-line {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.35rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        .audit-stat-line:last-child { border-bottom: none; }
+        .audit-val.good { color: var(--emerald); font-weight: 600; }
+        .audit-val.sub { color: var(--text-muted); }
+
         /* ============================================================
-           INTERFACES (TABS)
+           ZERO DOMAIN CONFIG & 3-LAYER STACK
            ============================================================ */
-        .interface-tabs {
+        .layer-stack-wrapper {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: 3rem;
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 3rem;
+            align-items: center;
+        }
+
+        .layer-cards-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            position: relative;
+        }
+
+        .layer-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 1.25rem 1.5rem;
+            position: relative;
+            transition: var(--transition-smooth);
+            cursor: pointer;
+        }
+
+        .layer-card.active, .layer-card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 4px 20px var(--primary-glow);
+            background: var(--bg-card-hover);
+        }
+
+        .layer-number {
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--cyan);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.25rem;
+        }
+
+        .layer-title {
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .layer-badge {
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-muted);
+        }
+
+        .layer-desc {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 0.4rem;
+        }
+
+        .layer-code-preview {
+            background: var(--bg-base);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+        }
+
+        .layer-code-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1.25rem;
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid var(--border-subtle);
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+
+        .layer-code-body {
+            padding: 1.5rem;
+            font-family: var(--font-mono);
+            font-size: 0.82rem;
+            line-height: 1.7;
+            max-height: 380px;
+            overflow-y: auto;
+        }
+
+        /* ============================================================
+           COMPARISON MATRIX (RAG VS KASH)
+           ============================================================ */
+        .comparison-table-wrapper {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
+
+        .comp-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        .comp-table th, .comp-table td {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .comp-table th {
+            font-family: var(--font-display);
+            font-size: 0.9rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-dim);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .comp-table th.highlight-col, .comp-table td.highlight-col {
+            background: rgba(139, 92, 246, 0.04);
+            border-left: 1px solid rgba(139, 92, 246, 0.2);
+            border-right: 1px solid rgba(139, 92, 246, 0.2);
+        }
+
+        .comp-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .dim-feature {
+            font-weight: 600;
+            color: var(--text-main);
+            font-size: 0.95rem;
+        }
+
+        .old-stack {
+            color: #f87171;
+            font-size: 0.9rem;
+        }
+
+        .kash-stack {
+            color: var(--emerald);
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* ============================================================
+           INTERFACES: 3 PROTOCOLS + EMBEDDED DASHBOARD
+           ============================================================ */
+        .interfaces-tabs-nav {
             display: flex;
             gap: 0.5rem;
             margin-bottom: 2rem;
             flex-wrap: wrap;
         }
 
-        .tab-btn {
-            padding: 0.6rem 1.4rem;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-            background: transparent;
-            color: var(--text-secondary);
-            font-family: var(--font-sans);
-            font-size: 0.85rem;
+        .interface-tab-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            padding: 0.75rem 1.6rem;
+            border-radius: var(--radius-sm);
+            font-family: var(--font-display);
+            font-size: 0.95rem;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: var(--transition-smooth);
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
         }
 
-        .tab-btn.active,
-        .tab-btn:hover {
-            background: var(--accent);
-            color: #fff;
-            border-color: var(--accent);
+        .interface-tab-btn:hover {
+            color: var(--text-main);
+            background: var(--bg-card-hover);
         }
 
-        .tab-panel { display: none; }
-        .tab-panel.active { display: block; }
-
-        .code-block {
-            background: #0d0d1a;
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 1.5rem;
-            overflow-x: auto;
+        .interface-tab-btn.active {
+            background: var(--primary);
+            color: #ffffff;
+            border-color: var(--primary);
+            box-shadow: 0 4px 20px var(--primary-glow);
         }
 
-        .code-block pre {
-            font-family: var(--font-mono);
-            font-size: 0.85rem;
-            line-height: 1.7;
-            color: var(--text-secondary);
-        }
+        .interface-panel { display: none; }
+        .interface-panel.active { display: block; }
 
-        .code-block .kw { color: var(--accent-light); }
-        .code-block .str { color: var(--green); }
-        .code-block .comment { color: var(--text-dim); }
-        .code-block .fn { color: var(--blue); }
-
-        /* ============================================================
-           USE CASES
-           ============================================================ */
-        .usecases-grid {
+        .interface-layout {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 1.5rem;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            align-items: center;
         }
 
-        .usecase-card {
-            padding: 2rem;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            transition: all 0.3s;
-        }
-
-        .usecase-card:hover {
-            border-color: var(--border-accent);
-            transform: translateY(-4px);
-        }
-
-        .usecase-card .emoji { font-size: 2rem; margin-bottom: 0.75rem; }
-        .usecase-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.5rem; }
-        .usecase-card p { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.6; }
-
-        /* ============================================================
-           TECH STACK
-           ============================================================ */
-        .stack-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-        }
-
-        .stack-item {
-            padding: 1.5rem;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            text-align: center;
-            transition: all 0.3s;
-        }
-
-        .stack-item:hover {
-            border-color: var(--border-accent);
-            transform: translateY(-2px);
-        }
-
-        .stack-item .label {
-            font-family: var(--font-mono);
-            font-size: 0.7rem;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: var(--text-dim);
-            margin-bottom: 0.5rem;
-        }
-
-        .stack-item .tech {
-            font-weight: 700;
-            font-size: 1rem;
-            margin-bottom: 0.25rem;
-        }
-
-        .stack-item .purpose {
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-        }
-
-        /* ============================================================
-           CTA
-           ============================================================ */
-        .cta-section {
-            text-align: center;
-            padding: 6rem 2rem;
-        }
-
-        .cta-box {
-            max-width: 700px;
-            margin: 0 auto;
-            padding: 4rem 3rem;
-            background: linear-gradient(135deg, rgba(124, 92, 252, 0.08), rgba(79, 70, 229, 0.08));
-            border: 1px solid var(--border-accent);
-            border-radius: var(--radius-lg);
-        }
-
-        .cta-box h2 {
-            font-size: clamp(1.8rem, 4vw, 2.5rem);
+        .interface-info h3 {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
             font-weight: 800;
-            letter-spacing: -0.03em;
             margin-bottom: 1rem;
         }
 
-        .cta-box p {
-            color: var(--text-secondary);
-            font-size: 1.05rem;
-            margin-bottom: 2rem;
+        .interface-info p {
+            color: var(--text-muted);
+            font-size: 1rem;
+            line-height: 1.7;
+            margin-bottom: 1.5rem;
         }
 
-        .cta-install {
-            display: inline-block;
-            font-family: var(--font-mono);
-            font-size: 0.9rem;
-            padding: 0.8rem 2rem;
-            background: var(--bg-primary);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            color: var(--text-primary);
-            cursor: pointer;
-            transition: border-color 0.2s;
-            user-select: all;
+        .feature-bullets {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
         }
-        .cta-install:hover { border-color: var(--accent); }
+
+        .feature-bullets li {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+        .feature-bullets li::before {
+            content: '✓';
+            color: var(--emerald);
+            font-weight: 700;
+        }
 
         /* ============================================================
-           FOOTER
+           COMPLETE CLI REFERENCE DIRECTORY
            ============================================================ */
-        footer {
-            border-top: 1px solid var(--border);
-            padding: 3rem 2rem;
+        .cli-directory {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .cli-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 1.75rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: var(--transition-smooth);
+        }
+
+        .cli-card:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .cli-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.85rem;
+        }
+
+        .cli-command-title {
+            font-family: var(--font-mono);
+            font-weight: 700;
+            font-size: 1.15rem;
+            color: #ffffff;
+        }
+
+        .cli-badge {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            background: rgba(139, 92, 246, 0.15);
+            color: var(--primary-light);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+        }
+
+        .cli-card p {
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            margin-bottom: 1.25rem;
+            line-height: 1.6;
+        }
+
+        .cli-flags-list {
+            background: var(--bg-base);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 0.75rem 1rem;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            line-height: 1.8;
+        }
+
+        .cli-flags-list span.flag {
+            color: var(--cyan);
+            font-weight: 500;
+        }
+
+        /* ============================================================
+           FINAL CALL TO ACTION & FOOTER
+           ============================================================ */
+        .cta-banner {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(6, 182, 212, 0.1));
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: var(--radius-lg);
+            padding: 5rem 3rem;
             text-align: center;
+            max-width: 900px;
+            margin: 4rem auto 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cta-banner h2 {
+            font-family: var(--font-display);
+            font-size: clamp(2.2rem, 5vw, 3.4rem);
+            font-weight: 900;
+            margin-bottom: 1rem;
+            letter-spacing: -0.03em;
+        }
+
+        .cta-banner p {
+            font-size: 1.15rem;
+            color: var(--text-muted);
+            max-width: 600px;
+            margin: 0 auto 2.5rem;
+        }
+
+        .install-box {
+            display: inline-flex;
+            align-items: center;
+            gap: 1rem;
+            background: var(--bg-base);
+            border: 1px solid var(--border-subtle);
+            padding: 0.85rem 1.6rem;
+            border-radius: var(--radius-md);
+            font-family: var(--font-mono);
+            font-size: 0.92rem;
+            color: var(--text-main);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+        }
+
+        .copy-icon-btn {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            transition: var(--transition-smooth);
+            display: flex;
+            align-items: center;
+        }
+        .copy-icon-btn:hover { color: #fff; }
+
+        footer.site-footer {
+            border-top: 1px solid var(--border-subtle);
+            padding: 4rem 2rem 3rem;
+            margin-top: 6rem;
+            background: var(--bg-surface);
         }
 
         .footer-inner {
-            max-width: 1200px;
+            max-width: 1280px;
             margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 2rem;
         }
 
         .footer-links {
             display: flex;
-            justify-content: center;
             gap: 2rem;
-            margin-bottom: 1.5rem;
-            flex-wrap: wrap;
+            list-style: none;
         }
 
         .footer-links a {
-            color: var(--text-secondary);
-            font-size: 0.85rem;
-            font-weight: 500;
+            color: var(--text-muted);
+            font-size: 0.88rem;
         }
+        .footer-links a:hover { color: #fff; }
 
         .footer-copy {
-            font-size: 0.8rem;
+            font-size: 0.85rem;
             color: var(--text-dim);
         }
 
-        /* ============================================================
-           ANIMATIONS
-           ============================================================ */
+        /* Animations */
         @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(20px); }
+            from { opacity: 0; transform: translateY(25px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .reveal {
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .reveal-on-scroll {
             opacity: 0;
             transform: translateY(30px);
-            transition: opacity 0.6s ease, transform 0.6s ease;
+            transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .reveal.visible {
+
+        .reveal-on-scroll.visible {
             opacity: 1;
             transform: translateY(0);
         }
 
-        /* ============================================================
-           RESPONSIVE
-           ============================================================ */
-        @media (max-width: 768px) {
-            .nav-links { gap: 1rem; }
-            .nav-links a:not(.nav-cta) { display: none; }
-            .comparison { grid-template-columns: 1fr; }
-            .hero { padding: 6rem 1.5rem 3rem; }
-            .cta-box { padding: 3rem 1.5rem; }
-            section { padding: 4rem 1.5rem; }
+        /* Responsive Breakpoints */
+        @media (max-width: 1024px) {
+            .routes-grid { grid-template-columns: repeat(2, 1fr); }
+            .grid-2col { grid-template-columns: 1fr; }
+            .layer-stack-wrapper { grid-template-columns: 1fr; }
+            .interface-layout { grid-template-columns: 1fr; }
         }
 
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: var(--bg-primary); }
-        ::-webkit-scrollbar-thumb { background: #2a2a4a; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #3a3a5a; }
+        @media (max-width: 768px) {
+            .nav-menu { display: none; }
+            .nav-menu.mobile-open {
+                display: flex;
+                flex-direction: column;
+                position: absolute;
+                top: 100%;
+                left: 0;
+                right: 0;
+                background: var(--bg-surface);
+                padding: 1.5rem 2rem;
+                border-bottom: 1px solid var(--border-subtle);
+            }
+            .mobile-toggle { display: block; }
+            .routes-grid { grid-template-columns: 1fr; }
+            .cli-directory { grid-template-columns: 1fr; }
+            .footer-inner { flex-direction: column; text-align: center; }
+            .cta-banner { padding: 3rem 1.5rem; }
+        }
     </style>
 </head>
 <body>
-    <!-- Background Effects -->
-    <div class="bg-grid"></div>
-    <div class="bg-glow bg-glow-1"></div>
-    <div class="bg-glow bg-glow-2"></div>
 
-    <!-- Navigation -->
-    <nav>
-        <div class="nav-inner">
-            <div class="nav-brand">⚡ <span>Kash</span></div>
-            <div class="nav-links">
-                <a href="#how-it-works">How It Works</a>
-                <a href="#features">Features</a>
-                <a href="#interfaces">Interfaces</a>
-                <a href="#use-cases">Use Cases</a>
-                <a href="https://github.com/akashicode/kash" class="nav-cta">GitHub →</a>
+    <!-- Ambient Visual Canvas -->
+    <div class="ambient-canvas">
+        <div class="ambient-grid"></div>
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+
+    <!-- Fixed Header & Navigation -->
+    <header class="site-header" id="siteHeader">
+        <div class="nav-container">
+            <a href="#" class="brand-logo" aria-label="Kash Home">
+                <div class="logo-symbol">⚡</div>
+                <span>Kash</span>
+                <span class="version-tag">v2.0</span>
+            </a>
+
+            <ul class="nav-menu" id="navMenu">
+                <li><a href="#retrieval" class="nav-link">4-Route RRF</a></li>
+                <li><a href="#chunking" class="nav-link">Structure &amp; Provenance</a></li>
+                <li><a href="#profiling" class="nav-link">Zero-Config</a></li>
+                <li><a href="#interfaces" class="nav-link">Interfaces</a></li>
+                <li><a href="#cli" class="nav-link">CLI Suite</a></li>
+            </ul>
+
+            <div class="nav-actions">
+                <a href="https://github.com/akashicode/kash" target="_blank" rel="noopener noreferrer" class="btn-github">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                    <span>Star on GitHub</span>
+                </a>
+                <button class="mobile-toggle" id="mobileToggle" aria-label="Toggle navigation">☰</button>
             </div>
         </div>
-    </nav>
+    </header>
 
-    <!-- Hero -->
-    <section class="hero">
-        <div class="hero-badge">🚀 Open Source &middot; MIT Licensed</div>
-        <h1>
-            Compile Knowledge.<br>
-            <span class="gradient-text">Ship AI Agents.</span>
-        </h1>
-        <p class="hero-subtitle">
-            Kash turns your documents into self-contained AI agents with embedded GraphRAG — packaged into ultra-lightweight Docker containers.
-        </p>
-        <p class="hero-tagline">No Python. No vector DB. No infrastructure. Just Go.</p>
+    <!-- Main Hero -->
+    <main>
+        <section class="hero">
+            <div class="hero-pill">
+                <span class="dot"></span>
+                <span>Kash 2.0 Released — Hybrid 4-Route RRF + Verifiable GraphRAG</span>
+            </div>
 
-        <div class="hero-actions">
-            <a href="https://github.com/akashicode/kash" class="btn btn-primary">
-                ⚡ Get Started
-            </a>
-            <a href="#how-it-works" class="btn btn-secondary">
-                Learn More ↓
-            </a>
-        </div>
+            <h1>
+                Compile Knowledge.<br>
+                <span class="gradient-headline">Channel the Akashic.</span>
+            </h1>
 
-        <div class="hero-terminal">
-            <div class="terminal">
-                <div class="terminal-header">
-                    <div class="terminal-dot red"></div>
-                    <div class="terminal-dot yellow"></div>
-                    <div class="terminal-dot green"></div>
+            <p class="hero-lead">
+                Turn your raw PDF, Markdown, and TXT documents into self-contained, embedded GraphRAG brains. Packaged into ultra-lightweight ~50MB Docker containers with zero runtime dependencies.
+            </p>
+
+            <div class="hero-badges-row">
+                <span class="stat-badge">⚡ Pure <strong>Go 1.25</strong></span>
+                <span class="stat-badge">🐳 <strong>~50MB</strong> Docker Image</span>
+                <span class="stat-badge">🔀 <strong>4-Route RRF</strong> Fusion</span>
+                <span class="stat-badge">🛡️ <strong>96.7%</strong> Verifiable Provenance</span>
+                <span class="stat-badge">🔒 Zero Python / Zero External DBs</span>
+            </div>
+
+            <div class="hero-actions">
+                <a href="#quickstart" class="btn btn-primary">
+                    <span>⚡ Quickstart</span>
+                    <span>→</span>
+                </a>
+                <a href="#retrieval" class="btn btn-secondary">
+                    <span>Explore Hybrid Engine</span>
+                    <span>↓</span>
+                </a>
+            </div>
+
+            <!-- Interactive Terminal Showcase -->
+            <div class="terminal-container" id="quickstart">
+                <div class="terminal-topbar">
+                    <div class="terminal-window-controls">
+                        <span class="control-dot close"></span>
+                        <span class="control-dot minimize"></span>
+                        <span class="control-dot maximize"></span>
+                    </div>
+
+                    <div class="terminal-tabs">
+                        <button class="t-tab active" data-target="pane-quickstart">quickstart.sh</button>
+                        <button class="t-tab" data-target="pane-verify">kash verify</button>
+                        <button class="t-tab" data-target="pane-profile">kash profile</button>
+                        <button class="t-tab" data-target="pane-docker">docker run</button>
+                    </div>
+
+                    <button class="terminal-copy-btn" id="copyTermBtn" title="Copy code">
+                        <span>Copy</span>
+                    </button>
                 </div>
+
                 <div class="terminal-body">
-                    <span class="comment"># Scaffold a new agent</span><br>
-                    <span class="prompt">$</span> <span class="cmd">kash init my-expert</span><br><br>
-                    <span class="comment"># Add your knowledge</span><br>
-                    <span class="prompt">$</span> <span class="cmd">cp ~/docs/*.pdf my-expert/data/</span><br><br>
-                    <span class="comment"># Compile into GraphRAG databases</span><br>
-                    <span class="prompt">$</span> <span class="cmd">kash build --dir my-expert</span><br>
-                    <span class="output">  ✓ Chunked 42 documents (1,892 passages)</span><br>
-                    <span class="output">  ✓ Generated 1,892 embeddings</span><br>
-                    <span class="output">  ✓ Extracted 3,451 knowledge graph triples</span><br><br>
-                    <span class="comment"># Ship it!</span><br>
-                    <span class="prompt">$</span> <span class="cmd">docker build -t my-expert . && docker run -p 8000:8000 my-expert</span><br>
-                    <span class="output">  🚀 Agent live at http://localhost:8000</span>
+                    <!-- Pane 1: Quickstart -->
+                    <div class="t-pane active" id="pane-quickstart">
+                        <span class="term-comment"># 1. Install pure-Go binary</span><br>
+                        <span class="term-prompt">$</span> <span class="term-cmd">go install github.com/akashicode/kash/cmd/kash@latest</span><br><br>
+                        <span class="term-comment"># 2. Scaffold agent project with data/ and agent.yaml</span><br>
+                        <span class="term-prompt">$</span> <span class="term-cmd">kash init my-expert && cd my-expert</span><br><br>
+                        <span class="term-comment"># 3. Add raw documents (PDF · Markdown · TXT)</span><br>
+                        <span class="term-prompt">$</span> <span class="term-cmd">cp ~/research/*.pdf data/</span><br><br>
+                        <span class="term-comment"># 4. Compile into embedded vector (chromem), graph (cayley) &amp; BM25</span><br>
+                        <span class="term-prompt">$</span> <span class="term-cmd">kash build</span><br>
+                        <span class="term-out">  ✓ Corpus profile measured: fold=iast, 8 ref patterns detected</span><br>
+                        <span class="term-out">  ✓ Chunked 42 documents (1,892 passages with citation breadcrumbs)</span><br>
+                        <span class="term-out">  ✓ Built pure-Go BM25 index (data/lexical.idx)</span><br>
+                        <span class="term-out">  ✓ Extracted 3,451 graph triples with evidential weighting</span><br><br>
+                        <span class="term-comment"># 5. Serve HTTP REST, MCP, A2A &amp; offline Dashboard on one port</span><br>
+                        <span class="term-prompt">$</span> <span class="term-cmd">kash serve</span><br>
+                        <span class="term-cyan">  🚀 Live at http://localhost:8000 (OpenAI API, MCP, and Web UI)</span>
+                    </div>
+
+                    <!-- Pane 2: Kash Verify -->
+                    <div class="t-pane" id="pane-verify">
+                        <span class="term-comment"># Audit graph provenance back to source text passages</span><br>
+                        <span class="term-prompt">$</span> <span class="term-cmd">kash verify</span><br><br>
+                        <span class="term-out">Facts: 2202          Fold mode: iast</span><br><br>
+                        <span class="term-cmd">Traceable to a passage:</span><br>
+                        <span class="term-out">  both endpoints found      1854   84.2%</span><br>
+                        <span class="term-out">  one endpoint found         276   12.5%</span><br><br>
+                        <span class="term-cmd">Not traceable:</span><br>
+                        <span class="term-dim">  passage found neither       72    3.3%</span><br>
+                        <span class="term-dim">  chunk no longer exists       0    0.0%</span><br>
+                        <span class="term-dim">  no chunk recorded            0    0.0%</span><br><br>
+                        <span class="term-cyan">✓ 96.7% of facts can be shown to a reader in the passage they came from</span>
+                    </div>
+
+                    <!-- Pane 3: Kash Profile -->
+                    <div class="t-pane" id="pane-profile">
+                        <span class="term-comment"># Inspect domain configuration derived from your corpus</span><br>
+                        <span class="term-prompt">$</span> <span class="term-cmd">kash profile</span><br><br>
+                        <span class="term-out">• resolution.fold_diacritics = iast</span><br>
+                        <span class="term-dim">    IAST marks: 3,597,866 in 56/60 docs; Latin marks: 1,439 in 37/60 docs</span><br>
+                        <span class="term-out">• resolution.strip_final_vowel = true</span><br>
+                        <span class="term-dim">    1,566 stem-vowel variant pairs, e.g. lakṣya/lakṣyam</span><br>
+                        <span class="term-out">• chunker.ref_patterns = 6 detected + 2 generic</span><br>
+                        <span class="term-dim">    "dhāraṇā" (105 hits, seq 0.97); "śloka" (3,209 hits, seq 0.67)</span><br><br>
+                        <span class="term-amber">Configuration layer: defaults &lt; data/domain.profile.json &lt; agent.yaml</span>
+                    </div>
+
+                    <!-- Pane 4: Docker Run -->
+                    <div class="t-pane" id="pane-docker">
+                        <span class="term-comment"># Package the baked agent into a ~50MB multi-arch container</span><br>
+                        <span class="term-prompt">$</span> <span class="term-cmd">docker build -t my-agent:latest .</span><br>
+                        <span class="term-out">  [+] Building 2.1s (7/7) FINISHED</span><br>
+                        <span class="term-out">  =&gt; naming to docker.io/library/my-agent:latest  size: 52.4MB</span><br><br>
+                        <span class="term-comment"># Ship anywhere with zero database infrastructure</span><br>
+                        <span class="term-prompt">$</span> <span class="term-cmd">docker run -d -p 8000:8000 --env-file .env my-agent:latest</span><br>
+                        <span class="term-cyan">  🚀 Agent container running: http://localhost:8000</span>
+                    </div>
                 </div>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <!-- How It Works -->
-    <section id="how-it-works" class="reveal">
-        <span class="section-label">// How It Works</span>
-        <h2 class="section-title">The Compiler Approach</h2>
-        <p class="section-desc">
-            Think of Kash like a static site generator — but for AI brains. Data ingestion happens at build time. Runtime only serves queries.
-        </p>
+        <!-- ============================================================
+             SECTION 1: HYBRID 4-ROUTE RETRIEVAL WITH RRF FUSION
+             ============================================================ -->
+        <section class="content-section reveal-on-scroll" id="retrieval">
+            <div class="section-header">
+                <span class="section-tag">// Retrieval Architecture</span>
+                <h2 class="section-title">Retrieval That Actually Finds Things</h2>
+                <p class="section-desc">
+                    Most RAG systems rely on cosine similarity and hope. Kash runs four independent retrieval routes simultaneously, fused by <strong>Reciprocal Rank Fusion (RRF k=60)</strong> with cascading reranking.
+                </p>
+            </div>
 
-        <div class="pipeline">
-            <div class="pipeline-step">
-                <div class="pipeline-number">01</div>
-                <div class="pipeline-icon">📄</div>
-                <h3>Initialize</h3>
-                <p><code>kash init</code> scaffolds your agent project with a Dockerfile, config, and data directory.</p>
-            </div>
-            <div class="pipeline-step">
-                <div class="pipeline-number">02</div>
-                <div class="pipeline-icon">📚</div>
-                <h3>Add Documents</h3>
-                <p>Drop PDFs, Markdown, and text files into <code>data/</code>. That's your knowledge base.</p>
-            </div>
-            <div class="pipeline-step">
-                <div class="pipeline-number">03</div>
-                <div class="pipeline-icon">⚡</div>
-                <h3>Compile</h3>
-                <p><code>kash build</code> chunks text, generates embeddings, and extracts knowledge graph triples.</p>
-            </div>
-            <div class="pipeline-step">
-                <div class="pipeline-number">04</div>
-                <div class="pipeline-icon">🐳</div>
-                <h3>Ship</h3>
-                <p><code>docker build</code> packages everything into a tiny container sized to your data. Push and run anywhere.</p>
-            </div>
-        </div>
-    </section>
+            <!-- Interactive 4-Route Simulator -->
+            <div class="retrieval-card">
+                <div class="query-preset-bar">
+                    <span class="query-preset-label">Simulate Query:</span>
+                    <button class="query-preset-btn active" data-preset="semantic">1. Semantic Meaning</button>
+                    <button class="query-preset-btn" data-preset="exact">2. Structural Reference</button>
+                    <button class="query-preset-btn" data-preset="graph">3. Multi-Hop Entity</button>
+                </div>
 
-    <!-- Comparison -->
-    <section class="reveal">
-        <span class="section-label">// Why Kash?</span>
-        <h2 class="section-title">Rethink Your RAG Stack</h2>
-        <p class="section-desc">
-            Traditional RAG stacks are bloated. Kash collapses the entire pipeline into a single binary.
-        </p>
+                <div class="query-display-box">
+                    <div class="query-text">
+                        <span>❓</span>
+                        <strong id="activeQueryStr">"techniques for stilling the wandering mind"</strong>
+                    </div>
+                    <div class="query-decomp-badge" id="activeQueryDecomp">✂️ Decompose: entities=[], concepts=["stilling", "mind", "dhyana"]</div>
+                </div>
 
-        <div class="comparison">
-            <div class="comparison-card old">
-                <h3>❌ Traditional RAG</h3>
-                <ul>
-                    <li>Python app + FastAPI + Gunicorn</li>
-                    <li>Pinecone / Weaviate / Qdrant</li>
-                    <li>Redis or PostgreSQL for metadata</li>
-                    <li>Runtime document ingestion</li>
-                    <li>Complex multi-service deployment</li>
-                    <li>$$$ infrastructure costs</li>
-                </ul>
-            </div>
-            <div class="comparison-card new">
-                <h3>✅ Kash</h3>
-                <ul>
-                    <li>Single Go binary (~25MB)</li>
-                    <li>Embedded vector store (chromem-go)</li>
-                    <li>Embedded graph DB (cayley)</li>
-                    <li>Build-time compilation</li>
-                    <li><code>docker run</code> and done</li>
-                    <li>Runs on a Raspberry Pi</li>
-                </ul>
-            </div>
-        </div>
-    </section>
+                <!-- 4 Routes -->
+                <div class="routes-grid">
+                    <!-- Route 1: Vector -->
+                    <div class="route-col highlighted" id="routeColVector" style="--route-color: var(--primary); --route-glow: var(--primary-glow);">
+                        <div class="route-header">
+                            <span class="route-title">🧮 Vector</span>
+                            <span class="route-badge" style="background: rgba(139, 92, 246, 0.2); color: var(--primary-light);">chromem-go</span>
+                        </div>
+                        <p style="font-size: 0.8rem; color: var(--text-dim);">Semantic dense embeddings</p>
+                        <div class="route-score-meter">
+                            <div class="score-bar" id="scoreBarVector" style="width: 95%;"></div>
+                        </div>
+                        <div class="route-verdict" id="verdictVector">
+                            Finds deep contextual meaning even when source documents use entirely different vocabulary.
+                        </div>
+                        <div class="route-match-snippet" id="snippetVector">
+                            Match: "dissolution of mental modifications in prana..."
+                        </div>
+                    </div>
 
-    <!-- Features -->
-    <section id="features" class="reveal">
-        <span class="section-label">// Features</span>
-        <h2 class="section-title">Everything You Need</h2>
-        <p class="section-desc">
-            A complete agent framework with zero external dependencies at runtime.
-        </p>
+                    <!-- Route 2: BM25 Lexical -->
+                    <div class="route-col" id="routeColBM25" style="--route-color: var(--cyan); --route-glow: var(--cyan-glow);">
+                        <div class="route-header">
+                            <span class="route-title">🔤 BM25</span>
+                            <span class="route-badge" style="background: rgba(6, 182, 212, 0.2); color: var(--cyan);">pure-go</span>
+                        </div>
+                        <p style="font-size: 0.8rem; color: var(--text-dim);">Exact keyword matching</p>
+                        <div class="route-score-meter">
+                            <div class="score-bar" id="scoreBarBM25" style="width: 45%;"></div>
+                        </div>
+                        <div class="route-verdict" id="verdictBM25">
+                            Catches rare technical nouns, identifiers, and terms that vector models smooth away.
+                        </div>
+                        <div class="route-match-snippet" id="snippetBM25">
+                            Match: "stilling", "mind" (freq: 12)
+                        </div>
+                    </div>
 
-        <div class="features-grid">
-            <div class="feature-card">
-                <div class="feature-icon purple">🧠</div>
-                <h3>Hybrid GraphRAG</h3>
-                <p>Every query runs through both vector similarity search and knowledge graph traversal, merged and optionally reranked.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon green">🐳</div>
-                <h3>Docker-First Distribution</h3>
-                <p>Ship agents as lightweight Docker images. Image size scales with your data — the Go runtime itself is tiny. Multi-arch support included.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon blue">🔌</div>
-                <h3>Three Runtime Interfaces</h3>
-                <p>REST API (OpenAI-compatible), MCP Server (for IDEs), and A2A Protocol (for multi-agent orchestration) — all on one port.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon orange">🔑</div>
-                <h3>Provider Agnostic (BYOM)</h3>
-                <p>Works with any OpenAI-compatible API. Use OpenAI, Anthropic via proxy, Ollama, LiteLLM — your choice.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon pink">📊</div>
-                <h3>Knowledge Graph Extraction</h3>
-                <p>Automatic extraction of entity-relationship triples via LLM during build. Deep reasoning, not just keyword matching.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon cyan">🔒</div>
-                <h3>API Key Authentication</h3>
-                <p>Optional Bearer token auth across all interfaces. Set one env var to secure everything. Open access for local dev.</p>
-            </div>
-        </div>
-    </section>
+                    <!-- Route 3: Exact Reference -->
+                    <div class="route-col" id="routeColExact" style="--route-color: var(--amber); --route-glow: var(--amber-glow);">
+                        <div class="route-header">
+                            <span class="route-title">🎯 Exact Ref</span>
+                            <span class="route-badge" style="background: rgba(245, 158, 11, 0.2); color: var(--amber);">ref_patterns</span>
+                        </div>
+                        <p style="font-size: 0.8rem; color: var(--text-dim);">Numbered verses &amp; sections</p>
+                        <div class="route-score-meter">
+                            <div class="score-bar" id="scoreBarExact" style="width: 0%;"></div>
+                        </div>
+                        <div class="route-verdict" id="verdictExact">
+                            Detects structural numbering patterns mined from your documents ("Dhāraṇā 49", "Clause 4.2").
+                        </div>
+                        <div class="route-match-snippet" id="snippetExact">
+                            No explicit verse/clause identified in query
+                        </div>
+                    </div>
 
-    <!-- Interfaces -->
-    <section id="interfaces" class="reveal">
-        <span class="section-label">// Interfaces</span>
-        <h2 class="section-title">Three Ways to Connect</h2>
-        <p class="section-desc">
-            One port, three protocols. Plug your agent into any ecosystem.
-        </p>
+                    <!-- Route 4: Knowledge Graph -->
+                    <div class="route-col" id="routeColGraph" style="--route-color: var(--emerald); --route-glow: var(--emerald-glow);">
+                        <div class="route-header">
+                            <span class="route-title">🕸️ Graph</span>
+                            <span class="route-badge" style="background: rgba(16, 185, 129, 0.2); color: var(--emerald);">cayley</span>
+                        </div>
+                        <p style="font-size: 0.8rem; color: var(--text-dim);">Entity &amp; triple traversal</p>
+                        <div class="route-score-meter">
+                            <div class="score-bar" id="scoreBarGraph" style="width: 60%;"></div>
+                        </div>
+                        <div class="route-verdict" id="verdictGraph">
+                            Traverses relations 1-2 hops away and resolves directly to the source passage chunks.
+                        </div>
+                        <div class="route-match-snippet" id="snippetGraph">
+                            Entity hit: "citta-vṛtti" ↳ resolved to 3 chunks
+                        </div>
+                    </div>
+                </div>
 
-        <div class="interface-tabs">
-            <button class="tab-btn active" data-tab="rest">REST API</button>
-            <button class="tab-btn" data-tab="mcp">MCP Server</button>
-            <button class="tab-btn" data-tab="a2a">A2A Protocol</button>
-        </div>
-
-        <div id="tab-rest" class="tab-panel active">
-            <div class="code-block">
-<pre><span class="comment"># Drop-in OpenAI replacement — works with LibreChat, Open WebUI, etc.</span>
-
-<span class="fn">curl</span> http://localhost:8000/v1/chat/completions \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{
-    "model": "gpt-4o",
-    "messages": [{"role": "user", "content": "Explain the key concepts"}]
-  }'</span></pre>
+                <!-- Reciprocal Rank Fusion Output -->
+                <div class="fusion-stage">
+                    <div class="fusion-formula">
+                        <span class="fusion-symbol">⚖️</span>
+                        <div class="fusion-text">
+                            <h4>Reciprocal Rank Fusion (RRF k=60) + Bounded Reranking</h4>
+                            <p>Candidates from all 4 routes are merged by ranked position. Top 100 enter the Cohere-compatible reranker cascade.</p>
+                        </div>
+                    </div>
+                    <div class="fusion-stats-pill">
+                        <div class="score-strong" id="fusionRecallVal">Recall@5: 1.00</div>
+                        <div class="score-sub">vs 0.40 on Vector-Only RAG</div>
+                    </div>
+                </div>
             </div>
-        </div>
+        </section>
 
-        <div id="tab-mcp" class="tab-panel">
-            <div class="code-block">
-<pre><span class="comment">// Add to Cursor / Windsurf / Claude Desktop settings</span>
+        <!-- ============================================================
+             SECTION 2: CHUNKING & VERIFIABLE PROVENANCE
+             ============================================================ -->
+        <section class="content-section reveal-on-scroll" id="chunking">
+            <div class="section-header">
+                <span class="section-tag">// Structure &amp; Provenance</span>
+                <h2 class="section-title">A Graph You Can Mathematically Prove</h2>
+                <p class="section-desc">
+                    No hallucinated citations or blind character counts. Documents chunk along their heading hierarchies with structural breadcrumbs, and every graph fact points back to the exact passage it was extracted from.
+                </p>
+            </div>
 
-{
-  <span class="str">"mcpServers"</span>: {
-    <span class="str">"my-agent"</span>: {
-      <span class="str">"url"</span>: <span class="str">"http://localhost:8000/mcp"</span>
+            <div class="grid-2col">
+                <!-- Box 1: Structure-Aware Chunking -->
+                <div class="feature-box">
+                    <div>
+                        <div class="box-icon purple">✂️</div>
+                        <h3>Structure-Aware Chunking</h3>
+                        <p>
+                            Chunks are split on Markdown and PDF headings, not arbitrary character boundaries. Each chunk receives a contextual breadcrumb header baked into its text at build time.
+                        </p>
+                        <div class="chunk-card-preview">
+                            <div class="breadcrumb-header">
+                                <span>📌</span>
+                                <span>[Vigyāna Bhairava Tantra &gt; Dhāraṇā 49 &gt; Verse 72]</span>
+                            </div>
+                            <div class="passage-body">
+                                "Focus intently on the space between two breaths... the mind dissolves into the unconditioned void between exhalation and inhalation."
+                            </div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 1.5rem;">
+                        <ul class="feature-bullets">
+                            <li>Numbered verses &amp; legal clauses remain individually addressable</li>
+                            <li>Table headers duplicate automatically across long table chunk splits</li>
+                            <li><strong>Text-Quality Gate</strong>: Rejects corrupt PDFs with font substitution ciphers</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Box 2: kash verify -->
+                <div class="feature-box">
+                    <div>
+                        <div class="box-icon emerald">🛡️</div>
+                        <h3>Audit with <code>kash verify</code></h3>
+                        <p>
+                            Every triple stores its originating chunk ID. <code>kash verify</code> walks the graph, fetches chunks from vector storage, and confirms both endpoints are mentioned.
+                        </p>
+                        <div class="provenance-audit-box">
+                            <div class="audit-stat-line">
+                                <span>Facts Audited:</span>
+                                <span class="audit-val sub">2,202</span>
+                            </div>
+                            <div class="audit-stat-line">
+                                <span>Both Endpoints Verified in Passage:</span>
+                                <span class="audit-val good">1,854 (84.2%)</span>
+                            </div>
+                            <div class="audit-stat-line">
+                                <span>One Endpoint Verified:</span>
+                                <span class="audit-val good">276 (12.5%)</span>
+                            </div>
+                            <div class="audit-stat-line">
+                                <span>Missing or Fabricated Citations:</span>
+                                <span class="audit-val good">0 (0.0%)</span>
+                            </div>
+                            <div class="audit-stat-line" style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border-subtle);">
+                                <span style="font-weight: 600; color: #fff;">Overall Passage Grounding:</span>
+                                <span class="audit-val good">✓ 96.7% Verifiable</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 1.5rem;">
+                        <ul class="feature-bullets">
+                            <li>Iterative <strong>gleaning</strong> extracts missed facts on dense texts</li>
+                            <li><strong>Evidential weights</strong>: <code>log1p(weight)</code> boost for multi-passage facts</li>
+                            <li>Citations strictly cite <code>[passage N]</code> or document alone — never faked</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================================
+             SECTION 3: ZERO-CONFIG PROFILING & 3-LAYER HIERARCHY
+             ============================================================ -->
+        <section class="content-section reveal-on-scroll" id="profiling">
+            <div class="section-header">
+                <span class="section-tag">// Domain Profiling</span>
+                <h2 class="section-title">Zero Domain Configuration</h2>
+                <p class="section-desc">
+                    Stop hand-writing regular expressions. Kash automatically measures your documents at build time and writes <code>data/domain.profile.json</code>. You only write configuration when you explicitly want an override.
+                </p>
+            </div>
+
+            <div class="layer-stack-wrapper">
+                <!-- Stack Layers Navigation -->
+                <div class="layer-cards-container">
+                    <div class="layer-card" data-layer="layer-defaults">
+                        <div class="layer-number">Layer 1 &middot; Base</div>
+                        <div class="layer-title">
+                            <span>Built-in Defaults</span>
+                            <span class="layer-badge">Fallback</span>
+                        </div>
+                        <div class="layer-desc">
+                            General extraction predicates, default tokenization, standard cosine thresholds.
+                        </div>
+                    </div>
+
+                    <div class="layer-card active" data-layer="layer-profile">
+                        <div class="layer-number">Layer 2 &middot; Measured</div>
+                        <div class="layer-title">
+                            <span>data/domain.profile.json</span>
+                            <span class="layer-badge" style="color: var(--cyan);">Generated by Kash</span>
+                        </div>
+                        <div class="layer-desc">
+                            Diacritics mode (IAST/Latin), reference patterns, stopwords, stem-vowels &amp; predicates.
+                        </div>
+                    </div>
+
+                    <div class="layer-card" data-layer="layer-override">
+                        <div class="layer-number">Layer 3 &middot; High Priority</div>
+                        <div class="layer-title">
+                            <span>agent.yaml</span>
+                            <span class="layer-badge" style="color: var(--primary-light);">User Overrides</span>
+                        </div>
+                        <div class="layer-desc">
+                            Your manual overrides. Only set what you disagree with. Replaces, never merges lists.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Code Preview for Selected Layer -->
+                <div class="layer-code-preview">
+                    <div class="layer-code-header">
+                        <span id="layerFilename">data/domain.profile.json</span>
+                        <span style="color: var(--emerald);">✓ Auto-generated by kash build</span>
+                    </div>
+                    <div class="layer-code-body" id="layerCodeContent">
+<pre>{
+  "diacritics": {
+    "mode": "iast",
+    "evidence": "3,597,866 marks in 56/60 docs"
+  },
+  "stemming": {
+    "strip_final_vowel": true,
+    "pairs_found": 1566
+  },
+  "structural_references": [
+    { "prefix": "dhāraṇā", "hits": 105, "sequence": 0.97 },
+    { "prefix": "śloka", "hits": 3209, "sequence": 0.67 },
+    { "prefix": "verse", "hits": 840, "sequence": 0.95 }
+  ],
+  "extraction_vocabulary": {
+    "predicates": ["authored", "commented_on", "teaches", "derived_from", "opposes"],
+    "honorifics": ["śrī ", "svāmī ", "ācārya "]
+  }
+}</pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================================
+             SECTION 4: COMPARISON MATRIX
+             ============================================================ -->
+        <section class="content-section reveal-on-scroll" id="comparison">
+            <div class="section-header">
+                <span class="section-tag">// Why Kash 2.0?</span>
+                <h2 class="section-title">Collapse the RAG Infrastructure Tax</h2>
+                <p class="section-desc">
+                    Typical RAG pipelines combine Python microservices, external vector servers, database clusters, and cloud orchestration. Kash collapses the entire stack into a single binary.
+                </p>
+            </div>
+
+            <div class="comparison-table-wrapper">
+                <table class="comp-table">
+                    <thead>
+                        <tr>
+                            <th>Capability</th>
+                            <th>Traditional RAG Stack</th>
+                            <th class="highlight-col">⚡ Kash 2.0</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="dim-feature">Runtime Engine</td>
+                            <td class="old-stack">Python 3.11 + FastAPI + LangChain + Celery</td>
+                            <td class="highlight-col kash-stack">✓ Single pure-Go binary (~25MB)</td>
+                        </tr>
+                        <tr>
+                            <td class="dim-feature">Vector Database</td>
+                            <td class="old-stack">Pinecone / Weaviate / Qdrant ($$$ / month)</td>
+                            <td class="highlight-col kash-stack">✓ Embedded pure-Go <code>chromem-go</code></td>
+                        </tr>
+                        <tr>
+                            <td class="dim-feature">Knowledge Graph</td>
+                            <td class="old-stack">Neo4j cluster with Cypher queries &amp; JVM</td>
+                            <td class="highlight-col kash-stack">✓ Embedded pure-Go <code>cayley</code></td>
+                        </tr>
+                        <tr>
+                            <td class="dim-feature">Keyword Search</td>
+                            <td class="old-stack">Elasticsearch / OpenSearch cluster</td>
+                            <td class="highlight-col kash-stack">✓ Embedded pure-Go BM25 (<code>data/lexical.idx</code>)</td>
+                        </tr>
+                        <tr>
+                            <td class="dim-feature">Retrieval Fusion</td>
+                            <td class="old-stack">Vector only or ad-hoc custom python scripts</td>
+                            <td class="highlight-col kash-stack">✓ 4-route Reciprocal Rank Fusion (k=60)</td>
+                        </tr>
+                        <tr>
+                            <td class="dim-feature">Domain Adaptation</td>
+                            <td class="old-stack">Weeks of prompt tuning and hand-crafted regex</td>
+                            <td class="highlight-col kash-stack">✓ Auto-profiling (<code>data/domain.profile.json</code>)</td>
+                        </tr>
+                        <tr>
+                            <td class="dim-feature">Auditing &amp; Provenance</td>
+                            <td class="old-stack">None — hallucinated citations accepted blindly</td>
+                            <td class="highlight-col kash-stack">✓ End-to-end audit with <code>kash verify</code></td>
+                        </tr>
+                        <tr>
+                            <td class="dim-feature">Deployment Artifact</td>
+                            <td class="old-stack">Kubernetes Helm charts, 4 Docker images (>3GB)</td>
+                            <td class="highlight-col kash-stack">✓ One ~50MB Docker container</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ============================================================
+             SECTION 5: PROTOCOLS & EMBEDDED DASHBOARD
+             ============================================================ -->
+        <section class="content-section reveal-on-scroll" id="interfaces">
+            <div class="section-header">
+                <span class="section-tag">// Three Protocols &amp; UI</span>
+                <h2 class="section-title">One Port. All Interfaces.</h2>
+                <p class="section-desc">
+                    Serve queries to web apps, AI coding assistants, and multi-agent systems simultaneously on <code>:8000</code>. Plus an offline dashboard for live inspection.
+                </p>
+            </div>
+
+            <!-- Interface Navigation Tabs -->
+            <div class="interfaces-tabs-nav">
+                <button class="interface-tab-btn active" data-panel="panel-rest">
+                    <span>🌐</span>
+                    <span>REST API (OpenAI)</span>
+                </button>
+                <button class="interface-tab-btn" data-panel="panel-mcp">
+                    <span>🧩</span>
+                    <span>MCP Server (Cursor/Claude)</span>
+                </button>
+                <button class="interface-tab-btn" data-panel="panel-a2a">
+                    <span>🤝</span>
+                    <span>A2A Protocol</span>
+                </button>
+                <button class="interface-tab-btn" data-panel="panel-ui">
+                    <span>📊</span>
+                    <span>Embedded Dashboard</span>
+                </button>
+            </div>
+
+            <!-- Panel 1: REST API -->
+            <div class="interface-panel active" id="panel-rest">
+                <div class="interface-layout">
+                    <div class="interface-info">
+                        <h3>OpenAI Drop-In Compatible</h3>
+                        <p>
+                            Exposes <code>POST /v1/chat/completions</code>. Any tool, library, or WebUI that speaks OpenAI (Open WebUI, LibreChat, Vercel AI SDK, LangChain) works out of the box with your compiled brain.
+                        </p>
+                        <ul class="feature-bullets">
+                            <li>GraphRAG passages automatically injected into system context</li>
+                            <li>Supports <code>stream: true</code> SSE streaming</li>
+                            <li>Secured by optional <code>AGENT_API_KEY</code> Bearer token</li>
+                        </ul>
+                    </div>
+                    <div class="layer-code-preview">
+                        <div class="layer-code-header">
+                            <span>curl /v1/chat/completions</span>
+                            <span>REST</span>
+                        </div>
+                        <div class="layer-code-body">
+<pre><span class="term-prompt">$</span> curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AGENT_API_KEY" \
+  -d '{
+    "model": "kash-agent",
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is the core teaching of Dhāraṇā 49?"
+      }
+    ],
+    "stream": false
+  }'</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel 2: MCP Server -->
+            <div class="interface-panel" id="panel-mcp">
+                <div class="interface-layout">
+                    <div class="interface-info">
+                        <h3>Model Context Protocol (MCP)</h3>
+                        <p>
+                            Direct IDE and agent tool integration via <code>GET /mcp</code>. Connect Cursor, Claude Desktop, Windsurf, or custom agent swarms to your agent as a first-class knowledge tool.
+                        </p>
+                        <ul class="feature-bullets">
+                            <li>Exposes <code>query_knowledge</code> with automatic prompt descriptions</li>
+                            <li>SSE transport over HTTP on the same unified port</li>
+                            <li>Auto-updates tool schemas based on compiled corpus</li>
+                        </ul>
+                    </div>
+                    <div class="layer-code-preview">
+                        <div class="layer-code-header">
+                            <span>claude_desktop_config.json</span>
+                            <span>MCP Tool</span>
+                        </div>
+                        <div class="layer-code-body">
+<pre>{
+  "mcpServers": {
+    "kash-agent": {
+      "url": "http://localhost:8000/mcp"
     }
   }
 }</pre>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
 
-        <div id="tab-a2a" class="tab-panel">
-            <div class="code-block">
-<pre><span class="comment"># JSON-RPC for multi-agent frameworks (AutoGen, CrewAI)</span>
-
-<span class="fn">curl</span> http://localhost:8000/rpc/agent \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{
+            <!-- Panel 3: A2A Protocol -->
+            <div class="interface-panel" id="panel-a2a">
+                <div class="interface-layout">
+                    <div class="interface-info">
+                        <h3>Agent-to-Agent (A2A) RPC</h3>
+                        <p>
+                            Pure JSON-RPC 2.0 at <code>POST /rpc/agent</code>. Wire multiple specialized Kash containers together in AutoGen, CrewAI, or Swarm networks with structured queries and parameters.
+                        </p>
+                        <ul class="feature-bullets">
+                            <li>Structured parameters with top_k and graph depth overrides</li>
+                            <li>Machine-readable fact provenance and citations</li>
+                            <li>Standard JSON-RPC error codes and batching</li>
+                        </ul>
+                    </div>
+                    <div class="layer-code-preview">
+                        <div class="layer-code-header">
+                            <span>curl /rpc/agent</span>
+                            <span>JSON-RPC 2.0</span>
+                        </div>
+                        <div class="layer-code-body">
+<pre><span class="term-prompt">$</span> curl http://localhost:8000/rpc/agent \
+  -H "Content-Type: application/json" \
+  -d '{
     "jsonrpc": "2.0",
     "id": 1,
     "method": "agent.query",
-    "params": {"query": "What are the key architectural decisions?"}
-  }'</span></pre>
+    "params": {
+      "query": "Compare perspectives between chapter 3 and 7",
+      "top_k": 8
+    }
+  }'</pre>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
-    </section>
 
-    <!-- Use Cases -->
-    <section id="use-cases" class="reveal">
-        <span class="section-label">// Use Cases</span>
-        <h2 class="section-title">Build Anything</h2>
-        <p class="section-desc">
-            From personal study tools to enterprise knowledge agents.
-        </p>
+            <!-- Panel 4: Embedded Dashboard -->
+            <div class="interface-panel" id="panel-ui">
+                <div class="interface-layout">
+                    <div class="interface-info">
+                        <h3>Built-in Zero-CDN Dashboard</h3>
+                        <p>
+                            Navigate to <code>http://localhost:8000/</code> in your browser. The single-page dashboard is baked directly into the Go binary via <code>embed.FS</code>, working completely offline inside isolated VPCs.
+                        </p>
+                        <ul class="feature-bullets">
+                            <li><strong>Books View</strong>: Inspect indexed documents, chunks, and hashes</li>
+                            <li><strong>Knowledge Graph Explorer</strong>: Force-directed visualizer for entity chains</li>
+                            <li><strong>Retrieval Tester</strong>: Run queries and view raw fused rankings before generation</li>
+                        </ul>
+                    </div>
+                    <div class="layer-code-preview">
+                        <div class="layer-code-header">
+                            <span>GET / (Browser UI)</span>
+                            <span>Embedded HTML5</span>
+                        </div>
+                        <div class="layer-code-body">
+<pre><span class="term-comment">&lt;!-- Zero external CDN calls: 100% self-contained --&gt;</span>
+<span class="term-cmd">⚡ Dashboard Tabs:</span>
+  • 📚 Books (Manifest, chunk totals, status)
+  • 🕸️ Knowledge Graph (Interactive Canvas)
+  • 🔍 Retrieval Tester (Query breakdown)
 
-        <div class="usecases-grid">
-            <div class="usecase-card">
-                <div class="emoji">📖</div>
-                <h3>Expert Knowledge Agent</h3>
-                <p>Feed company docs, runbooks, or research papers. Every dev gets a domain expert on tap.</p>
+<span class="term-cyan">Open in browser: http://localhost:8000</span></pre>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="usecase-card">
-                <div class="emoji">🎓</div>
-                <h3>Study &amp; Exam Prep</h3>
-                <p>Compile textbooks into a Socratic tutor that quizzes you and explains concepts accurately.</p>
-            </div>
-            <div class="usecase-card">
-                <div class="emoji">🛠️</div>
-                <h3>Product Support Bot</h3>
-                <p>Turn API docs, changelogs, and FAQs into a support agent that plugs into any chat UI.</p>
-            </div>
-            <div class="usecase-card">
-                <div class="emoji">🤝</div>
-                <h3>Multi-Agent Teams</h3>
-                <p>Spin up specialized agents (legal, finance, eng) and wire them together via A2A protocol.</p>
-            </div>
-        </div>
-    </section>
+        </section>
 
-    <!-- Tech Stack -->
-    <section class="reveal">
-        <span class="section-label">// Built With</span>
-        <h2 class="section-title">100% Go-Native Stack</h2>
-        <p class="section-desc">
-            No external database servers. No Python runtime. Pure Go from CLI to serving.
-        </p>
+        <!-- ============================================================
+             SECTION 6: CLI DIRECTORY
+             ============================================================ */ -->
+        <section class="content-section reveal-on-scroll" id="cli">
+            <div class="section-header">
+                <span class="section-tag">// Command Line Interface</span>
+                <h2 class="section-title">The Complete Kash CLI Suite</h2>
+                <p class="section-desc">
+                    Seven focused commands to initialize, build, profile, audit, resolve, and deploy your intelligent agent containers.
+                </p>
+            </div>
 
-        <div class="stack-grid">
-            <div class="stack-item">
-                <div class="label">CLI</div>
-                <div class="tech">spf13/cobra</div>
-                <div class="purpose">Command framework</div>
-            </div>
-            <div class="stack-item">
-                <div class="label">Vectors</div>
-                <div class="tech">chromem-go</div>
-                <div class="purpose">Embedded vector store</div>
-            </div>
-            <div class="stack-item">
-                <div class="label">Graph</div>
-                <div class="tech">cayley</div>
-                <div class="purpose">Knowledge graph DB</div>
-            </div>
-            <div class="stack-item">
-                <div class="label">LLM</div>
-                <div class="tech">go-openai</div>
-                <div class="purpose">OpenAI-compatible client</div>
-            </div>
-            <div class="stack-item">
-                <div class="label">MCP</div>
-                <div class="tech">mcp-go</div>
-                <div class="purpose">IDE tool protocol</div>
-            </div>
-            <div class="stack-item">
-                <div class="label">Container</div>
-                <div class="tech">Docker</div>
-                <div class="purpose">Lightweight images</div>
-            </div>
-        </div>
-    </section>
+            <div class="cli-directory">
+                <!-- Command 1: init -->
+                <div class="cli-card">
+                    <div>
+                        <div class="cli-card-header">
+                            <span class="cli-command-title">kash init &lt;name&gt;</span>
+                            <span class="cli-badge">Scaffold</span>
+                        </div>
+                        <p>Scaffolds a new agent project with a minimal <code>agent.yaml</code> override file, <code>data/</code> folder, and optimized multi-arch <code>Dockerfile</code>.</p>
+                    </div>
+                    <div class="cli-flags-list">
+                        <span>Usage: <span class="flag">kash init my-agent</span></span>
+                    </div>
+                </div>
 
-    <!-- CTA -->
-    <section class="cta-section reveal">
-        <div class="cta-box">
-            <h2>Ready to Compile<br>Your First Agent?</h2>
-            <p>Get started in under 5 minutes. Ship an AI agent today.</p>
-            <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-bottom: 2rem;">
-                <a href="https://github.com/akashicode/kash" class="btn btn-primary">
-                    ⚡ View on GitHub
-                </a>
-                <a href="https://github.com/akashicode/kash#-quick-start" class="btn btn-secondary">
-                    📖 Read the Docs
-                </a>
-            </div>
-            <div class="cta-install">
-                go install github.com/akashicode/kash/cmd/kash@latest
-            </div>
-        </div>
-    </section>
+                <!-- Command 2: build -->
+                <div class="cli-card">
+                    <div>
+                        <div class="cli-card-header">
+                            <span class="cli-command-title">kash build</span>
+                            <span class="cli-badge">Compiler</span>
+                        </div>
+                        <p>Measures corpus, extracts triples, builds vector store and BM25 index. Fully incremental &amp; resumable via <code>build.manifest.json</code>.</p>
+                    </div>
+                    <div class="cli-flags-list">
+                        <div><span class="flag">--rebuild</span> : Discard DBs, rebuild from scratch</div>
+                        <div><span class="flag">--prune</span> : Remove deleted documents</div>
+                        <div><span class="flag">--refresh-profile</span> : Re-derive corpus profile</div>
+                    </div>
+                </div>
 
-    <!-- Footer -->
-    <footer>
+                <!-- Command 3: profile -->
+                <div class="cli-card">
+                    <div>
+                        <div class="cli-card-header">
+                            <span class="cli-command-title">kash profile</span>
+                            <span class="cli-badge">Inspection</span>
+                        </div>
+                        <p>Inspects the derived domain profile, evidence behind each measurement, and active overrides in <code>agent.yaml</code>.</p>
+                    </div>
+                    <div class="cli-flags-list">
+                        <div><span class="flag">--dry-run</span> : Print without writing to disk</div>
+                        <div><span class="flag">--refresh</span> : Re-derive over existing profile</div>
+                        <div><span class="flag">--no-llm</span> : Lexical &amp; regex measurements only</div>
+                    </div>
+                </div>
+
+                <!-- Command 4: verify -->
+                <div class="cli-card">
+                    <div>
+                        <div class="cli-card-header">
+                            <span class="cli-command-title">kash verify</span>
+                            <span class="cli-badge">Audit</span>
+                        </div>
+                        <p>Audits provenance chain from graph facts back to text passages. Reports the percentage of facts verified to reader-visible sources.</p>
+                    </div>
+                    <div class="cli-flags-list">
+                        <div><span class="flag">--show &lt;N&gt;</span> : Examples to print per finding</div>
+                        <div><span class="flag">--sample &lt;N&gt;</span> : Audit sample limit (0 = all)</div>
+                    </div>
+                </div>
+
+                <!-- Command 5: resolve-entities -->
+                <div class="cli-card">
+                    <div>
+                        <div class="cli-card-header">
+                            <span class="cli-command-title">kash resolve-entities</span>
+                            <span class="cli-badge">Graph Linker</span>
+                        </div>
+                        <p>Clusters spelling variants (diacritics, honorifics, stem vowels) to connect graph paths across transliterations.</p>
+                    </div>
+                    <div class="cli-flags-list">
+                        <div><span class="flag">--llm</span> : LLM adjudication for edge cases</div>
+                        <div><span class="flag">--min-degree &lt;N&gt;</span> : Minimum connection threshold</div>
+                        <div><span class="flag">--show-all</span> : List every clustered alias</div>
+                    </div>
+                </div>
+
+                <!-- Command 6: serve -->
+                <div class="cli-card">
+                    <div>
+                        <div class="cli-card-header">
+                            <span class="cli-command-title">kash serve</span>
+                            <span class="cli-badge">Runtime</span>
+                        </div>
+                        <p>Starts unified HTTP serving: OpenAI REST API, MCP tool protocol, A2A JSON-RPC, and embedded web dashboard.</p>
+                    </div>
+                    <div class="cli-flags-list">
+                        <div><span class="flag">--dir &lt;path&gt;</span> : Agent directory (default: .)</div>
+                        <div><span class="flag">--agent &lt;path&gt;</span> : agent.yaml location</div>
+                    </div>
+                </div>
+
+                <!-- Command 7: version -->
+                <div class="cli-card">
+                    <div>
+                        <div class="cli-card-header">
+                            <span class="cli-command-title">kash version</span>
+                            <span class="cli-badge">Info</span>
+                        </div>
+                        <p>Displays the current semantic version, git commit hash, and compiler build timestamp.</p>
+                    </div>
+                    <div class="cli-flags-list">
+                        <span>Usage: <span class="flag">kash version</span></span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================================
+             SECTION 7: CTA
+             ============================================================ -->
+        <section class="content-section" style="padding-top: 2rem;">
+            <div class="cta-banner reveal-on-scroll">
+                <h2>Ready to Ship Pure-Go AI Brains?</h2>
+                <p>
+                    Build your first knowledge agent in minutes. Zero cloud vector database bills. Zero multi-container headache.
+                </p>
+
+                <div class="install-box">
+                    <span style="color: var(--emerald);">$</span>
+                    <span id="installCmd">go install github.com/akashicode/kash/cmd/kash@latest</span>
+                    <button class="copy-icon-btn" id="copyInstallBtn" title="Copy command" aria-label="Copy install command">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    </button>
+                </div>
+
+                <div style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                    <a href="https://github.com/akashicode/kash" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
+                        <span>Explore on GitHub</span>
+                        <span>↗</span>
+                    </a>
+                    <a href="https://github.com/akashicode/kash/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+                        <span>Read v2.0 Changelog</span>
+                    </a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Site Footer -->
+    <footer class="site-footer">
         <div class="footer-inner">
-            <div class="footer-links">
-                <a href="https://github.com/akashicode/kash">GitHub</a>
-                <a href="https://github.com/akashicode/kash#-quick-start">Docs</a>
-                <a href="https://github.com/akashicode/kash/issues">Issues</a>
-                <a href="https://github.com/akashicode/kash/blob/main/LICENSE">MIT License</a>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <span style="font-size: 1.3rem;">⚡</span>
+                <span style="font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; color: #fff;">Kash</span>
+                <span style="color: var(--text-dim); font-size: 0.85rem;">— Cache your knowledge. Channel the Akashic.</span>
             </div>
-            <p class="footer-copy">
-                Built with ❤️ in Go. &copy; 2025 Kash Contributors.
-            </p>
+
+            <ul class="footer-links">
+                <li><a href="https://github.com/akashicode/kash" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+                <li><a href="https://github.com/akashicode/kash/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Changelog</a></li>
+                <li><a href="https://github.com/akashicode/kash/issues" target="_blank" rel="noopener noreferrer">Issues</a></li>
+                <li><a href="https://github.com/akashicode/kash/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a></li>
+            </ul>
+
+            <div class="footer-copy">
+                &copy; 2026 Akashic Labs &middot; Open-source under MIT License.
+            </div>
         </div>
     </footer>
 
-    <!-- Scripts -->
+    <!-- Interactive Vanilla Logic -->
     <script>
-        // Intersection Observer for reveal animations
+        // -------------------------------------------------------------
+        // 1. Mobile Menu Toggle
+        // -------------------------------------------------------------
+        const mobileToggle = document.getElementById('mobileToggle');
+        const navMenu = document.getElementById('navMenu');
+        if (mobileToggle && navMenu) {
+            mobileToggle.addEventListener('click', () => {
+                navMenu.classList.toggle('mobile-open');
+            });
+            // Close when clicking nav links
+            navMenu.querySelectorAll('a').forEach(link => {
+                link.addEventListener('click', () => {
+                    navMenu.classList.remove('mobile-open');
+                });
+            });
+        }
+
+        // -------------------------------------------------------------
+        // 2. Terminal Tabs & Copy Logic
+        // -------------------------------------------------------------
+        const tTabs = document.querySelectorAll('.t-tab');
+        const tPanes = document.querySelectorAll('.t-pane');
+        const copyTermBtn = document.getElementById('copyTermBtn');
+
+        tTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tTabs.forEach(t => t.classList.remove('active'));
+                tPanes.forEach(p => p.classList.remove('active'));
+                tab.classList.add('active');
+                const targetId = tab.getAttribute('data-target');
+                const pane = document.getElementById(targetId);
+                if (pane) pane.classList.add('active');
+            });
+        });
+
+        if (copyTermBtn) {
+            copyTermBtn.addEventListener('click', () => {
+                const activePane = document.querySelector('.t-pane.active');
+                if (activePane) {
+                    const text = activePane.innerText.replace(/^\$ /gm, '');
+                    navigator.clipboard.writeText(text).then(() => {
+                        const originalHtml = copyTermBtn.innerHTML;
+                        copyTermBtn.innerHTML = '<span>✓ Copied!</span>';
+                        copyTermBtn.style.color = '#34d399';
+                        setTimeout(() => {
+                            copyTermBtn.innerHTML = originalHtml;
+                            copyTermBtn.style.color = '';
+                        }, 2000);
+                    });
+                }
+            });
+        }
+
+        // -------------------------------------------------------------
+        // 3. Retrieval Simulator Presets
+        // -------------------------------------------------------------
+        const presetData = {
+            semantic: {
+                query: '"techniques for stilling the wandering mind"',
+                decomp: '✂️ Decompose: entities=[], concepts=["stilling", "mind", "dhyana"]',
+                vector: { score: '95%', verdict: 'Finds deep contextual meaning even when source documents use entirely different vocabulary.', snippet: 'Match: "dissolution of mental modifications in prana..."', active: true },
+                bm25: { score: '45%', verdict: 'Catches rare technical nouns, identifiers, and terms that vector models smooth away.', snippet: 'Match: "stilling", "mind" (freq: 12)', active: false },
+                exact: { score: '0%', verdict: 'Detects structural numbering patterns mined from your documents ("Dhāraṇā 49", "Clause 4.2").', snippet: 'No explicit verse/clause identified in query', active: false },
+                graph: { score: '60%', verdict: 'Traverses relations 1-2 hops away and resolves directly to the source passage chunks.', snippet: 'Entity hit: "citta-vṛtti" ↳ resolved to 3 chunks', active: false },
+                recall: 'Recall@5: 1.00',
+                sub: 'vs 0.40 on Vector-Only RAG'
+            },
+            exact: {
+                query: '"What does Dhāraṇā 49 teach regarding breath?"',
+                decomp: '✂️ Decompose: entities=["Dhāraṇā 49"], concepts=["breath", "kumbhaka"]',
+                vector: { score: '65%', verdict: 'Matches general breath awareness concepts and meditation texts.', snippet: 'Match: "exhalation and inhalation pause awareness..."', active: false },
+                bm25: { score: '85%', verdict: 'Strong lexical frequency for "Dhāraṇā" and "breath" across indexes.', snippet: 'Match: "Dhāraṇā 49" exact token in 4 passages', active: false },
+                exact: { score: '100%', verdict: '⚡ Exact structural rule matched: [Vigyāna Bhairava Tantra > Dhāraṇā 49]. Instant direct chunk hit!', snippet: 'Target: chunk #tantra_md_49 pinned to top candidate', active: true },
+                graph: { score: '70%', verdict: 'Extracts connected facts for Dhāraṇā 49 and links to commentary passage.', snippet: 'Triple: Dhāraṇā 49 teaches breath retention', active: false },
+                recall: 'Recall@5: 1.00',
+                sub: 'Zero hallucinated verse references'
+            },
+            graph: {
+                query: '"How does Abhinavagupta connect to the Trika tradition?"',
+                decomp: '✂️ Decompose: entities=["Abhinavagupta", "Trika"], concepts=["tradition", "lineage"]',
+                vector: { score: '70%', verdict: 'Embeddings match historical and philosophical passages.', snippet: 'Match: "Kashmirian non-dual philosophy masters..."', active: false },
+                bm25: { score: '60%', verdict: 'Matches entity names across multiple document headers.', snippet: 'Match: "Abhinavagupta", "Trika" exact tokens', active: false },
+                exact: { score: '0%', verdict: 'No numbered verse/clause specified in the query.', snippet: 'Bypassed', active: false },
+                graph: { score: '100%', verdict: '🕸️ Multi-hop traversal: Abhinavagupta commented_on Tantrāloka ↳ Tantrāloka is_part_of Trika. Resolves to 2 passages!', snippet: 'Weight boost applied: co-occurrence count = 4', active: true },
+                recall: 'Recall@5: 1.00',
+                sub: 'Multi-hop relationship resolved to chunk citations'
+            }
+        };
+
+        const presetButtons = document.querySelectorAll('.query-preset-btn');
+        const queryStrEl = document.getElementById('activeQueryStr');
+        const queryDecompEl = document.getElementById('activeQueryDecomp');
+
+        const scoreBarVector = document.getElementById('scoreBarVector');
+        const verdictVector = document.getElementById('verdictVector');
+        const snippetVector = document.getElementById('snippetVector');
+        const routeColVector = document.getElementById('routeColVector');
+
+        const scoreBarBM25 = document.getElementById('scoreBarBM25');
+        const verdictBM25 = document.getElementById('verdictBM25');
+        const snippetBM25 = document.getElementById('snippetBM25');
+        const routeColBM25 = document.getElementById('routeColBM25');
+
+        const scoreBarExact = document.getElementById('scoreBarExact');
+        const verdictExact = document.getElementById('verdictExact');
+        const snippetExact = document.getElementById('snippetExact');
+        const routeColExact = document.getElementById('routeColExact');
+
+        const scoreBarGraph = document.getElementById('scoreBarGraph');
+        const verdictGraph = document.getElementById('verdictGraph');
+        const snippetGraph = document.getElementById('snippetGraph');
+        const routeColGraph = document.getElementById('routeColGraph');
+
+        const fusionRecallVal = document.getElementById('fusionRecallVal');
+
+        presetButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                presetButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                const key = btn.getAttribute('data-preset');
+                const data = presetData[key];
+                if (!data) return;
+
+                queryStrEl.textContent = data.query;
+                queryDecompEl.textContent = data.decomp;
+
+                // Update Vector
+                scoreBarVector.style.width = data.vector.score;
+                verdictVector.textContent = data.vector.verdict;
+                snippetVector.textContent = data.vector.snippet;
+                routeColVector.classList.toggle('highlighted', data.vector.active);
+
+                // Update BM25
+                scoreBarBM25.style.width = data.bm25.score;
+                verdictBM25.textContent = data.bm25.verdict;
+                snippetBM25.textContent = data.bm25.snippet;
+                routeColBM25.classList.toggle('highlighted', data.bm25.active);
+
+                // Update Exact
+                scoreBarExact.style.width = data.exact.score;
+                verdictExact.textContent = data.exact.verdict;
+                snippetExact.textContent = data.exact.snippet;
+                routeColExact.classList.toggle('highlighted', data.exact.active);
+
+                // Update Graph
+                scoreBarGraph.style.width = data.graph.score;
+                verdictGraph.textContent = data.graph.verdict;
+                snippetGraph.textContent = data.graph.snippet;
+                routeColGraph.classList.toggle('highlighted', data.graph.active);
+
+                // Update Fusion
+                fusionRecallVal.textContent = data.recall;
+            });
+        });
+
+        // -------------------------------------------------------------
+        // 4. Domain Layering Preview
+        // -------------------------------------------------------------
+        const layerCards = document.querySelectorAll('.layer-card');
+        const layerFilename = document.getElementById('layerFilename');
+        const layerCodeContent = document.getElementById('layerCodeContent');
+
+        const layerContentData = {
+            'layer-defaults': {
+                filename: 'internal/config/defaults.go',
+                code: `<pre>// Layer 1: Compiled Built-in Defaults
+DefaultConfig = DomainConfig{
+    Diacritics:       "none",
+    StripFinalVowel:  false,
+    TopK:             5,
+    GraphFacts:       10,
+    GleanRounds:      1,
+    CandidateDepth:   "auto", // top_k * 20 (min 200, max 2000)
+    RerankTopN:       100,    // Cohere-compatible bounded cascade
+}</pre>`
+            },
+            'layer-profile': {
+                filename: 'data/domain.profile.json',
+                code: `<pre>{
+  "diacritics": {
+    "mode": "iast",
+    "evidence": "3,597,866 marks in 56/60 docs"
+  },
+  "stemming": {
+    "strip_final_vowel": true,
+    "pairs_found": 1566
+  },
+  "structural_references": [
+    { "prefix": "dhāraṇā", "hits": 105, "sequence": 0.97 },
+    { "prefix": "śloka", "hits": 3209, "sequence": 0.67 },
+    { "prefix": "verse", "hits": 840, "sequence": 0.95 }
+  ],
+  "extraction_vocabulary": {
+    "predicates": ["authored", "commented_on", "teaches", "derived_from", "opposes"],
+    "honorifics": ["śrī ", "svāmī ", "ācārya "]
+  }
+}</pre>`
+            },
+            'layer-override': {
+                filename: 'agent.yaml',
+                code: `<pre>agent:
+  name: "my-expert"
+  system_prompt: |
+    You are an authoritative research assistant specializing in...
+
+retrieval:
+  top_k: 8
+  graph_facts: 12
+
+# Optional overrides: only set when you want to customize!
+# Setting a list replaces the derived profile (never merges)
+runtime:
+  llm:
+    reasoning_effort: medium # low | medium | high</pre>`
+            }
+        };
+
+        layerCards.forEach(card => {
+            card.addEventListener('click', () => {
+                layerCards.forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+
+                const key = card.getAttribute('data-layer');
+                const info = layerContentData[key];
+                if (info) {
+                    layerFilename.textContent = info.filename;
+                    layerCodeContent.innerHTML = info.code;
+                }
+            });
+        });
+
+        // -------------------------------------------------------------
+        // 5. Interface Protocol Switching
+        // -------------------------------------------------------------
+        const interfaceBtns = document.querySelectorAll('.interface-tab-btn');
+        const interfacePanels = document.querySelectorAll('.interface-panel');
+
+        interfaceBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                interfaceBtns.forEach(b => b.classList.remove('active'));
+                interfacePanels.forEach(p => p.classList.remove('active'));
+
+                btn.classList.add('active');
+                const targetId = btn.getAttribute('data-panel');
+                const panel = document.getElementById(targetId);
+                if (panel) panel.classList.add('active');
+            });
+        });
+
+        // -------------------------------------------------------------
+        // 6. Install Command Copy Button
+        // -------------------------------------------------------------
+        const copyInstallBtn = document.getElementById('copyInstallBtn');
+        const installCmd = document.getElementById('installCmd');
+        if (copyInstallBtn && installCmd) {
+            copyInstallBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(installCmd.innerText).then(() => {
+                    const origSvg = copyInstallBtn.innerHTML;
+                    copyInstallBtn.innerHTML = '<span style="color: #34d399; font-size: 0.75rem; font-weight: bold;">✓ Copied</span>';
+                    setTimeout(() => {
+                        copyInstallBtn.innerHTML = origSvg;
+                    }, 2000);
+                });
+            });
+        }
+
+        // -------------------------------------------------------------
+        // 7. Scroll Reveal Animations (Intersection Observer)
+        // -------------------------------------------------------------
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
                     entry.target.classList.add('visible');
                 }
             });
-        }, { threshold: 0.1 });
+        }, { threshold: 0.08 });
 
-        document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
-
-        // Tab switching
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-                btn.classList.add('active');
-                document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-            });
-        });
-
-        // Smooth scroll for nav links
-        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-            anchor.addEventListener('click', function(e) {
-                e.preventDefault();
-                const target = document.querySelector(this.getAttribute('href'));
-                if (target) {
-                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-            });
-        });
+        document.querySelectorAll('.reveal-on-scroll').forEach(el => observer.observe(el));
     </script>
 </body>
 </html>
