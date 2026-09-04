@@ -13,6 +13,8 @@ those are called out under **Requires rebuild**.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-04
+
 ### Added
 
 - **Corpus profile.** `kash build` now measures your documents and writes
@@ -66,7 +68,22 @@ those are called out under **Requires rebuild**.
   surface above those extracted from a single passage. Corpora built before this
   change degrade gracefully: a missing `weight` key is treated as `w = 1` (uniform
   factor, relative order unchanged). A rebuild is not required but will stamp
-  weights on an existing corpus.
+  weights on an existing corpus. The boost reads the weight of every candidate
+  fact from the graph index, not only of the handful the relationship vector
+  store returns, so it reaches the whole result set rather than its first rows.
+- **Gleaning (iterative extraction).** Extraction now performs iterative follow-up
+  passes per passage batch to recover facts the model missed due to token limits
+  or lost attention on dense passages. Each gleaning pass appends the model's
+  previous extraction as an assistant message and sends a continuation prompt
+  requesting any explicitly stated facts not yet captured, deduplicating newly
+  returned triples against existing extractions. Configured via `extraction.glean_rounds`
+  (default: 1 in `DomainConfig`, layered via `defaults < profile < agent.yaml`),
+  with early exit whenever a pass yields no new unique triples or an empty array.
+  Setting `glean_rounds: 0` disables gleaning for single-pass extraction.
+  Budget for it: a round that finds something costs a second model call for that
+  batch, so a dense corpus approaches double the extraction calls of a single
+  pass. The early exit keeps that cost proportional to what is actually
+  recovered.
 
 ### Fixed
 
@@ -181,10 +198,11 @@ the vector and lexical indexes disagreeing about the same chunk.
 Existing Docker projects should replace the per-file `COPY` lines in their
 Dockerfile with `COPY data/ /app/data/`; `kash build` warns when this applies.
 
-Two graph changes are softer: a rebuild re-extracts under the per-passage
-triple budget and writes entity-level chunk provenance. Neither is required —
-an existing graph stays correct, just sparser, and entities without
-provenance read as having none rather than failing.
+Several graph changes are softer. A rebuild re-extracts under the per-passage
+triple budget and with gleaning, writes entity-level chunk provenance, and
+stamps relationship weights. None of it is required — an existing graph stays
+correct, just sparser and less traceable, and absent provenance or weights read
+as unknown rather than failing.
 
 ## [1.0.0]
 
@@ -201,6 +219,7 @@ provenance read as having none rather than failing.
   into chromem-go, LLM triple extraction into cayley, and the REST, MCP and A2A
   interfaces.
 
-[Unreleased]: https://github.com/akashicode/kash/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/akashicode/kash/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/akashicode/kash/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/akashicode/kash/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/akashicode/kash/releases/tag/v0.1.0
