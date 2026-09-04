@@ -324,3 +324,74 @@ func TestRelationshipsReopenPreserves(t *testing.T) {
 	require.Len(t, results, 1)
 	assert.Equal(t, "Kundalini", results[0].Subject)
 }
+
+// The entity end of the provenance chain has to survive a round trip through
+// the store, or a semantic hit on a generated description has no way back to
+// the passage behind it.
+func TestEntityChunkProvenanceRoundTrips(t *testing.T) {
+	srv := stubEmbedder(t)
+	cfg := &config.ProviderConfig{BaseURL: srv.URL, APIKey: "test", Model: "test-embed"}
+	s, err := NewPersistentStore(t.TempDir(), cfg)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	require.NoError(t, s.AddEntityDescriptions(ctx, []EntityDesc{{
+		Name:        "Abhinavagupta",
+		Description: "A Kashmiri philosopher.",
+		Degree:      4,
+		ChunkIDs:    []string{"tantra_md_4", "tantra_md_9"},
+	}}))
+
+	out, err := s.QueryEntities(ctx, "Kashmiri philosopher", 3)
+	require.NoError(t, err)
+	require.NotEmpty(t, out)
+	assert.Equal(t, []string{"tantra_md_4", "tantra_md_9"}, out[0].ChunkIDs)
+}
+
+// An entity collection built before provenance existed has no chunk_ids key.
+// That must decode as no provenance rather than failing the query.
+func TestEntityWithoutChunkProvenanceStillQueries(t *testing.T) {
+	srv := stubEmbedder(t)
+	cfg := &config.ProviderConfig{BaseURL: srv.URL, APIKey: "test", Model: "test-embed"}
+	s, err := NewPersistentStore(t.TempDir(), cfg)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	require.NoError(t, s.AddEntityDescriptions(ctx, []EntityDesc{{
+		Name:        "Gorakhnath",
+		Description: "Founder of the Nath tradition.",
+	}}))
+
+	out, err := s.QueryEntities(ctx, "Nath tradition founder", 3)
+	require.NoError(t, err)
+	require.NotEmpty(t, out)
+	assert.Empty(t, out[0].ChunkIDs)
+}
+
+// chromem-go errors when nResults exceeds the collection size rather than
+// returning what it has, and the two graph routes asked for five of each
+// unconditionally. On a small corpus both failures are swallowed as non-fatal,
+// so entity and relationship retrieval went quiet with only a warning.
+func TestQueriesClampToASmallCollection(t *testing.T) {
+	srv := stubEmbedder(t)
+	cfg := &config.ProviderConfig{BaseURL: srv.URL, APIKey: "test", Model: "test-embed"}
+	s, err := NewPersistentStore(t.TempDir(), cfg)
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	require.NoError(t, s.AddEntityDescriptions(ctx, []EntityDesc{
+		{Name: "Shiva", Description: "A deity."},
+	}))
+	require.NoError(t, s.AddRelationships(ctx, []RelationshipDoc{
+		{Subject: "Shiva", Predicate: "manifests as", Object: "Bhairava", Description: "A form."},
+	}))
+
+	// Both routes ask for 5 against collections holding 1.
+	ents, err := s.QueryEntities(ctx, "deity", 5)
+	require.NoError(t, err, "an entity query must not fail on a small corpus")
+	assert.Len(t, ents, 1)
+
+	rels, err := s.QueryRelationships(ctx, "form of Shiva", 5)
+	require.NoError(t, err, "a relationship query must not fail on a small corpus")
+	assert.Len(t, rels, 1)
+}

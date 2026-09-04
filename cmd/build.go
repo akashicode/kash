@@ -715,6 +715,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 						Description: desc,
 						Degree:      ef.Degree,
 						Aliases:     ef.Aliases,
+						ChunkIDs:    ef.ChunkIDs,
 					})
 				}
 			}

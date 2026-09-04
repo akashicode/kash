@@ -36,9 +36,13 @@ those are called out under **Requires rebuild**.
   embedded into their own collections, so the knowledge graph can be reached by
   meaning rather than only by exact token overlap. Entity hits seed graph
   traversal.
-- **Chunk-level provenance.** Graph facts record the chunk they came from, not
-  just the document, so a fact can cite the passage supporting it and graph hits
-  can fuse with vector hits by chunk.
+- **Chunk-level provenance, end to end.** Every graph fact records the chunk it
+  was extracted from, and entities carry the passages their facts came from.
+  At query time all three graph routes — traversal, the entity vector store
+  and the relationship vector store — return chunk ids, and those passages are
+  fetched and fused with vector hits. A semantic match on a generated
+  description therefore arrives with the source text behind it, rather than a
+  synthesis the reader cannot check.
 - **Query decomposition** splits a question into specific entities and broad
   concepts to seed graph search, with a short-query bypass and an LRU cache so
   most queries cost no extra model call.
@@ -110,6 +114,11 @@ those are called out under **Requires rebuild**.
   whose supporting chunk was not retrieved printed "chunk: tantra_md_312" —
   a string that looks like a reference to a model instructed to cite inline,
   and that no reader can look up. Such a fact now cites its document alone.
+- **Entity and relationship search failed outright on a small corpus.** Both
+  asked for five results unconditionally, and the vector store errors when
+  that exceeds the collection size instead of returning what it has. Both
+  failures are non-fatal, so the dense graph routes went quiet with only a
+  warning. Result counts are now clamped to the collection.
 - **The citation instruction under-used what retrieval provides.** It asked
   only for a filename, while every passage carries a number and a structural
   location (book, chapter, verse). It now asks for both.

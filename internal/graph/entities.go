@@ -14,7 +14,21 @@ type EntityFacts struct {
 	Aliases []string `json:"aliases,omitempty"`
 	Degree  int      `json:"degree"`
 	Facts   []string `json:"facts"`
+	// ChunkIDs are the passages the entity's facts were extracted from.
+	//
+	// This is the entity end of the provenance chain. A description is
+	// synthesised from facts and says nothing a reader can check; these are the
+	// passages that actually mention the entity, so a semantic hit on the
+	// description can pull the supporting text in with it.
+	ChunkIDs []string `json:"chunk_ids,omitempty"`
 }
+
+// maxChunkIDsPerEntity caps how much provenance one entity carries.
+//
+// A well-connected entity appears in hundreds of chunks and listing them all
+// would swamp retrieval with weak signal — the point is to reach the passages
+// that best support the entity, not every passage that mentions it.
+const maxChunkIDsPerEntity = 8
 
 // EntityFacts extracts unique entities and their associated facts from the graph.
 // Only entities with degree >= minDegree are returned.
@@ -56,12 +70,19 @@ func (db *DB) EntityFacts(ctx context.Context, minDegree int) []EntityFacts {
 		surfaceCounts := map[string]int{}
 		seenFacts := map[string]bool{}
 		var facts []string
+		seenChunks := map[string]bool{}
+		var chunkIDs []string
 
 		for _, i := range indices {
 			if i < 0 || i >= len(snap.triples) {
 				continue
 			}
 			t := snap.triples[i]
+
+			if t.ChunkID != "" && !seenChunks[t.ChunkID] && len(chunkIDs) < maxChunkIDsPerEntity {
+				seenChunks[t.ChunkID] = true
+				chunkIDs = append(chunkIDs, t.ChunkID)
+			}
 
 			subjKey := key
 			objKey := key
@@ -125,10 +146,11 @@ func (db *DB) EntityFacts(ctx context.Context, minDegree int) []EntityFacts {
 		}
 
 		out = append(out, EntityFacts{
-			Name:    displayName,
-			Aliases: entAliases,
-			Degree:  len(indices),
-			Facts:   facts,
+			Name:     displayName,
+			Aliases:  entAliases,
+			Degree:   len(indices),
+			Facts:    facts,
+			ChunkIDs: chunkIDs,
 		})
 	}
 

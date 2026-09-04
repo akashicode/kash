@@ -480,6 +480,22 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 		}
 	}
 
+	// Both dense routes above found something by meaning, in text a model wrote
+	// at build time: an entity description, or a relationship description.
+	// Neither is quotable. Their chunk IDs are the way back to the passage that
+	// produced them, and collecting them here is what completes the chain
+	// entity/relationship -> chunk id -> raw passage text. Without this the
+	// answer gets a synthesis with nothing behind it unless graph traversal
+	// happens to rediscover the same chunk.
+	var provenanceIDs []string
+	seenProv := map[string]bool{}
+	addProvenance := func(id string) {
+		if id != "" && !seenProv[id] {
+			seenProv[id] = true
+			provenanceIDs = append(provenanceIDs, id)
+		}
+	}
+
 	var seedTriples []graph.Triple
 	for _, r := range relResults {
 		if r.Similarity > 0.4 {
@@ -488,6 +504,22 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 				Predicate: r.Predicate,
 				Object:    r.Object,
 			})
+			addProvenance(r.ChunkID)
+		}
+	}
+
+	// An entity carries several passages and is a weaker signal than a
+	// relationship, which names the fact itself — so entity provenance goes in
+	// behind it, and only for entities the dense search actually liked.
+	for _, e := range entityResults {
+		if e.Similarity <= 0.4 {
+			continue
+		}
+		for i, id := range e.ChunkIDs {
+			if i >= maxEntityProvenanceChunks {
+				break
+			}
+			addProvenance(id)
 		}
 	}
 
@@ -497,7 +529,6 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 	// Routes 2, 3 and 4: BM25, exact structural lookup, and knowledge-graph passage hits.
 	lexIDs, exact := lexicalRoutes(s.lexicalIndex, s.fusionCfg.router, query, candidateK)
 
-	var graphIDs []string
 	var graphCandidates []graph.SearchResult
 	if s.graphDB != nil && s.graphDB.Count() > 0 {
 		var graphQueryParts []string
@@ -513,18 +544,14 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 		if err != nil {
 			s.log.Warn("graph search failed (non-fatal)", "error", err, "query", graphQuery)
 		} else {
-			seenGraphChunk := map[string]bool{}
 			for _, f := range graphCandidates {
-				if f.ChunkID != "" && !seenGraphChunk[f.ChunkID] {
-					seenGraphChunk[f.ChunkID] = true
-					graphIDs = append(graphIDs, f.ChunkID)
-				}
+				addProvenance(f.ChunkID)
 			}
 		}
 	}
 
 	s.log.Info("routes completed", "query", query,
-		"vector", len(vectorResults), "lexical", len(lexIDs), "exact", len(exact), "graph_chunks", len(graphIDs),
+		"vector", len(vectorResults), "lexical", len(lexIDs), "exact", len(exact), "graph_chunks", len(provenanceIDs),
 		"entities", len(entityResults), "relationships", len(relResults),
 		"decomp_entities", len(dq.SpecificEntities), "decomp_concepts", len(dq.BroadConcepts))
 
@@ -542,8 +569,8 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 	if len(exact) > 0 {
 		lists["exact"] = exact
 	}
-	if len(graphIDs) > 0 {
-		lists["graph"] = graphIDs
+	if len(provenanceIDs) > 0 {
+		lists["graph"] = provenanceIDs
 	}
 
 	cands := fuseRankLists(lists)
@@ -619,6 +646,11 @@ func candidateDepth(topK, corpusSize int) int {
 const (
 	minCandidateDepth = 200
 	maxCandidateDepth = 2000
+
+	// maxEntityProvenanceChunks bounds how many passages one matched entity
+	// pulls into the fusion. A well-connected entity appears everywhere, so
+	// taking all of its chunks would drown the route it shares with graph facts.
+	maxEntityProvenanceChunks = 3
 )
 
 // maxRerankCandidates bounds how many chunks go to the reranker in one request.

@@ -53,6 +53,9 @@ type EntityDesc struct {
 	Description string   `json:"description"`
 	Degree      int      `json:"degree,omitempty"`
 	Aliases     []string `json:"aliases,omitempty"`
+	// ChunkIDs are the passages this entity's facts came from, carried so a
+	// semantic hit on a generated description can reach the text behind it.
+	ChunkIDs []string `json:"chunk_ids,omitempty"`
 }
 
 // EntitySearchResult represents a single result from an entity vector search.
@@ -62,6 +65,7 @@ type EntitySearchResult struct {
 	Similarity  float32           `json:"similarity"`
 	Degree      int               `json:"degree,omitempty"`
 	Aliases     []string          `json:"aliases,omitempty"`
+	ChunkIDs    []string          `json:"chunk_ids,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
@@ -281,13 +285,32 @@ func isRateLimitError(err error) bool {
 	return strings.Contains(msg, "429") || strings.Contains(msg, "Too Many Requests") || strings.Contains(msg, "rate limit")
 }
 
+// clampTopK bounds a requested result count to what a collection holds.
+//
+// chromem-go returns an error when nResults exceeds the document count rather
+// than returning what it has. Every caller would otherwise have to know the
+// collection size, and the two graph routes did not: they asked for 5 entities
+// and 5 relationships unconditionally, so on a corpus with fewer than five of
+// either the query failed. Both failures are caught as non-fatal and logged as
+// warnings, so the dense graph routes simply went quiet on a small corpus.
+func clampTopK(topK, count int) int {
+	if topK <= 0 {
+		topK = 5
+	}
+	if topK > count {
+		topK = count
+	}
+	return topK
+}
+
 // Query performs a semantic similarity search against the vector store.
 func (s *Store) Query(ctx context.Context, query string, topK int) ([]SearchResult, error) {
 	if query == "" {
 		return nil, errors.New("query cannot be empty")
 	}
-	if topK <= 0 {
-		topK = 5
+	topK = clampTopK(topK, s.collection.Count())
+	if topK == 0 {
+		return nil, nil
 	}
 
 	results, err := s.collection.Query(ctx, query, topK, nil, nil)
@@ -365,6 +388,9 @@ func (s *Store) AddEntityDescriptions(ctx context.Context, entities []EntityDesc
 		if len(e.Aliases) > 0 {
 			meta["aliases"] = strings.Join(e.Aliases, ", ")
 		}
+		if len(e.ChunkIDs) > 0 {
+			meta["chunk_ids"] = strings.Join(e.ChunkIDs, ",")
+		}
 
 		docs[i] = chromem.Document{
 			ID:       "entity:" + e.Name,
@@ -384,12 +410,10 @@ func (s *Store) QueryEntities(ctx context.Context, query string, topK int) ([]En
 	if query == "" {
 		return nil, errors.New("query cannot be empty")
 	}
-	if topK <= 0 {
-		topK = 5
-	}
 	if s.entitiesCollection == nil || s.entitiesCollection.Count() == 0 {
 		return nil, nil
 	}
+	topK = clampTopK(topK, s.entitiesCollection.Count())
 
 	results, err := s.entitiesCollection.Query(ctx, query, topK, nil, nil)
 	if err != nil {
@@ -407,6 +431,16 @@ func (s *Store) QueryEntities(ctx context.Context, query string, topK int) ([]En
 			for _, a := range strings.Split(aStr, ", ") {
 				if a = strings.TrimSpace(a); a != "" {
 					aliases = append(aliases, a)
+				}
+			}
+		}
+		// Absent on an index built before entities carried provenance, which
+		// reads as no provenance rather than an error.
+		var chunkIDs []string
+		if cStr := r.Metadata["chunk_ids"]; cStr != "" {
+			for _, c := range strings.Split(cStr, ",") {
+				if c = strings.TrimSpace(c); c != "" {
+					chunkIDs = append(chunkIDs, c)
 				}
 			}
 		}
@@ -434,6 +468,7 @@ func (s *Store) QueryEntities(ctx context.Context, query string, topK int) ([]En
 			Similarity:  r.Similarity,
 			Degree:      degree,
 			Aliases:     aliases,
+			ChunkIDs:    chunkIDs,
 			Metadata:    r.Metadata,
 		}
 	}
@@ -507,12 +542,10 @@ func (s *Store) QueryRelationships(ctx context.Context, query string, topK int) 
 	if query == "" {
 		return nil, errors.New("query cannot be empty")
 	}
-	if topK <= 0 {
-		topK = 5
-	}
 	if s.relationshipsCollection == nil || s.relationshipsCollection.Count() == 0 {
 		return nil, nil
 	}
+	topK = clampTopK(topK, s.relationshipsCollection.Count())
 
 	results, err := s.relationshipsCollection.Query(ctx, query, topK, nil, nil)
 	if err != nil {
