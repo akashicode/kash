@@ -95,6 +95,12 @@ type ExtractionConfig struct {
 	// Priorities are the relation types the extractor should favour, most
 	// important first. Free text, injected into the prompt.
 	Priorities []string `yaml:"priorities"`
+	// GleanRounds is the number of iterative follow-up extraction passes run
+	// after the initial one. Each round shows the model its own previous output
+	// and asks it to recover any explicitly stated facts it missed — useful for
+	// dense passages where the model runs out of attention or output tokens.
+	// 0 disables gleaning (one pass only). Default is 1.
+	GleanRounds int `yaml:"glean_rounds"`
 }
 
 // ResolutionConfig controls entity resolution (`kash resolve-entities`).
@@ -164,6 +170,7 @@ func DefaultDomainConfig() DomainConfig {
 				"Conceptual relations (X is a type of Y, X causes Y, X requires Y)",
 				"Structural facts (X contains Y, X is part of Y)",
 			},
+			GleanRounds: 1,
 		},
 		Resolution: ResolutionConfig{
 			Honorifics:           []string{"the ", "a ", "an ", "dr. ", "dr ", "prof. ", "prof ", "mr. ", "mrs. ", "ms. ", "sir "},

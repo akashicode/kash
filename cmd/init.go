@@ -185,6 +185,7 @@ build:
 # extraction:
 #   predicates: ["was teacher of", "commented on", "contains"]
 #   priorities: ["Lineage relations between people come first."]
+#   glean_rounds: 1          # recovery passes for missed facts (0 to disable)
 #
 # resolution:
 #   fold_diacritics: latin   # none | latin | iast | both
@@ -193,7 +194,7 @@ build:
 #
 # chunker:
 #   ref_patterns:
-#     - pattern: '(?i)clause\s+(\d[\d.]*)'
+#     - pattern: '(?i)(?:^|[^\p{L}])clause\s+(\d[\d.]*)'
 #       meta_key: clause
 # ─────────────────────────────────────────────────────────────────────────
 

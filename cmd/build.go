@@ -400,8 +400,9 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	parallelEmbed := agentconfig.AgentYAMLParallelEmbedding("agent.yaml")
 	extractSpec := llm.ExtractionSpec{
-		Predicates: domainCfg.Extraction.Predicates,
-		Priorities: domainCfg.Extraction.Priorities,
+		Predicates:  domainCfg.Extraction.Predicates,
+		Priorities:  domainCfg.Extraction.Priorities,
+		GleanRounds: domainCfg.Extraction.GleanRounds,
 	}
 	// Provenance is checked against the passage text, folded the way this
 	// corpus folds — the extractor writes "Gorakhnath" where an IAST source

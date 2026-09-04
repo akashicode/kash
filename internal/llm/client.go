@@ -107,6 +107,11 @@ type ExtractionSpec struct {
 	Predicates []string
 	// Priorities lists the relation types to favour, most important first.
 	Priorities []string
+	// GleanRounds is the number of iterative follow-up passes run after the
+	// initial extraction. Each round shows the model its own output and asks it
+	// to recover any explicitly stated facts it missed. 0 disables gleaning.
+	// Default is 1.
+	GleanRounds int
 }
 
 // maxTriplesPerPassage bounds what one passage is asked to yield.
@@ -138,9 +143,53 @@ func JoinPassages(passages []string) string {
 	return b.String()
 }
 
+// completeMessages sends a multi-turn message slice and returns the assistant
+// reply text. Unlike Complete it does not prepend a system message; callers
+// build the slice themselves so gleaning rounds can extend it.
+func (c *Client) completeMessages(ctx context.Context, messages []openai.ChatCompletionMessage) (string, error) {
+	req := openai.ChatCompletionRequest{
+		Model:           c.model,
+		Messages:        messages,
+		ReasoningEffort: c.reasoningEffort,
+	}
+	resp, err := c.client.CreateChatCompletion(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("chat completion: %w", err)
+	}
+	if len(resp.Choices) == 0 || resp.Choices[0].Message.Content == "" {
+		return "", ErrEmptyResponse
+	}
+	return resp.Choices[0].Message.Content, nil
+}
+
+// tripleKey returns a deduplication key for a triple, insensitive to case and
+// surrounding whitespace. Used by the gleaning loop to detect new-vs-duplicate
+// facts without importing the graph package.
+func tripleKey(s, p, o string) string {
+	return strings.ToLower(strings.TrimSpace(s)) + "\x00" +
+		strings.ToLower(strings.TrimSpace(p)) + "\x00" +
+		strings.ToLower(strings.TrimSpace(o))
+}
+
+// gleanPrompt is the continuation message sent to the model after each
+// extraction pass. It asks specifically for facts that are EXPLICITLY STATED
+// and not yet captured, using the same conservatism as the initial prompt.
+const gleanPrompt = `Review the passages and your last extraction.
+Identify and extract any additional facts that are EXPLICITLY STATED in the passages but not yet captured.
+Return ONLY a valid JSON array of new triples in the same format:
+[{"subject": "X", "predicate": "Y", "object": "Z", "passage": N}]
+Use the same closed predicate vocabulary. Do not duplicate triples already extracted.
+If there is nothing new, return [].`
+
 // ExtractTriples uses the LLM to extract knowledge graph triples from passages.
 // Each passage is a separate excerpt; relationships must not be inferred across
 // passage boundaries (see the provenance rule below).
+//
+// When spec.GleanRounds > 0, ExtractTriples runs that many follow-up passes,
+// showing the model its own previous output and asking it to recover any
+// explicitly stated facts it missed. Gleaning stops early when the model
+// returns no new unique triples, keeping token cost proportional to what is
+// actually recovered.
 func (c *Client) ExtractTriples(ctx context.Context, passages []string, spec ExtractionSpec) ([]Triple, error) {
 	if len(spec.Predicates) == 0 {
 		return nil, errors.New("extraction predicate vocabulary is empty")
@@ -194,10 +243,15 @@ OUTPUT:
   A passage that states none contributes none; return [] when that is true of all of them.
   Do not pad a thin passage to reach the limit, and do not stop early on a dense one.`
 
-	prompt := fmt.Sprintf("Extract knowledge graph triples from these %d passages:\n\n%s",
+	userMsg := fmt.Sprintf("Extract knowledge graph triples from these %d passages:\n\n%s",
 		len(passages), JoinPassages(passages))
 
-	raw, err := c.Complete(ctx, system, prompt)
+	// Build the initial message slice and run the first extraction pass.
+	msgs := []openai.ChatCompletionMessage{
+		{Role: openai.ChatMessageRoleSystem, Content: system},
+		{Role: openai.ChatMessageRoleUser, Content: userMsg},
+	}
+	raw, err := c.completeMessages(ctx, msgs)
 	if err != nil {
 		return nil, fmt.Errorf("extract triples: %w", err)
 	}
@@ -206,6 +260,51 @@ OUTPUT:
 	if err != nil {
 		return nil, fmt.Errorf("parse triples response: %w", err)
 	}
+
+	// Build a dedup index from the initial triples.
+	seen := make(map[string]bool, len(triples))
+	for _, t := range triples {
+		seen[tripleKey(t.Subject, t.Predicate, t.Object)] = true
+	}
+
+	// Gleaning: run up to GleanRounds follow-up passes, stopping early when
+	// the model returns no new unique triples.
+	for round := 0; round < spec.GleanRounds; round++ {
+		// Extend the conversation: assistant echo + user continuation prompt.
+		msgs = append(msgs,
+			openai.ChatCompletionMessage{Role: openai.ChatMessageRoleAssistant, Content: raw},
+			openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: gleanPrompt},
+		)
+
+		raw, err = c.completeMessages(ctx, msgs)
+		if err != nil {
+			// A gleaning pass failure is non-fatal: return what we have so far.
+			break
+		}
+
+		gleaned, parseErr := parseTriples(raw)
+		if parseErr != nil {
+			// Malformed gleaning response — stop early, keep existing triples.
+			break
+		}
+
+		// Merge only genuinely new triples.
+		newCount := 0
+		for _, t := range gleaned {
+			k := tripleKey(t.Subject, t.Predicate, t.Object)
+			if !seen[k] {
+				seen[k] = true
+				triples = append(triples, t)
+				newCount++
+			}
+		}
+
+		// Early exit: the model returned nothing new.
+		if newCount == 0 {
+			break
+		}
+	}
+
 	return triples, nil
 }
 

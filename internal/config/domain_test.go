@@ -26,6 +26,7 @@ func TestDefaultsAreDomainNeutral(t *testing.T) {
 	assert.NotEmpty(t, d.Extraction.Predicates)
 	assert.NotContains(t, d.Extraction.Predicates, "was disciple of",
 		"default vocabulary must not assume a scholarly-lineage corpus")
+	assert.Equal(t, 1, d.Extraction.GleanRounds, "default gleaning rounds must be 1")
 	assert.False(t, d.Chunker.StripTitleStemVowel,
 		"title stem-vowel stripping must be opt-in")
 	assert.NotEmpty(t, d.Chunker.RefPatterns,
@@ -139,4 +140,20 @@ entity_description:
 	loaded := LoadDomainConfig(path)
 	assert.Equal(t, 5, loaded.EntityDescription.MinDegree)
 	assert.Equal(t, 100, loaded.EntityDescription.MaxEntities)
+}
+
+func TestLoadDomainConfigGleanRounds(t *testing.T) {
+	path := writeYAML(t, `
+extraction:
+  glean_rounds: 0
+`)
+	d := LoadDomainConfig(path)
+	assert.Equal(t, 0, d.Extraction.GleanRounds, "glean_rounds: 0 must disable gleaning")
+
+	path2 := writeYAML(t, `
+extraction:
+  glean_rounds: 3
+`)
+	d2 := LoadDomainConfig(path2)
+	assert.Equal(t, 3, d2.Extraction.GleanRounds)
 }

@@ -132,3 +132,21 @@ func TestInvalidDiacriticModeIsIgnored(t *testing.T) {
 	assert.Equal(t, DiacriticIAST, cfg.Resolution.FoldDiacritics,
 		"an invalid mode must not clobber a valid lower layer")
 }
+
+func TestGleanRoundsZeroBeatsDefault(t *testing.T) {
+	path := writeOverlayYAML(t, `
+extraction:
+  glean_rounds: 0
+`)
+	cfg, notes := ResolveDomainConfig(nil, path)
+	assert.Equal(t, 0, cfg.Extraction.GleanRounds, "glean_rounds: 0 must override default 1")
+	var found bool
+	for _, n := range notes {
+		if n.Field == "extraction.glean_rounds" {
+			found = true
+			assert.Equal(t, layerAgentYAML, n.Layer)
+			assert.Equal(t, "0", n.Value)
+		}
+	}
+	assert.True(t, found, "layer note must attribute extraction.glean_rounds to agent.yaml")
+}

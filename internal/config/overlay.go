@@ -22,8 +22,9 @@ import (
 // type serves both layers.
 type DomainOverlay struct {
 	Extraction struct {
-		Predicates *[]string `yaml:"predicates" json:"predicates"`
-		Priorities *[]string `yaml:"priorities" json:"priorities"`
+		Predicates  *[]string `yaml:"predicates" json:"predicates"`
+		Priorities  *[]string `yaml:"priorities" json:"priorities"`
+		GleanRounds *int      `yaml:"glean_rounds" json:"glean_rounds"`
 	} `yaml:"extraction" json:"extraction"`
 
 	Resolution struct {
@@ -86,6 +87,12 @@ func (o DomainOverlay) applyTo(cfg *DomainConfig, layer string, notes *[]LayerNo
 	if p := o.Extraction.Priorities; p != nil {
 		cfg.Extraction.Priorities = *p
 		note("extraction.priorities", fmt.Sprintf("%d priorities", len(*p)))
+	}
+	// GleanRounds: 0 is a legitimate value (disables gleaning), so we apply
+	// whenever the key is explicitly present, not just when it is positive.
+	if p := o.Extraction.GleanRounds; p != nil && *p >= 0 {
+		cfg.Extraction.GleanRounds = *p
+		note("extraction.glean_rounds", *p)
 	}
 
 	// Resolution.
