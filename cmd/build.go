@@ -506,15 +506,23 @@ func runBuild(cmd *cobra.Command, args []string) error {
 				var triples []llm.Triple
 				var extractErr error
 				maxRetries := 2
+				batchNo := i/batchSize + 1
+				totalBatches := (len(chunks) + batchSize - 1) / batchSize
 				for attempt := 0; attempt <= maxRetries; attempt++ {
+					// A live line, so a provider that has stopped responding
+					// looks different from one that is merely slow. Without it
+					// a stalled call is indistinguishable from progress.
+					display.Progress(fmt.Sprintf("%s: extracting triples, batch %d/%d", name, batchNo, totalBatches))
 					triples, extractErr = llmClient.ExtractTriples(ctx, combined.String(), extractSpec)
 					if extractErr == nil {
 						break
 					}
+					display.ProgressDone()
 					if attempt < maxRetries {
 						display.StepWarn(fmt.Sprintf("triple extraction failed for %s chunks %d-%d (attempt %d/%d, retrying): %v", name, i+1, end, attempt+1, maxRetries+1, extractErr))
 					}
 				}
+				display.ProgressDone()
 				if extractErr != nil {
 					// Leave the manifest at the last completed batch so the
 					// next build resumes exactly here.

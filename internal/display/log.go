@@ -33,6 +33,18 @@ const (
 	BrightWhite   = brightWhite
 )
 
+// isTTY reports whether stdout is a terminal. Only the in-place progress line
+// depends on it: carriage returns and erase-line escapes are noise in a log
+// file or a CI transcript, where the same information is better left unwritten
+// than written thousands of times.
+var isTTY = func() bool {
+	info, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}()
+
 // ────────────────────────────────────────────────────────────
 // Log-level helpers (colored prefixes for CLI output)
 // ────────────────────────────────────────────────────────────
@@ -48,6 +60,27 @@ func Step(step, total int, msg string) {
 // StepDetail prints an indented detail line under a step.
 func StepDetail(msg string) {
 	fmt.Fprintf(os.Stdout, "        %s%s%s\n", dim+white, msg, reset)
+}
+
+// Progress rewrites a single line in place with the work currently under way.
+//
+// A build spends most of its time inside one document, and printing a line per
+// batch would bury the step output while printing nothing at all makes a stalled
+// provider call look exactly like slow progress. This keeps a live line without
+// filling the scrollback; call ProgressDone when the phase ends.
+func Progress(msg string) {
+	if !isTTY {
+		return
+	}
+	fmt.Fprintf(os.Stdout, "\r        %s%s%s\033[K", dim+white, msg, reset)
+}
+
+// ProgressDone clears the line Progress was writing to.
+func ProgressDone() {
+	if !isTTY {
+		return
+	}
+	fmt.Fprint(os.Stdout, "\r\033[K")
 }
 
 // StepResult prints a success result for a step with a highlighted value.

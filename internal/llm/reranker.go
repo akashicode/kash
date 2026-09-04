@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/akashicode/kash/internal/config"
+	"github.com/akashicode/kash/internal/httpx"
 )
 
 // ErrNilRerankConfig is returned when nil rerank config is provided.
@@ -65,7 +66,7 @@ func NewReranker(cfg *config.ProviderConfig) (*Reranker, error) {
 		endpoint: endpoint,
 		apiKey:   cfg.APIKey,
 		model:    cfg.Model,
-		client:   &http.Client{},
+		client:   httpx.Provider(httpx.RerankTimeout),
 	}, nil
 }
 

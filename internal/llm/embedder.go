@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/akashicode/kash/internal/config"
+	"github.com/akashicode/kash/internal/httpx"
 )
 
 // ErrNilEmbedConfig is returned when nil embed config is provided.
@@ -42,7 +43,7 @@ func NewEmbedder(cfg *config.ProviderConfig) (*Embedder, error) {
 		apiKey:     cfg.APIKey,
 		model:      cfg.Model,
 		dimensions: cfg.Dimensions,
-		client:     &http.Client{},
+		client:     httpx.Provider(httpx.EmbedTimeout),
 	}, nil
 }
 

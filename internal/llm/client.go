@@ -9,6 +9,7 @@ import (
 	"github.com/sashabaranov/go-openai"
 
 	"github.com/akashicode/kash/internal/config"
+	"github.com/akashicode/kash/internal/httpx"
 )
 
 // ErrNilConfig is returned when a nil config is provided.
@@ -58,6 +59,9 @@ func NewClient(cfg *config.ProviderConfig) (*Client, error) {
 
 	clientCfg := openai.DefaultConfig(cfg.APIKey)
 	clientCfg.BaseURL = cfg.BaseURL
+	// Bounded so a provider that accepts the request and then stalls fails
+	// and gets retried, instead of hanging the build with no output.
+	clientCfg.HTTPClient = httpx.Provider(httpx.ChatTimeoutFor(cfg.ReasoningEffort))
 
 	return &Client{
 		client:          openai.NewClientWithConfig(clientCfg),

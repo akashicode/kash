@@ -20,6 +20,7 @@ import (
 
 	"github.com/akashicode/kash/internal/chunker"
 	"github.com/akashicode/kash/internal/config"
+	"github.com/akashicode/kash/internal/httpx"
 )
 
 // warnTruncation ensures the dimension-truncation warning is printed once per
@@ -595,7 +596,9 @@ type embedResponse struct {
 // responsibility to pick a model whose native output matches agent.yaml dimensions.
 // If Model is empty it is omitted from the request (router-friendly).
 func newEmbeddingFuncWithDimensions(cfg *config.ProviderConfig) chromem.EmbeddingFunc {
-	client := &http.Client{}
+	// A build makes one of these calls per chunk, tens of thousands of times.
+	// An unbounded client turns a single stalled request into a dead build.
+	client := httpx.Provider(httpx.EmbedTimeout)
 
 	return func(ctx context.Context, text string) ([]float32, error) {
 		// Sanitize: trim whitespace, replace null bytes
