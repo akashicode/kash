@@ -13,6 +13,52 @@ those are called out under **Requires rebuild**.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Structural references away from the start of a chunk were never indexed.**
+  Reference patterns are matched against whole multi-line chunk bodies, but were
+  compiled without `(?m)`, so a leading `^` meant start-of-*body* rather than
+  start-of-line. A pattern like `^\s*(\d{1,4})\)` therefore tagged a marker only
+  when the chunk happened to begin with it, and every later marker in the same
+  chunk was dropped — present in the text, and unaddressable by number. On the
+  corpus this was found on, 22 of 112 numbered passages were missing their
+  reference; queries naming them took the exact-reference route to an empty
+  result and fell back to similarity, returning the book's introduction instead
+  of the passage asked for. Coverage on that corpus goes from 90/112 to 112/112.
+
+  This affected any corpus whose markers sit mid-chunk — `Section 4.2` in a
+  spec, `Clause 7` in a contract, `48)` in a numbered list — not only verse
+  numbering.
+
+- **The chunker and the retrieval layer compiled the same patterns
+  differently.** Queries are single-line, so the missing flag was harmless
+  there and destructive at build time; the two sides could disagree about what
+  a pattern matches. Both now compile through `chunker.CompileRefPattern`.
+
+- **Headings now take precedence over the body, per reference key.** A heading
+  names what a chunk *is*, so an ordinary numbered list in the body no longer
+  contributes bogus reference numbers to a chunk a heading already numbered.
+  The body is still scanned for every key no heading answered, which is what
+  keeps a run of numbered passages addressable by each of them.
+
+### Added
+
+- **`kash build` reports reference keys that tagged nothing.** Profiles outlive
+  the corpus they were derived from, so a profile carries patterns for
+  structures the current documents may not contain. Such a key is dead weight —
+  queries naming it silently fall back to similarity — and the build now says
+  so instead of leaving it invisible.
+
+### Requires rebuild
+
+Run `kash build --rebuild` to re-tag an existing corpus with the recovered
+references. This one is reported rather than enforced: the domain signature
+hashes the pattern strings, so a change to how those strings are *compiled*
+leaves it identical and cannot detect the drift. The manifest now records a
+`chunker_rules_version` instead, and the build warns when a corpus predates the
+current rules. An un-rebuilt corpus is under-tagged, not wrong — every
+reference it did record is still correct.
+
 ## [2.0.0] - 2026-09-04
 
 ### Added

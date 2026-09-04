@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -106,11 +107,50 @@ vyastayoḥ kaṣṭataḥ phalam cedetyayomaṃnayāhācyastayo maraṇa bhavat
 yuddhaṃ vyastayoniṣpharambhavet hopaymaha bhantaṣu śārācakara vicārathat vedā
 rāmāścayo yugma yugma vadānta ṣaṭ ṣaḍagāśca tataḥ ṣaṭsu nāmvaṇastharānmanāḥ
 `,
+
+	// A bare verse listing: the numbering carries the reference and no heading
+	// repeats it, so every marker but the first sits mid-body. Compiled
+	// without (?m), only the first was ever tagged and the rest of the run was
+	// unaddressable by number.
+	"vbt-verse-listing_FINAL_iast.md": `# Vigyan Bhairava Tantra
+
+## The Verses
+
+104) Wherever the mind goes, whether outside or within, there is the state of
+Shiva. Since Shiva is omnipresent, where can the mind go to escape him?
+
+105) When one perceives a particular object, the perception of all other
+objects becomes empty. Meditating on that emptiness, one is pacified.
+
+106) The awareness of object and subject is common to all living beings.
+However, the yogis have the distinction that they are always aware of the self.
+`,
+
+	// A non-Indic document with ordinary structural references. Reference
+	// handling is domain-neutral by design, and this is what pins that: the
+	// exact-reference route must work on a schedule of clauses exactly as it
+	// works on a run of verses.
+	"service-agreement.md": `# Service Agreement
+
+## Schedule of Charges
+
+The Provider shall levy the charges set out below. Amounts are exclusive of tax
+and are reviewed annually in accordance with clause 22.
+
+7) Handling charge, applied per consignment accepted for carriage.
+
+8) Late payment charge, accruing daily on any sum outstanding after the due
+date until payment is received in full.
+
+9) Reissue charge, payable where a replacement document is requested by the
+Customer after despatch.
+`,
 }
 
-// sanskritTestDomainConfig returns the domain configuration for the Indic/VBT
-// fixture corpus used throughout these evaluation tests.
-func sanskritTestDomainConfig() agentconfig.DomainConfig {
+// evalDomainConfig returns the domain configuration for the fixture corpus.
+// It carries both Indic and ordinary structural reference patterns, because
+// reference handling is domain-neutral and the harness should prove it.
+func evalDomainConfig() agentconfig.DomainConfig {
 	return agentconfig.DomainConfig{
 		Resolution: agentconfig.ResolutionConfig{
 			FoldDiacritics:  agentconfig.DiacriticIAST,
@@ -122,6 +162,7 @@ func sanskritTestDomainConfig() agentconfig.DomainConfig {
 				{Pattern: `(?i)(?:dh[aā]ra[nṇ][aā]|vidhi)\s*[-–—.]?\s*(\d+)`, MetaKey: "dharana"},
 				{Pattern: `(?:\.\.|\|\||॥)\s*(\d+)\s*(?:\.\.|\|\||॥)`, MetaKey: "verse"},
 				{Pattern: `^\s*(\d{1,3})\)`, MetaKey: "verse"},
+				{Pattern: `(?i)\bclause\s+(\d[\d.]*)`, MetaKey: "clause"},
 			},
 			TitleStopwords: []string{
 				"the", "of", "and", "with", "by", "for", "vol", "volume", "part",
@@ -139,7 +180,7 @@ func evalIndex(t *testing.T) (*lexical.Index, map[string]vector.SearchResult) {
 	t.Helper()
 
 	// Use Sanskrit domain config for this corpus (VBT-based eval fixtures).
-	dc := sanskritTestDomainConfig()
+	dc := evalDomainConfig()
 	refMatchers := chunker.CompileRefMatchers(dc.Chunker.RefPatterns)
 
 	ck, err := chunker.NewChunker(chunker.Options{ChunkSize: 2000, Overlap: 400})
@@ -191,7 +232,7 @@ func pathologicalVectorRoute(byID map[string]vector.SearchResult) []string {
 // the same code path retrieve() uses, with the vector route stubbed to the
 // measured failure mode.
 func evalRetrieve(ix *lexical.Index, byID map[string]vector.SearchResult, query string, topK int) []vector.SearchResult {
-	dc := sanskritTestDomainConfig()
+	dc := evalDomainConfig()
 	fc := buildFusionConfig(dc)
 
 	lists := map[string][]string{
@@ -244,6 +285,13 @@ func TestRetrievalRecallOnReportedFailures(t *testing.T) {
 		query      string
 		wantSource string
 		wantIn     string // substring the winning chunk must contain
+		// wantRefKey/wantRefVal, when set, assert the winning chunk was
+		// actually tagged with the reference the query names. Retrieval alone
+		// is a weak assertion here: BM25 finds a number in the body text
+		// whether or not it was ever indexed as a reference, so without this
+		// the exact-reference route could rot unnoticed.
+		wantRefKey string
+		wantRefVal string
 	}{
 		{
 			// Reported failure: returned four ślokānukramaṇī tables and one
@@ -262,6 +310,25 @@ func TestRetrievalRecallOnReportedFailures(t *testing.T) {
 			wantIn:     "void in the skull",
 		},
 		{
+			// The marker sits mid-body in a run of them, which is the case
+			// reference patterns compiled without (?m) could not tag: the
+			// number was in the text and still unaddressable.
+			name:       "verse numbered away from the chunk start",
+			query:      "Verse 106 Vigyan Bhairava Tantra",
+			wantSource: "vbt-verse-listing_FINAL_iast.md",
+			wantIn:     "awareness of object and subject",
+			wantRefKey: "verse",
+			wantRefVal: "106",
+		},
+		{
+			// Nothing about the exact-reference route is Indic. A schedule of
+			// clauses must resolve by number exactly as a run of verses does.
+			name:       "ordinary clause reference",
+			query:      "service agreement clause 22",
+			wantSource: "service-agreement.md",
+			wantIn:     "reviewed annually",
+		},
+		{
 			name:       "semantic phrase still works",
 			query:      "pleasure of eating and drinking joy blossoming",
 			wantSource: "vigyan-bhairava-tantra_FINAL_iast.md",
@@ -275,16 +342,22 @@ func TestRetrievalRecallOnReportedFailures(t *testing.T) {
 			require.NotEmpty(t, got, "query %q returned nothing", tt.query)
 
 			var sources []string
-			hit := false
-			for _, r := range got {
+			var winner *vector.SearchResult
+			for i, r := range got {
 				sources = append(sources, r.Source)
-				if r.Source == tt.wantSource && contains(r.Content, tt.wantIn) {
-					hit = true
+				if winner == nil && r.Source == tt.wantSource && contains(r.Content, tt.wantIn) {
+					winner = &got[i]
 				}
 			}
-			assert.True(t, hit,
+			require.NotNil(t, winner,
 				"expected a chunk from %s containing %q in the top %d; got sources %v",
 				tt.wantSource, tt.wantIn, len(got), sources)
+
+			if tt.wantRefKey != "" {
+				assert.Contains(t, splitRefs(winner.Metadata[tt.wantRefKey]), tt.wantRefVal,
+					"the retrieved chunk must be tagged %s=%s, not merely contain the number in its text; got %q",
+					tt.wantRefKey, tt.wantRefVal, winner.Metadata[tt.wantRefKey])
+			}
 		})
 	}
 }
@@ -338,6 +411,18 @@ func TestRecallAtK(t *testing.T) {
 	assert.Equal(t, len(cases), hits, "every fixture query must retrieve its source within the top 5")
 }
 
+// splitRefs unpacks the comma-joined reference values stored in chunk
+// metadata, so an assertion on "106" cannot be satisfied by "1060".
+func splitRefs(meta string) []string {
+	var out []string
+	for _, v := range strings.Split(meta, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 func contains(haystack, needle string) bool {
 	return needle == "" || len(haystack) >= len(needle) && indexOf(haystack, needle) >= 0
 }
@@ -366,7 +451,7 @@ func TestNegativeControlVectorOnly(t *testing.T) {
 		{"joy blossoming from eating", "vigyan-bhairava-tantra_FINAL_iast.md"},
 	}
 
-	fc := buildFusionConfig(sanskritTestDomainConfig())
+	fc := buildFusionConfig(evalDomainConfig())
 	hits := 0
 	for _, c := range cases {
 		cands := fuseRankLists(map[string][]string{"vector": pathologicalVectorRoute(byID)})

@@ -279,6 +279,99 @@ func TestCompileRefMatchersAcceptsValidPattern(t *testing.T) {
 	assert.Empty(t, warnings)
 }
 
+// genericMatchers returns domain-neutral reference matchers — the shapes a
+// contract, statute or specification uses. Kept separate from
+// sanskritMatchers so the tagging rules can be tested without any assumption
+// about what the corpus is about.
+func genericMatchers() []refMatcher {
+	return CompileRefMatchers([]config.RefPattern{
+		{Pattern: `(?i)\b(?:section|article|part)\s*(\d[\d.]*)`, MetaKey: MetaSection},
+		{Pattern: `(?i)\bclause\s+(\d[\d.]*)`, MetaKey: "clause"},
+		// Bare "12)" numbering, anchored to the start of a line.
+		{Pattern: `^\s*(\d{1,4})\)`, MetaKey: "item"},
+	})
+}
+
+// Reference patterns are matched against a whole multi-line chunk body, so a
+// leading ^ has to mean start-of-line. Compiled without (?m) it meant
+// start-of-body instead, and every marker but the first in a chunk went
+// untagged — on the corpus this was found on, 22 of 112 references were
+// silently unaddressable while sitting in plain text.
+//
+// This is deliberately written with generic references: the rule is about
+// where a marker sits in a chunk, not about what kind of document it is.
+func TestSplitStructuredTagsReferencesAwayFromChunkStart(t *testing.T) {
+	tests := []struct {
+		name    string
+		doc     string
+		metaKey string
+		want    []string
+	}{
+		{
+			// The regression: markers on their own lines, none of them first.
+			name: "anchored pattern mid-body",
+			doc: "# Schedule of Fees\n\n## Listing\n\n" +
+				"7) handling charge\n\n8) late payment charge\n\n9) reissue charge\n",
+			metaKey: "item",
+			want:    []string{"7", "8", "9"},
+		},
+		{
+			// The control: an unanchored pattern always worked.
+			name:    "unanchored pattern mid-body",
+			doc:     "# Agreement\n\n## Terms\n\nThe parties agree.\n\nSee clause 14 and clause 15 below.\n",
+			metaKey: "clause",
+			want:    []string{"14", "15"},
+		},
+		{
+			// A heading answers the key, so the body is not consulted for it.
+			// An ordinary numbered list must not become reference numbering.
+			name: "heading wins over body list",
+			doc: "# Policy\n\n### Section 4\nThe applicant must supply the following.\n\n" +
+				"1) proof of address\n2) proof of income\n",
+			metaKey: MetaSection,
+			want:    []string{"4"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ck := newTestChunker(t)
+			chunks, err := ck.SplitStructured(tt.doc, "doc.md", genericMatchers())
+			require.NoError(t, err)
+			require.NotEmpty(t, chunks)
+
+			got := map[string]bool{}
+			for _, c := range chunks {
+				for _, v := range strings.Split(c.Metadata[tt.metaKey], ",") {
+					if v = strings.TrimSpace(v); v != "" {
+						got[v] = true
+					}
+				}
+			}
+			for _, w := range tt.want {
+				assert.True(t, got[w],
+					"reference %q must be addressable under key %q, got %v", w, tt.metaKey, got)
+			}
+		})
+	}
+}
+
+// The chunker and the retrieval layer compile the same configured patterns for
+// different inputs — chunk bodies and queries. When they compiled them
+// differently, a query could name a reference the index had never recorded.
+// Both now go through CompileRefPattern; this pins the flag it applies.
+func TestCompileRefPatternIsLineAnchored(t *testing.T) {
+	re, err := CompileRefPattern(config.RefPattern{
+		Pattern: `^\s*(\d{1,4})\)`, MetaKey: "item",
+	})
+	require.NoError(t, err)
+
+	hits := re.FindAllStringSubmatch("intro line\n7) first\n8) second\n", -1)
+	require.Len(t, hits, 2, "^ must match at each line start, not only at the start of the string")
+	assert.Equal(t, "7", hits[0][1])
+	assert.Equal(t, "8", hits[1][1])
+}
+
 // A pattern that survives compilation must be safe to run — this is the
 // regression guard for the hit[1] panic.
 func TestSplitStructuredSurvivesAllCompiledPatterns(t *testing.T) {

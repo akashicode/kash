@@ -365,6 +365,16 @@ func bookTitle(source string) string {
 
 // extractRefs runs every refMatcher against each heading and the body, returning a
 // map from meta_key to comma-separated list of matched numbers.
+//
+// Headings take precedence per meta key: if a heading already answered a key,
+// the body is not scanned for that key. A heading names what the chunk *is*,
+// whereas the body may merely mention other references — most commonly an
+// ordinary numbered list, which must not become verse or clause numbering just
+// because it shares the paren form.
+//
+// The body is still scanned for every key no heading answered. That is what
+// makes a chunk holding a run of references — a verse listing, a schedule of
+// clauses — addressable by each of them rather than only by its heading.
 func extractRefs(headings []string, body string, matchers []refMatcher) map[string][]string {
 	out := map[string][]string{}
 	seen := map[string]map[string]bool{}
@@ -387,6 +397,17 @@ func extractRefs(headings []string, body string, matchers []refMatcher) map[stri
 			for _, hit := range m.re.FindAllStringSubmatch(h, -1) {
 				add(m.metaKey, hit[1])
 			}
+		}
+	}
+
+	answeredByHeading := make(map[string]bool, len(out))
+	for key := range out {
+		answeredByHeading[key] = true
+	}
+
+	for _, m := range matchers {
+		if answeredByHeading[m.metaKey] {
+			continue
 		}
 		for _, hit := range m.re.FindAllStringSubmatch(body, -1) {
 			add(m.metaKey, hit[1])
@@ -715,6 +736,66 @@ func CompileRefMatchers(patterns []config.RefPattern) []refMatcher {
 // unbounded one is a performance hazard as well as an unreadable one.
 const MaxRefPatternLen = 200
 
+// RulesVersion identifies the structural tagging rules a corpus was chunked
+// under. It is stored in the build manifest so an index built by an older
+// binary can be recognised as stale.
+//
+// Bump it whenever a change alters which references a given pattern extracts
+// from unchanged text. The domain signature cannot cover this: it hashes the
+// pattern strings from the config, so a change to how those strings are
+// *compiled* is invisible to it.
+//
+//	1 — original.
+//	2 — patterns compiled with (?m); see CompileRefPattern.
+const RulesVersion = 2
+
+// multilineFlag makes a leading ^ mean start-of-line.
+//
+// This is load-bearing, not cosmetic. Reference patterns are matched against
+// whole chunk bodies (see extractRefs), which are multi-line strings. Without
+// this flag a pattern like `^\s*(\d{1,4})\)` matches only when the body itself
+// begins with the marker, so every later occurrence in the same chunk is
+// dropped — the marker is present in the text, and simply never tagged.
+//
+// Go's regexp accepts stacked flag groups, so prefixing a pattern that already
+// carries its own — `(?i)…` becoming `(?m)(?i)…` — is well defined.
+const multilineFlag = "(?m)"
+
+// CompileRefPattern compiles one reference pattern for matching against
+// multi-line text, applying the validation every caller needs.
+//
+// Both call sites must go through this. The chunker compiles patterns for
+// chunk bodies and the retrieval layer compiles the same patterns for queries;
+// queries are single-line, so a missing (?m) is harmless there and silently
+// destructive here. Compiling in one place is what keeps the two consistent.
+//
+// The capture-group check is not cosmetic: a pattern with no capture group
+// makes FindAllStringSubmatch return rows of length one, and both extractRefs
+// and queryRefs then index hit[1] — an index-out-of-range panic.
+//
+// Note that (?m) also makes $ line-anchored.
+func CompileRefPattern(p config.RefPattern) (*regexp.Regexp, error) {
+	if p.Pattern == "" || p.MetaKey == "" {
+		return nil, fmt.Errorf("ref_pattern needs both a pattern and a meta_key")
+	}
+	if len(p.Pattern) > MaxRefPatternLen {
+		return nil, fmt.Errorf(
+			"ref_pattern for %q: %d characters exceeds the %d-character limit",
+			p.MetaKey, len(p.Pattern), MaxRefPatternLen)
+	}
+	re, err := regexp.Compile(multilineFlag + p.Pattern)
+	if err != nil {
+		// Report the pattern as the user wrote it, not as we compiled it.
+		return nil, fmt.Errorf("invalid ref_pattern %q: %w", p.Pattern, err)
+	}
+	if n := re.NumSubexp(); n != 1 {
+		return nil, fmt.Errorf(
+			"ref_pattern %q: needs exactly one capture group for the number, found %d",
+			p.Pattern, n)
+	}
+	return re, nil
+}
+
 // CompileRefMatchersVerbose compiles reference patterns and reports why any
 // were rejected, so a bad pattern is visible rather than silently inert.
 //
@@ -728,29 +809,16 @@ func CompileRefMatchersVerbose(patterns []config.RefPattern) ([]refMatcher, []st
 	var warnings []string
 
 	for _, p := range patterns {
-		switch {
-		case p.Pattern == "" || p.MetaKey == "":
-			continue
-		case len(p.Pattern) > MaxRefPatternLen:
-			warnings = append(warnings, fmt.Sprintf(
-				"skipping ref_pattern for %q: %d characters exceeds the %d-character limit",
-				p.MetaKey, len(p.Pattern), MaxRefPatternLen))
+		// A wholly empty entry is an unfilled template line, not a mistake
+		// worth reporting.
+		if p.Pattern == "" || p.MetaKey == "" {
 			continue
 		}
-
-		re, err := regexp.Compile(p.Pattern)
+		re, err := CompileRefPattern(p)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf(
-				"skipping invalid ref_pattern %q: %v", p.Pattern, err))
+			warnings = append(warnings, "skipping "+err.Error())
 			continue
 		}
-		if n := re.NumSubexp(); n != 1 {
-			warnings = append(warnings, fmt.Sprintf(
-				"skipping ref_pattern %q: needs exactly one capture group for the number, found %d",
-				p.Pattern, n))
-			continue
-		}
-
 		out = append(out, refMatcher{re: re, metaKey: p.MetaKey})
 	}
 	return out, warnings
