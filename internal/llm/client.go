@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/sashabaranov/go-openai"
@@ -108,12 +109,44 @@ type ExtractionSpec struct {
 	Priorities []string
 }
 
-// ExtractTriples uses the LLM to extract knowledge graph triples from text.
-// The text may contain several delimited passages; relationships must not be
-// inferred across passage boundaries (see the provenance rule below).
-func (c *Client) ExtractTriples(ctx context.Context, text string, spec ExtractionSpec) ([]Triple, error) {
+// maxTriplesPerPassage bounds what one passage is asked to yield.
+//
+// The budget exists to stop a model padding a thin passage with trivia, not to
+// ration a dense one. The previous flat "extract 5-20 triples" applied to a
+// whole batch of ten passages, capping the graph at two facts per chunk however
+// much a chunk actually stated — and it bound in practice: extraction averaged
+// 15.3 triples per batch against that ceiling of 20.
+const maxTriplesPerPassage = 8
+
+// passageMarker delimits one excerpt inside an extraction prompt. The prompt
+// tells the model to read these markers, so the prompt and the framing have to
+// agree; JoinPassages is the only place that writes them.
+const passageMarker = "--- PASSAGE %d ---"
+
+// JoinPassages frames excerpts for extraction.
+//
+// Concatenating raw chunks let the extractor bind facts across unrelated
+// excerpts — most damagingly title-page credits (translator, editor) onto texts
+// merely mentioned further down. These markers are what the prompt's provenance
+// rule refers to, and the 1-based index is what a triple's Passage field
+// reports back.
+func JoinPassages(passages []string) string {
+	var b strings.Builder
+	for i, p := range passages {
+		fmt.Fprintf(&b, passageMarker+"\n%s\n\n", i+1, p)
+	}
+	return b.String()
+}
+
+// ExtractTriples uses the LLM to extract knowledge graph triples from passages.
+// Each passage is a separate excerpt; relationships must not be inferred across
+// passage boundaries (see the provenance rule below).
+func (c *Client) ExtractTriples(ctx context.Context, passages []string, spec ExtractionSpec) ([]Triple, error) {
 	if len(spec.Predicates) == 0 {
 		return nil, errors.New("extraction predicate vocabulary is empty")
+	}
+	if len(passages) == 0 {
+		return nil, nil
 	}
 
 	var priorities strings.Builder
@@ -157,9 +190,12 @@ OUTPUT:
 - Return ONLY a valid JSON array, no explanation, no markdown fences.
 - Format: [{"subject": "X", "predicate": "Y", "object": "Z", "passage": 1}]
   where "passage" is the 1-based index of the passage from which the fact was extracted (e.g. 1 for PASSAGE 1).
-- Extract 5-20 triples. If nothing is explicitly stated, return [].`
+- Extract every relation a passage explicitly states, up to ` + strconv.Itoa(maxTriplesPerPassage) + ` per passage.
+  A passage that states none contributes none; return [] when that is true of all of them.
+  Do not pad a thin passage to reach the limit, and do not stop early on a dense one.`
 
-	prompt := fmt.Sprintf("Extract knowledge graph triples from these passages:\n\n%s", text)
+	prompt := fmt.Sprintf("Extract knowledge graph triples from these %d passages:\n\n%s",
+		len(passages), JoinPassages(passages))
 
 	raw, err := c.Complete(ctx, system, prompt)
 	if err != nil {

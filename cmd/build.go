@@ -494,13 +494,13 @@ func runBuild(cmd *cobra.Command, args []string) error {
 				}
 				batch := chunks[i:end]
 
-				// Delimit passages explicitly. Concatenating raw chunks let the
-				// extractor bind facts across unrelated excerpts — most damagingly
-				// title-page credits (translator, editor) onto texts merely
-				// mentioned further down. The prompt forbids crossing these markers.
-				var combined strings.Builder
+				// The passages stay separate all the way into the prompt: the
+				// extractor must not bind a fact across two of them. llm owns
+				// the framing, because the prompt that reads the markers and the
+				// code that writes them have to agree.
+				passages := make([]string, len(batch))
 				for j, ch := range batch {
-					fmt.Fprintf(&combined, "--- PASSAGE %d ---\n%s\n\n", j+1, ch.Content)
+					passages[j] = ch.Content
 				}
 
 				var triples []llm.Triple
@@ -513,7 +513,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 					// looks different from one that is merely slow. Without it
 					// a stalled call is indistinguishable from progress.
 					display.Progress(fmt.Sprintf("%s: extracting triples, batch %d/%d", name, batchNo, totalBatches))
-					triples, extractErr = llmClient.ExtractTriples(ctx, combined.String(), extractSpec)
+					triples, extractErr = llmClient.ExtractTriples(ctx, passages, extractSpec)
 					if extractErr == nil {
 						break
 					}
