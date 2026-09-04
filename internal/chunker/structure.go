@@ -706,18 +706,52 @@ func startsNewReference(buf []unit, u unit) bool {
 // refMatcher instances. Patterns that fail to compile are skipped with a
 // warning to avoid a fatal crash from a user typo in agent.yaml.
 func CompileRefMatchers(patterns []config.RefPattern) []refMatcher {
+	matchers, _ := CompileRefMatchersVerbose(patterns)
+	return matchers
+}
+
+// MaxRefPatternLen bounds a reference pattern. Patterns run against every
+// heading and body at build time and against every query at serve time, so an
+// unbounded one is a performance hazard as well as an unreadable one.
+const MaxRefPatternLen = 200
+
+// CompileRefMatchersVerbose compiles reference patterns and reports why any
+// were rejected, so a bad pattern is visible rather than silently inert.
+//
+// Every rejection reason here is load-bearing. A pattern with no capture group
+// makes FindAllStringSubmatch return rows of length one, and extractRefs then
+// indexes hit[1] — an index-out-of-range panic. That was reachable only through
+// a hand-written agent.yaml typo before; once patterns are generated it becomes
+// a crash that can ship.
+func CompileRefMatchersVerbose(patterns []config.RefPattern) ([]refMatcher, []string) {
 	out := make([]refMatcher, 0, len(patterns))
+	var warnings []string
+
 	for _, p := range patterns {
-		if p.Pattern == "" || p.MetaKey == "" {
+		switch {
+		case p.Pattern == "" || p.MetaKey == "":
+			continue
+		case len(p.Pattern) > MaxRefPatternLen:
+			warnings = append(warnings, fmt.Sprintf(
+				"skipping ref_pattern for %q: %d characters exceeds the %d-character limit",
+				p.MetaKey, len(p.Pattern), MaxRefPatternLen))
 			continue
 		}
+
 		re, err := regexp.Compile(p.Pattern)
 		if err != nil {
-			// A bad pattern should not crash the build; skip silently.
-			_ = fmt.Sprintf("chunker: skipping invalid ref_pattern %q: %v", p.Pattern, err)
+			warnings = append(warnings, fmt.Sprintf(
+				"skipping invalid ref_pattern %q: %v", p.Pattern, err))
 			continue
 		}
+		if n := re.NumSubexp(); n != 1 {
+			warnings = append(warnings, fmt.Sprintf(
+				"skipping ref_pattern %q: needs exactly one capture group for the number, found %d",
+				p.Pattern, n))
+			continue
+		}
+
 		out = append(out, refMatcher{re: re, metaKey: p.MetaKey})
 	}
-	return out
+	return out, warnings
 }

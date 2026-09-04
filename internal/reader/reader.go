@@ -22,6 +22,34 @@ type Document struct {
 	Content string
 }
 
+// Build artifacts that kash writes into the same directory it reads documents
+// from. Listed literally rather than imported from their owning packages
+// (manifest, lexical, graph, profile) because reader sits below all of them and
+// importing upward would cycle. Keep in sync if a filename changes.
+var (
+	buildArtifactDirs = map[string]bool{
+		"memory.chromem":   true,
+		"knowledge.cayley": true,
+	}
+	buildArtifactFiles = map[string]bool{
+		"build.manifest.json": true,
+		"entity_aliases.json": true,
+		"lexical.idx":         true,
+		"domain.profile.json": true,
+	}
+)
+
+func isBuildArtifactDir(name string) bool { return buildArtifactDirs[name] }
+
+func isBuildArtifact(name string) bool {
+	if buildArtifactFiles[name] {
+		return true
+	}
+	// Temp files from the atomic temp+rename writers used by manifest, alias,
+	// lexical and profile.
+	return strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".tmp")
+}
+
 // Rejection records a file that was found but could not be indexed, so the
 // caller can report it rather than let the document vanish from the corpus.
 type Rejection struct {
@@ -48,6 +76,15 @@ func LoadDirectory(dir string) ([]Document, []Rejection, error) {
 			return err
 		}
 		if d.IsDir() {
+			if isBuildArtifactDir(d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		// Kash writes its own outputs into data/. Without this they are walked
+		// as if they were source documents, so every build reported the
+		// manifest and one line per embedded-store file as "not indexed".
+		if isBuildArtifact(d.Name()) {
 			return nil
 		}
 

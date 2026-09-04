@@ -48,8 +48,11 @@ type RefPattern struct {
 // overrides what it needs in agent.yaml.
 type ChunkerConfig struct {
 	// RefPatterns are the corpus-specific numbered-item patterns.
-	// Each entry must contain exactly one capture group (the number).
-	// Patterns are tried in order; the first match wins per heading/body.
+	// Each entry must contain exactly one capture group (the number); an entry
+	// with any other number of groups is rejected at compile time.
+	// Every pattern is applied and its hits accumulate — matches are additive,
+	// not first-wins, so two patterns capturing the same number produce one
+	// deduplicated value rather than shadowing each other.
 	// The meta_key is the metadata field written on the chunk and used by
 	// the exact-reference retrieval route (e.g. "section", "clause", "verse").
 	RefPatterns []RefPattern `yaml:"ref_patterns"`

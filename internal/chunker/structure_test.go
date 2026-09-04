@@ -242,3 +242,54 @@ func TestSplitStructuredCarriesTableHeaderAcrossChunks(t *testing.T) {
 			"chunk %d must be classified as a table", i)
 	}
 }
+
+// A reference pattern with no capture group used to compile happily and then
+// panic on first use: FindAllStringSubmatch returns rows of length one and
+// extractRefs indexes hit[1]. That was reachable only through a hand-written
+// agent.yaml typo, but becomes a shippable crash once patterns are generated.
+func TestCompileRefMatchersRejectsBadPatterns(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		wantErr string
+	}{
+		{"no capture group", `(?i)verse\s+\d+`, "one capture group"},
+		{"two capture groups", `(?i)(verse)\s+(\d+)`, "one capture group"},
+		{"invalid regex", `(?i)verse\s+(\d+`, "invalid ref_pattern"},
+		{"over length limit", `(?i)` + strings.Repeat("a", MaxRefPatternLen) + `(\d+)`, "exceeds"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, warnings := CompileRefMatchersVerbose([]config.RefPattern{
+				{Pattern: tt.pattern, MetaKey: "verse"},
+			})
+			assert.Empty(t, got, "a rejected pattern must not be compiled in")
+			require.Len(t, warnings, 1, "a rejected pattern must be reported, not dropped silently")
+			assert.Contains(t, warnings[0], tt.wantErr)
+		})
+	}
+}
+
+func TestCompileRefMatchersAcceptsValidPattern(t *testing.T) {
+	got, warnings := CompileRefMatchersVerbose([]config.RefPattern{
+		{Pattern: `(?i)verse\s+(\d+)`, MetaKey: "verse"},
+	})
+	assert.Len(t, got, 1)
+	assert.Empty(t, warnings)
+}
+
+// A pattern that survives compilation must be safe to run — this is the
+// regression guard for the hit[1] panic.
+func TestSplitStructuredSurvivesAllCompiledPatterns(t *testing.T) {
+	matchers, _ := CompileRefMatchersVerbose([]config.RefPattern{
+		{Pattern: `(?i)verse\s+\d+`, MetaKey: "verse"},   // rejected: no group
+		{Pattern: `(?i)verse\s+(\d+)`, MetaKey: "verse"}, // kept
+	})
+	ck := newTestChunker(t)
+
+	assert.NotPanics(t, func() {
+		_, err := ck.SplitStructured("# Doc\n\n### Verse 12\nBody text here.\n", "d.md", matchers)
+		require.NoError(t, err)
+	})
+}

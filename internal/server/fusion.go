@@ -93,14 +93,17 @@ type routerMatcher struct {
 
 // buildRefRouter compiles the RefPatterns from the domain config into a
 // refRouter. Patterns that fail to compile are skipped (not fatal).
+//
+// The capture-group check is not cosmetic: queryRefs below indexes hit[1], so a
+// pattern with no capture group would panic on the first query that matched it.
 func buildRefRouter(patterns []agentconfig.RefPattern) *refRouter {
 	r := &refRouter{}
 	for _, p := range patterns {
-		if p.Pattern == "" || p.MetaKey == "" {
+		if p.Pattern == "" || p.MetaKey == "" || len(p.Pattern) > chunker.MaxRefPatternLen {
 			continue
 		}
 		re, err := regexp.Compile(p.Pattern)
-		if err != nil {
+		if err != nil || re.NumSubexp() != 1 {
 			continue
 		}
 		r.matchers = append(r.matchers, routerMatcher{re: re, metaKey: p.MetaKey})

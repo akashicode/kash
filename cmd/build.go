@@ -134,7 +134,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	// Compile the corpus-specific structural reference matchers once, then
 	// reuse them for every document. A bad pattern in agent.yaml is skipped
 	// (not fatal) so a typo in one pattern doesn't break the whole build.
-	refMatchers := chunker.CompileRefMatchers(domainCfg.Chunker.RefPatterns)
+	refMatchers, refWarnings := chunker.CompileRefMatchersVerbose(domainCfg.Chunker.RefPatterns)
+	for _, w := range refWarnings {
+		display.StepWarn("chunker: " + w)
+	}
 
 	// Chunk options — priority: explicit build.chunk_size in agent.yaml,
 	// then auto-tune from runtime.embedder.max_tokens, then defaults.
