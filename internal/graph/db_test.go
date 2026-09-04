@@ -164,3 +164,64 @@ func TestChunkIDProvenance(t *testing.T) {
 	require.NoError(t, db.DeleteBySource(ctx, "tantra.md"))
 	assert.EqualValues(t, 0, db.Count())
 }
+
+// A triple whose originating chunk could not be identified must degrade to a
+// document-level citation rather than borrow another chunk's identity. The
+// build's findBestChunk returns "" when no chunk in the batch shows evidence
+// for the fact; inventing an ID there would print a passage citation the
+// passage does not support and hand the fact a chunk-level ranking boost.
+func TestChunkIDAbsentDegradesToSourceCitation(t *testing.T) {
+	db, err := NewDB()
+	require.NoError(t, err)
+	defer db.Close()
+
+	ctx := context.Background()
+	require.NoError(t, db.AddTriples(ctx, []Triple{
+		{Subject: "Gorakhnath", Predicate: "founded", Object: "Nath Sampradaya"},
+	}, "nath.md"))
+
+	results, err := db.Search(ctx, "Gorakhnath Nath Sampradaya", 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+
+	assert.Equal(t, "nath.md", results[0].Source, "source must survive without a chunk ID")
+	assert.Empty(t, results[0].ChunkID, "unknown provenance must stay unknown")
+
+	// With no chunk ID there is nothing to match against the passage map, so
+	// the citation falls back to the document alone.
+	formatted := FormatResultsWithPassages(results, map[string]int{"other_chunk_0": 1})
+	assert.Contains(t, formatted, "(source: nath.md)")
+	assert.NotContains(t, formatted, "passage")
+}
+
+// Graphs built before chunk-level provenance stored a bare source as the quad
+// label. Those labels have no separator and must still parse as a source, so an
+// existing corpus keeps working without a rebuild.
+func TestLegacyLabelParsesAsSourceOnly(t *testing.T) {
+	source, chunkID := parseLabel("tantraloka_vol1.md")
+	assert.Equal(t, "tantraloka_vol1.md", source)
+	assert.Empty(t, chunkID)
+
+	source, chunkID = parseLabel("tantraloka_vol1.md|tantraloka_vol1_md_42")
+	assert.Equal(t, "tantraloka_vol1.md", source)
+	assert.Equal(t, "tantraloka_vol1_md_42", chunkID)
+}
+
+// AllTriples feeds the build's relationship-embedding backfill, so it must
+// carry provenance through — otherwise relationships rebuilt from an existing
+// graph would silently lose their chunk IDs.
+func TestAllTriplesCarriesChunkID(t *testing.T) {
+	db, err := NewDB()
+	require.NoError(t, err)
+	defer db.Close()
+
+	ctx := context.Background()
+	require.NoError(t, db.AddTriples(ctx, []Triple{
+		{Subject: "Matsyendranath", Predicate: "was teacher of", Object: "Gorakhnath", ChunkID: "nath_md_7"},
+	}, "nath.md"))
+
+	all := db.AllTriples(ctx)
+	require.Len(t, all, 1)
+	assert.Equal(t, "nath.md", all[0].Source)
+	assert.Equal(t, "nath_md_7", all[0].ChunkID)
+}

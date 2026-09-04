@@ -838,5 +838,14 @@ func findBestChunk(batch []chunker.Chunk, subject, object string) string {
 			return ch.ID
 		}
 	}
-	return batch[0].ID
+
+	// No evidence for any chunk in this batch. Returning batch[0] here would
+	// invent provenance: the fact would print as "[passage 1]" and take the
+	// chunk-level context boost, both on a passage that does not support it.
+	// This path is common rather than rare — the extractor is asked for the
+	// shortest unambiguous entity name, so it emits "Gorakhnath" where an IAST
+	// source reads "gorakhanātha" and neither Contains pass can match. An empty
+	// ID degrades correctly: the fact keeps its document citation and the
+	// document-level boost.
+	return ""
 }

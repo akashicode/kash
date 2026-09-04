@@ -626,22 +626,6 @@ const contextChunkBoost = 4.0
 // surfaced in retrieval (resolving homonyms).
 const contextDocBoost = 2.5
 
-// searchGraphInContext runs a graph search and re-ranks the results using the
-// source documents that semantic retrieval selected, resolving homonyms that
-// pure string matching cannot.
-func (s *Server) searchGraphInContext(ctx context.Context, query string, seedEntities []string, seedTriples []graph.Triple, chunks []vector.SearchResult, limit int) []graph.SearchResult {
-	candidates, err := s.graphDB.SearchWithSeeds(ctx, query, seedEntities, seedTriples, limit*4, graphHops)
-	if err != nil {
-		s.log.Warn("graph search failed (non-fatal)", "error", err, "query", query)
-		return nil
-	}
-
-	ranked := rankFactsByContext(candidates, chunks, limit)
-	s.log.Info("graph search completed", "results", len(ranked),
-		"candidates", len(candidates), "query", query)
-	return ranked
-}
-
 // rankFactsByContext promotes facts whose originating chunk or source document also surfaced in
 // retrieval, then truncates to limit. Facts matching the exact chunk are boosted highest.
 func rankFactsByContext(candidates []graph.SearchResult, chunks []vector.SearchResult, limit int) []graph.SearchResult {
