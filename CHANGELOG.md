@@ -13,8 +13,6 @@ those are called out under **Requires rebuild**.
 
 ## [Unreleased]
 
-## [2.0.0] - 2026-09-04
-
 ### Added
 
 - **Corpus profile.** `kash build` now measures your documents and writes
@@ -91,6 +89,12 @@ those are called out under **Requires rebuild**.
   cut, so a mined `"śrī "` echoed back as `"śrī"` would have eaten the front of
   every entity beginning with those letters. Values filtered against a supplied
   list now come back in the list's own spelling rather than the model's.
+- **Release notes never came from the CHANGELOG.** The release workflow built a
+  dynamic regex as `"^## \[" ver "\]"`, but awk resolves `\[` inside a
+  string literal to a plain `[`, leaving the character class `^## [1.0.0]` —
+  which matches no heading. An empty section falls back to the commit list by
+  design, so a release would have shipped commit subjects while appearing to
+  honour the CHANGELOG. The heading is now matched as a plain string.
 - Reranker responses are bounds-checked; a provider returning an out-of-range
   index previously panicked the request. `/health` now reports reranker status
   from the real gate rather than a partial one.
@@ -108,6 +112,12 @@ those are called out under **Requires rebuild**.
   shipped 1000 and likely been rejected — silently, since a failed rerank falls
   back to cosine order. The reranker now sees the first 100 candidates and the
   rest keep their similarity order behind them.
+- **Facts with unknown provenance borrowed the first chunk in their batch.**
+  When no passage in a batch showed evidence for a fact, attribution fell back
+  to the first one, which fabricated a citation: the fact printed as
+  "[passage 1]" and took the chunk-level ranking boost, both on text that does
+  not support it. Unknown provenance now stays unknown, and the fact keeps its
+  document citation.
 - **A fact’s passage citation was never checked.** The extractor reports which
   passage it used and that report became the chunk id unconditionally, so a
   misreported index printed a passage citation on text that does not support
@@ -161,9 +171,10 @@ the vector and lexical indexes disagreeing about the same chunk.
 Existing Docker projects should replace the per-file `COPY` lines in their
 Dockerfile with `COPY data/ /app/data/`; `kash build` warns when this applies.
 
-A rebuild also re-extracts the knowledge graph under the per-passage triple
-budget. That one is optional — an existing graph stays correct, just sparser
-than this release would produce.
+Two graph changes are softer: a rebuild re-extracts under the per-passage
+triple budget and writes entity-level chunk provenance. Neither is required —
+an existing graph stays correct, just sparser, and entities without
+provenance read as having none rather than failing.
 
 ## [1.0.0]
 
@@ -180,7 +191,6 @@ than this release would produce.
   into chromem-go, LLM triple extraction into cayley, and the REST, MCP and A2A
   interfaces.
 
-[Unreleased]: https://github.com/akashicode/kash/compare/v2.0.0...HEAD
-[2.0.0]: https://github.com/akashicode/kash/compare/v1.0.0...v2.0.0
+[Unreleased]: https://github.com/akashicode/kash/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/akashicode/kash/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/akashicode/kash/releases/tag/v0.1.0
