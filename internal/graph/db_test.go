@@ -194,6 +194,45 @@ func TestChunkIDAbsentDegradesToSourceCitation(t *testing.T) {
 	assert.NotContains(t, formatted, "passage")
 }
 
+// A chunk ID is an internal identifier, not a citation. When the supporting
+// chunk was not among the retrieved passages there is nothing for a reader to
+// look up, so the fact must degrade to its document rather than print an ID
+// that looks like a reference to a model instructed to cite inline.
+func TestUnretrievedChunkDoesNotLeakItsID(t *testing.T) {
+	results := []SearchResult{{
+		Subject:   "Gorakhnath",
+		Predicate: "founded",
+		Object:    "Nath Sampradaya",
+		Source:    "nath.md",
+		ChunkID:   "nath_md_312",
+	}}
+
+	// The passage map holds a different chunk, as it will whenever a graph fact
+	// is supported by a chunk that did not make top_k.
+	formatted := FormatResultsWithPassages(results, map[string]int{"other_md_7": 1})
+
+	assert.Contains(t, formatted, "(source: nath.md)")
+	assert.NotContains(t, formatted, "nath_md_312", "an internal chunk ID must never reach the prompt")
+	assert.NotContains(t, formatted, "passage", "an unretrieved chunk cannot be cited as a passage")
+}
+
+// The passage citation is the whole point of chunk-level provenance: it points
+// a claim at text the reader can actually see.
+func TestRetrievedChunkCitesItsPassageNumber(t *testing.T) {
+	results := []SearchResult{{
+		Subject:   "Abhinavagupta",
+		Predicate: "commented on",
+		Object:    "Tantraloka",
+		Source:    "tantra.md",
+		ChunkID:   "tantra_md_4",
+	}}
+
+	formatted := FormatResultsWithPassages(results, map[string]int{"tantra_md_4": 3})
+
+	assert.Contains(t, formatted, "(source: tantra.md [passage 3])")
+	assert.NotContains(t, formatted, "tantra_md_4")
+}
+
 // Graphs built before chunk-level provenance stored a bare source as the quad
 // label. Those labels have no separator and must still parse as a source, so an
 // existing corpus keeps working without a rebuild.

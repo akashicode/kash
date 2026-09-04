@@ -422,6 +422,13 @@ func FormatResultsWithPassages(results []SearchResult, chunkPassageMap map[strin
 			}
 		}
 
+		// Cite a passage only when the supporting chunk is one the reader can
+		// actually see. A chunk ID is an internal identifier — "tantra_md_312"
+		// tells a reader nothing and cannot be looked up — so when the
+		// supporting chunk was not retrieved, the fact degrades to a
+		// document-level citation. Printing the ID anyway put a string that
+		// looks like a reference in front of a model told to cite inline,
+		// which is an invitation to quote it as one.
 		citation := ""
 		if r.ChunkID != "" && chunkPassageMap != nil {
 			if pNum, ok := chunkPassageMap[r.ChunkID]; ok {
@@ -433,13 +440,7 @@ func FormatResultsWithPassages(results []SearchResult, chunkPassageMap map[strin
 			}
 		}
 		if citation == "" && r.Source != "" {
-			if r.ChunkID != "" {
-				citation = fmt.Sprintf(" (source: %s, chunk: %s)", r.Source, r.ChunkID)
-			} else {
-				citation = fmt.Sprintf(" (source: %s)", r.Source)
-			}
-		} else if citation == "" && r.ChunkID != "" {
-			citation = fmt.Sprintf(" (chunk: %s)", r.ChunkID)
+			citation = fmt.Sprintf(" (source: %s)", r.Source)
 		}
 
 		fmt.Fprintf(&sb, "%s%s %s %s%s%s\n", prefix, r.Subject, r.Predicate, r.Object, citation, suffix)

@@ -100,6 +100,19 @@ those are called out under **Requires rebuild**.
   shipped 1000 and likely been rejected — silently, since a failed rerank falls
   back to cosine order. The reranker now sees the first 100 candidates and the
   rest keep their similarity order behind them.
+- **Generated entity summaries were indistinguishable from quoted source.**
+  Descriptions written by a model at build time appeared under the same
+  heading style as retrieved passages, so an answer could rest on a summary
+  and cite a document that never contains those words. They are now labelled
+  as generated orienting context, and the prompt asks for every claim to be
+  grounded in a numbered passage or a graph fact.
+- **Internal chunk IDs reached the prompt as pseudo-citations.** A graph fact
+  whose supporting chunk was not retrieved printed "chunk: tantra_md_312" —
+  a string that looks like a reference to a model instructed to cite inline,
+  and that no reader can look up. Such a fact now cites its document alone.
+- **The citation instruction under-used what retrieval provides.** It asked
+  only for a filename, while every passage carries a number and a structural
+  location (book, chapter, verse). It now asks for both.
 - **Triple extraction was capped at two facts per chunk.** The prompt asked for
   "5-20 triples" per batch of ten passages, which rationed dense passages
   regardless of what they stated — measured at 15.3 triples per batch against

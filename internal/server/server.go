@@ -800,7 +800,13 @@ func (s *Server) hybridSearch(ctx context.Context, query string, topK int) (stri
 
 	var sb strings.Builder
 	if len(result.Entities) > 0 {
-		sb.WriteString("## Relevant Entities\n\n")
+		// Entity descriptions are written by a model at build time from graph
+		// facts, not quoted from the corpus. Presenting them under the same
+		// heading style as retrieved passages made synthesised text
+		// indistinguishable from source text, so an answer could rest on a
+		// summary and cite a document that never contains those words. Say
+		// what they are, and say they are not quotable.
+		sb.WriteString("## Entity Summaries (generated at build time — orienting context, not quotable source text)\n\n")
 		for _, e := range result.Entities {
 			fmt.Fprintf(&sb, "- **%s**: %s\n", e.Name, e.Description)
 		}
@@ -1063,8 +1069,13 @@ func buildAugmentedMessages(systemPrompt, retrievedCtx string, original []openai
 		augmented = append(augmented, openai.ChatCompletionMessage{
 			Role: openai.ChatMessageRoleSystem,
 			Content: "Here is relevant context from the knowledge base:\n\n" + retrievedCtx +
-				"\n\nWhen you answer, cite the source documents you drew from inline, e.g. (source: book.pdf). " +
-				"Only cite sources that appear in the context above; never invent a source.",
+				"\n\nCite inline from the numbered passages above, e.g. (source: book.pdf [1]). " +
+				"Each passage opens with its structural location in brackets — book, chapter, " +
+				"verse or section number — so include that when a claim rests on a specific one, " +
+				"e.g. (source: book.pdf [1], Dharana 49). Cite only sources and passage numbers " +
+				"that appear above; never invent either. Entity summaries are generated context: " +
+				"use them to orient, but ground each claim in a numbered passage or a " +
+				"knowledge-graph fact, and say plainly when the context does not answer the question.",
 		})
 	}
 
