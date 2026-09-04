@@ -72,6 +72,7 @@ type Server struct {
 	corpusVersion int                // 0 = unknown (no build manifest found)
 	buildManifest *manifest.Manifest // nil when no manifest is present
 	entityAliases int                // 0 = entity resolution not in use
+	decompCache   *queryDecompCache
 }
 
 // Config holds the runtime server configuration.
@@ -191,6 +192,7 @@ func New(cfg Config) (*Server, error) {
 		corpusVersion: corpusVersion,
 		buildManifest: buildManifest,
 		entityAliases: aliasCount,
+		decompCache:   newQueryDecompCache(1000),
 	}
 
 	logger.Info("server initialized",
@@ -385,6 +387,9 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 	topK = s.topKOrDefault(topK)
 	s.log.Debug("hybrid search starting", "query", query, "top_k", topK)
 
+	// Step 0: Query keyword decomposition (dual-channel routing)
+	dq := s.decomposeQuery(ctx, query)
+
 	candidateK := candidateDepth(topK, s.vectorStore.Count())
 
 	var vectorResults []vector.SearchResult
@@ -397,19 +402,35 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 		}
 	}
 
-	// Dense entity retrieval: find key entities matching query semantically
+	// Dense entity retrieval: find key entities matching query semantically.
+	// Using decomposed specific entities removes conversational filler from embedding.
+	entityQuery := query
+	if len(dq.SpecificEntities) > 0 {
+		entityQuery = strings.Join(dq.SpecificEntities, " ")
+	}
+
 	var entityResults []vector.EntitySearchResult
 	if s.vectorStore.EntityCount() > 0 {
 		var err error
-		entityResults, err = s.vectorStore.QueryEntities(ctx, query, 5)
+		entityResults, err = s.vectorStore.QueryEntities(ctx, entityQuery, 5)
 		if err != nil {
-			s.log.Warn("entity vector search failed (non-fatal)", "error", err, "query", query)
+			s.log.Warn("entity vector search failed (non-fatal)", "error", err, "query", entityQuery)
 		}
 	}
 
 	var seedEntities []string
+	seenSeed := map[string]bool{}
+	for _, name := range dq.SpecificEntities {
+		k := strings.ToLower(strings.TrimSpace(name))
+		if k != "" && !seenSeed[k] {
+			seenSeed[k] = true
+			seedEntities = append(seedEntities, name)
+		}
+	}
 	for _, e := range entityResults {
-		if e.Similarity > 0.4 {
+		k := strings.ToLower(strings.TrimSpace(e.Name))
+		if e.Similarity > 0.4 && !seenSeed[k] {
+			seenSeed[k] = true
 			seedEntities = append(seedEntities, e.Name)
 		}
 	}
@@ -444,10 +465,18 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 	var graphIDs []string
 	var graphCandidates []graph.SearchResult
 	if s.graphDB != nil && s.graphDB.Count() > 0 {
+		var graphQueryParts []string
+		graphQueryParts = append(graphQueryParts, dq.SpecificEntities...)
+		graphQueryParts = append(graphQueryParts, dq.BroadConcepts...)
+		graphQuery := strings.Join(graphQueryParts, " ")
+		if strings.TrimSpace(graphQuery) == "" {
+			graphQuery = query
+		}
+
 		var err error
-		graphCandidates, err = s.graphDB.SearchWithSeeds(ctx, query, seedEntities, seedTriples, candidateK*2, graphHops)
+		graphCandidates, err = s.graphDB.SearchWithSeeds(ctx, graphQuery, seedEntities, seedTriples, candidateK*2, graphHops)
 		if err != nil {
-			s.log.Warn("graph search failed (non-fatal)", "error", err, "query", query)
+			s.log.Warn("graph search failed (non-fatal)", "error", err, "query", graphQuery)
 		} else {
 			seenGraphChunk := map[string]bool{}
 			for _, f := range graphCandidates {
@@ -461,7 +490,8 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 
 	s.log.Info("routes completed", "query", query,
 		"vector", len(vectorResults), "lexical", len(lexIDs), "exact", len(exact), "graph_chunks", len(graphIDs),
-		"entities", len(entityResults), "relationships", len(relResults))
+		"entities", len(entityResults), "relationships", len(relResults),
+		"decomp_entities", len(dq.SpecificEntities), "decomp_concepts", len(dq.BroadConcepts))
 
 	lists := map[string][]string{}
 	byID := map[string]vector.SearchResult{}

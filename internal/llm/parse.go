@@ -57,3 +57,59 @@ func parseTriples(raw string) ([]Triple, error) {
 	}
 	return filtered, nil
 }
+
+// parseDecomposedQuery parses a JSON object with specific_entities and broad_concepts.
+// It is lenient with markdown fences and surrounding explanatory text.
+func parseDecomposedQuery(raw string) (DecomposedQuery, error) {
+	raw = strings.TrimSpace(raw)
+
+	// Strip markdown code fences if present
+	if strings.HasPrefix(raw, "```") {
+		lines := strings.SplitN(raw, "\n", 2)
+		if len(lines) > 1 {
+			raw = lines[1]
+		}
+		raw = strings.TrimSuffix(raw, "```")
+		raw = strings.TrimSpace(raw)
+	}
+
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start == -1 || end == -1 || end < start {
+		if raw == "" {
+			return DecomposedQuery{}, fmt.Errorf("empty response")
+		}
+		return DecomposedQuery{}, fmt.Errorf("no JSON object in response: %.120q", raw)
+	}
+	raw = raw[start : end+1]
+
+	var dq DecomposedQuery
+	if err := json.Unmarshal([]byte(raw), &dq); err != nil {
+		return DecomposedQuery{}, fmt.Errorf("unmarshal decomposed query JSON: %w", err)
+	}
+
+	dq.SpecificEntities = cleanStringSlice(dq.SpecificEntities)
+	dq.BroadConcepts = cleanStringSlice(dq.BroadConcepts)
+
+	return dq, nil
+}
+
+func cleanStringSlice(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	seen := make(map[string]bool, len(in))
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		lower := strings.ToLower(s)
+		if !seen[lower] {
+			seen[lower] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}

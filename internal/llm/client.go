@@ -27,6 +27,13 @@ type Triple struct {
 	ChunkID     string `json:"chunk_id,omitempty"`
 }
 
+// DecomposedQuery contains low-level and high-level query keywords
+// extracted by the LLM for dual-channel retrieval.
+type DecomposedQuery struct {
+	SpecificEntities []string `json:"specific_entities"`
+	BroadConcepts    []string `json:"broad_concepts"`
+}
+
 // Client wraps the OpenAI client for LLM interactions.
 type Client struct {
 	client *openai.Client
@@ -285,4 +292,34 @@ func (c *Client) ChatCompletionStream(ctx context.Context, req openai.ChatComple
 // Model returns the configured model name.
 func (c *Client) Model() string {
 	return c.model
+}
+
+// DecomposeQuery extracts specific entities (low-level keywords) and broad
+// conceptual themes (high-level keywords) from a query for dual-channel retrieval.
+func (c *Client) DecomposeQuery(ctx context.Context, query string) (DecomposedQuery, error) {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return DecomposedQuery{}, nil
+	}
+
+	system := `You are a query analysis assistant for a knowledge retrieval system.
+Your task is to decompose a user query into two lists of keywords:
+1. specific_entities: named entities, people, texts, places, technical identifiers, or specific components directly mentioned.
+2. broad_concepts: general themes, domains, high-level topics, categories, or conceptual domains.
+
+Respond ONLY with a JSON object in this exact format:
+{
+  "specific_entities": ["..."],
+  "broad_concepts": ["..."]
+}
+If there are no specific entities or broad concepts, use an empty array [].
+Do not include conversational filler ("what", "who", "tell me", "difference between").`
+
+	prompt := fmt.Sprintf("Query: %s", trimmed)
+	raw, err := c.Complete(ctx, system, prompt)
+	if err != nil {
+		return DecomposedQuery{}, fmt.Errorf("decompose query: %w", err)
+	}
+
+	return parseDecomposedQuery(raw)
 }
