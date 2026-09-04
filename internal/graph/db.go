@@ -76,6 +76,9 @@ func (db *DB) entityKey(entity string) string {
 type snapshot struct {
 	triples  []SearchResult
 	byEntity map[string][]int
+	// weight counts how many raw quads collapsed into each deduplicated triple,
+	// keyed on FoldKey(S,P,O). A triple mentioned in N chunks has weight N.
+	weight map[string]int
 }
 
 // invalidate drops the cached index after a mutation.
@@ -100,7 +103,7 @@ func (db *DB) index(ctx context.Context) *snapshot {
 		return db.idx
 	}
 
-	s = &snapshot{byEntity: map[string][]int{}}
+	s = &snapshot{byEntity: map[string][]int{}, weight: map[string]int{}}
 	seen := map[string]bool{}
 	aliases := db.aliases // already holding the write lock
 
@@ -115,6 +118,9 @@ func (db *DB) index(ctx context.Context) *snapshot {
 			continue
 		}
 		key := FoldKey(subj, pred, obj)
+		// Count every raw quad occurrence — including duplicates — before
+		// deduplication, so weight reflects how many chunks attest this fact.
+		s.weight[key]++
 		if seen[key] {
 			continue
 		}
@@ -446,6 +452,22 @@ func FormatResultsWithPassages(results []SearchResult, chunkPassageMap map[strin
 		fmt.Fprintf(&sb, "%s%s %s %s%s%s\n", prefix, r.Subject, r.Predicate, r.Object, citation, suffix)
 	}
 	return sb.String()
+}
+
+// TripleWeight returns how many raw quads (across all chunks and documents)
+// collapsed into the given canonical triple. Returns 1 when the triple is
+// present but was only seen once, and 1 (not 0) when the triple is absent —
+// so callers can safely use the value as a multiplicative factor.
+func (db *DB) TripleWeight(subject, predicate, object string) int {
+	s := db.index(context.Background())
+	if s == nil {
+		return 1
+	}
+	key := FoldKey(subject, predicate, object)
+	if w := s.weight[key]; w > 0 {
+		return w
+	}
+	return 1
 }
 
 // Count returns the number of quads in the graph.

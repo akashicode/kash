@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"sort"
@@ -606,9 +607,21 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 		chunks = append(chunks, c.result)
 	}
 
+	// Build a weight index from the relationship results so rankFactsByContext
+	// can boost facts that have strong multi-chunk evidential support.
+	weightByKey := make(map[string]float64, len(relResults))
+	for _, r := range relResults {
+		if r.Weight > 0 {
+			key := graph.FoldKey(r.Subject, r.Predicate, r.Object)
+			if existing := weightByKey[key]; r.Weight > existing {
+				weightByKey[key] = r.Weight
+			}
+		}
+	}
+
 	// Re-rank graph facts against the selected chunks for context disambiguation:
 	// facts matching the exact chunk get highest priority, followed by facts from the same document.
-	graphResults := rankFactsByContext(graphCandidates, chunks, s.graphFactLimit())
+	graphResults := rankFactsByContext(graphCandidates, chunks, s.graphFactLimit(), weightByKey)
 
 	return retrievalResult{
 		Chunks:        chunks,
@@ -746,7 +759,9 @@ const contextDocBoost = 2.5
 
 // rankFactsByContext promotes facts whose originating chunk or source document also surfaced in
 // retrieval, then truncates to limit. Facts matching the exact chunk are boosted highest.
-func rankFactsByContext(candidates []graph.SearchResult, chunks []vector.SearchResult, limit int) []graph.SearchResult {
+// weightByKey maps graph.FoldKey(S,P,O) to the co-occurrence count stored at build time;
+// a log1p boost is applied so triples attested in many chunks rank above those from a single one.
+func rankFactsByContext(candidates []graph.SearchResult, chunks []vector.SearchResult, limit int, weightByKey map[string]float64) []graph.SearchResult {
 	// No semantic signal to disambiguate with — return as-is
 	if len(chunks) == 0 {
 		if len(candidates) > limit {
@@ -774,6 +789,16 @@ func rankFactsByContext(candidates []graph.SearchResult, chunks []vector.SearchR
 		} else if ranked[i].Source != "" && inContextDocs[ranked[i].Source] {
 			ranked[i].Score *= contextDocBoost
 		}
+		// Apply the evidential weight boost: log1p(w) where w is the number of
+		// chunks this triple was extracted from. A triple attested in N chunks
+		// has w=N; log1p(1)≈0.69, log1p(5)≈1.79, log1p(20)≈3.04.
+		// When weight is absent (old corpora, weight=0) we use log1p(1) so the
+		// boost is uniform and does not change relative ordering.
+		w := weightByKey[graph.FoldKey(ranked[i].Subject, ranked[i].Predicate, ranked[i].Object)]
+		if w <= 0 {
+			w = 1
+		}
+		ranked[i].Score *= math.Log1p(w)
 	}
 
 	sort.SliceStable(ranked, func(i, j int) bool {

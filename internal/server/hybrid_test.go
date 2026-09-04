@@ -38,7 +38,7 @@ func TestGraphContextBoostResolvesHomonyms(t *testing.T) {
 		{Subject: "eighteen samskaras", Predicate: "purify", Object: "mercury", Source: "Rasa Hridaya Tantra.md", Score: 4},
 	}
 
-	ranked := rankFactsByContext(candidates, chunks, 4)
+	ranked := rankFactsByContext(candidates, chunks, 4, nil)
 
 	require.Len(t, ranked, 4)
 	// The alchemical facts must now lead
@@ -54,7 +54,7 @@ func TestGraphContextBoostWithoutChunksIsPassthrough(t *testing.T) {
 		{Subject: "a", Source: "x.md", Score: 3},
 		{Subject: "b", Source: "y.md", Score: 1},
 	}
-	ranked := rankFactsByContext(candidates, nil, 10)
+	ranked := rankFactsByContext(candidates, nil, 10, nil)
 	assert.Equal(t, candidates, ranked)
 }
 
@@ -73,7 +73,7 @@ func TestGraphContextBoostChunkLevel(t *testing.T) {
 		{Subject: "other fact", Source: "other.md", ChunkID: "other_1", Score: 3.0},
 	}
 
-	ranked := rankFactsByContext(candidates, chunks, 3)
+	ranked := rankFactsByContext(candidates, chunks, 3, nil)
 	require.Len(t, ranked, 3)
 
 	// Precise fact: 1.5 * 4.0 = 6.0

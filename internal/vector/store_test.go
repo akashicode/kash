@@ -395,3 +395,61 @@ func TestQueriesClampToASmallCollection(t *testing.T) {
 	require.NoError(t, err, "a relationship query must not fail on a small corpus")
 	assert.Len(t, rels, 1)
 }
+
+// TestRelationshipWeight verifies that Weight round-trips through the
+// chromem metadata so retrieval can apply the evidential-strength boost.
+func TestRelationshipWeight(t *testing.T) {
+	srv := stubEmbedder(t)
+	cfg := &config.ProviderConfig{BaseURL: srv.URL, APIKey: "test", Model: "test"}
+	s, err := NewPersistentStore(t.TempDir(), cfg)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	rels := []RelationshipDoc{
+		{
+			Subject:   "Abhinavagupta",
+			Predicate: "authored",
+			Object:    "Tantraloka",
+			Source:    "tantra.md",
+			Weight:    3,
+		},
+		{
+			// No weight field — simulates a pre-weight build entry
+			Subject:   "Shiva",
+			Predicate: "is worshipped at",
+			Object:    "Varanasi",
+			Source:    "tantra.md",
+		},
+	}
+	require.NoError(t, s.AddRelationships(ctx, rels))
+
+	results, err := s.QueryRelationships(ctx, "Abhinavagupta Tantraloka", 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+
+	// Find the weighted entry
+	var weighted *RelationshipSearchResult
+	for i := range results {
+		if results[i].Subject == "Abhinavagupta" {
+			weighted = &results[i]
+			break
+		}
+	}
+	require.NotNil(t, weighted, "weighted relationship must be returned")
+	assert.Equal(t, float64(3), weighted.Weight, "weight must round-trip through metadata")
+
+	// Find the zero-weight entry (pre-weight build compatibility)
+	results2, err := s.QueryRelationships(ctx, "Shiva Varanasi", 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, results2)
+	var unweighted *RelationshipSearchResult
+	for i := range results2 {
+		if results2[i].Subject == "Shiva" {
+			unweighted = &results2[i]
+			break
+		}
+	}
+	require.NotNil(t, unweighted, "unweighted relationship must be returned")
+	assert.Equal(t, float64(0), unweighted.Weight, "absent weight metadata must return 0")
+}

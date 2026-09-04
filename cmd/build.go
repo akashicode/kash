@@ -555,6 +555,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 							Description: t.Description,
 							Source:      name,
 							ChunkID:     t.ChunkID,
+							// Weight is the co-occurrence count across all chunks
+							// accumulated so far. It grows with each batch as
+							// more evidence for the same triple is found.
+							Weight: float64(gdb.TripleWeight(t.Subject, t.Predicate, t.Object)),
 						}
 					}
 					if err := vs.AddRelationships(ctx, relDocs); err != nil {
@@ -605,6 +609,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 					Object:    t.Object,
 					Source:    t.Source,
 					ChunkID:   t.ChunkID,
+					Weight:    float64(gdb.TripleWeight(t.Subject, t.Predicate, t.Object)),
 				}
 			}
 			if err := vs.AddRelationships(ctx, relDocs); err != nil {

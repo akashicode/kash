@@ -57,6 +57,16 @@ those are called out under **Requires rebuild**.
   profiling as well as to serving, and a chat request may override it per call.
   Unset means the parameter is not sent at all, so non-reasoning models are
   unaffected.
+- **Relationship weight as a corpus-time quality signal.** Each canonical triple
+  now accumulates a co-occurrence count — the number of distinct chunks the same
+  (subject, predicate, object) triple was extracted from. The count is stored in
+  the relationship vector-store metadata at build time (`weight` field on
+  `RelationshipDoc`) and used at retrieval time to apply a `log1p(weight)` boost
+  to graph fact scores in `rankFactsByContext`, so facts attested in many chapters
+  surface above those extracted from a single passage. Corpora built before this
+  change degrade gracefully: a missing `weight` key is treated as `w = 1` (uniform
+  factor, relative order unchanged). A rebuild is not required but will stamp
+  weights on an existing corpus.
 
 ### Fixed
 

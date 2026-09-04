@@ -89,6 +89,10 @@ type RelationshipSearchResult struct {
 	Source      string            `json:"source,omitempty"`
 	ChunkID     string            `json:"chunk_id,omitempty"`
 	Similarity  float32           `json:"similarity"`
+	// Weight is the co-occurrence count stored at build time — how many raw
+	// quads (across chunks and documents) collapsed into this canonical triple.
+	// 0 means the field was absent in the index (pre-weight build); treat as 1.
+	Weight      float64           `json:"weight,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
@@ -520,6 +524,9 @@ func (s *Store) AddRelationships(ctx context.Context, rels []RelationshipDoc) er
 		if r.Description != "" {
 			meta["description"] = r.Description
 		}
+		if r.Weight > 0 {
+			meta["weight"] = fmt.Sprintf("%g", r.Weight)
+		}
 
 		h := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s", r.Subject, r.Predicate, r.Object)))
 		id := "rel:" + hex.EncodeToString(h[:12])
@@ -562,6 +569,12 @@ func (s *Store) QueryRelationships(ctx context.Context, query string, topK int) 
 			}
 		}
 
+		// Parse weight; absent or unparseable defaults to 0 (caller treats as 1).
+		var weight float64
+		if wStr := r.Metadata["weight"]; wStr != "" {
+			fmt.Sscanf(wStr, "%g", &weight)
+		}
+
 		out[i] = RelationshipSearchResult{
 			Subject:     r.Metadata["subject"],
 			Predicate:   r.Metadata["predicate"],
@@ -570,6 +583,7 @@ func (s *Store) QueryRelationships(ctx context.Context, query string, topK int) 
 			Source:      r.Metadata["source"],
 			ChunkID:     r.Metadata["chunk_id"],
 			Similarity:  r.Similarity,
+			Weight:      weight,
 			Metadata:    r.Metadata,
 		}
 	}

@@ -264,3 +264,69 @@ func TestAllTriplesCarriesChunkID(t *testing.T) {
 	assert.Equal(t, "nath.md", all[0].Source)
 	assert.Equal(t, "nath_md_7", all[0].ChunkID)
 }
+
+// TestTripleWeight verifies that TripleWeight counts how many raw quads
+// (across multiple AddTriples calls) collapse into the same canonical triple.
+func TestTripleWeight(t *testing.T) {
+	tests := []struct {
+		name       string
+		inserts    [][]Triple // each inner slice is one AddTriples call
+		query      Triple     // triple to look up
+		wantWeight int
+	}{
+		{
+			name: "single insertion weight is 1",
+			inserts: [][]Triple{
+				{{Subject: "Shiva", Predicate: "is worshipped at", Object: "Varanasi"}},
+			},
+			query:      Triple{Subject: "Shiva", Predicate: "is worshipped at", Object: "Varanasi"},
+			wantWeight: 1,
+		},
+		{
+			name: "same triple in two batches accumulates weight 2",
+			inserts: [][]Triple{
+				{{Subject: "Abhinavagupta", Predicate: "authored", Object: "Tantraloka"}},
+				{{Subject: "Abhinavagupta", Predicate: "authored", Object: "Tantraloka"}},
+			},
+			query:      Triple{Subject: "Abhinavagupta", Predicate: "authored", Object: "Tantraloka"},
+			wantWeight: 2,
+		},
+		{
+			name: "absent triple returns 1 as safe default",
+			inserts: [][]Triple{
+				{{Subject: "Shiva", Predicate: "taught", Object: "Parvati"}},
+			},
+			query:      Triple{Subject: "Unknown", Predicate: "unknown", Object: "Unknown"},
+			wantWeight: 1,
+		},
+		{
+			name: "triple seen in 5 batches has weight 5",
+			inserts: [][]Triple{
+				{{Subject: "Kali", Predicate: "is aspect of", Object: "Shakti"}},
+				{{Subject: "Kali", Predicate: "is aspect of", Object: "Shakti"}},
+				{{Subject: "Kali", Predicate: "is aspect of", Object: "Shakti"}},
+				{{Subject: "Kali", Predicate: "is aspect of", Object: "Shakti"}},
+				{{Subject: "Kali", Predicate: "is aspect of", Object: "Shakti"}},
+			},
+			query:      Triple{Subject: "Kali", Predicate: "is aspect of", Object: "Shakti"},
+			wantWeight: 5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, err := NewDB()
+			require.NoError(t, err)
+			defer db.Close()
+
+			ctx := context.Background()
+			for i, batch := range tt.inserts {
+				source := fmt.Sprintf("doc%d.md", i)
+				require.NoError(t, db.AddTriples(ctx, batch, source))
+			}
+
+			got := db.TripleWeight(tt.query.Subject, tt.query.Predicate, tt.query.Object)
+			assert.Equal(t, tt.wantWeight, got)
+		})
+	}
+}
