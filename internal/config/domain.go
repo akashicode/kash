@@ -1,11 +1,5 @@
 package config
 
-import (
-	"os"
-
-	"gopkg.in/yaml.v3"
-)
-
 // DiacriticMode selects which alphabets' diacritics are folded when grouping
 // entity spelling variants.
 type DiacriticMode string
@@ -193,52 +187,30 @@ func DefaultDomainConfig() DomainConfig {
 // an agent.yaml. Missing sections fall back to the generic defaults, so an old
 // agent.yaml keeps working unchanged.
 func LoadDomainConfig(path string) DomainConfig {
-	cfg := DefaultDomainConfig()
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return cfg
-	}
-
-	var parsed DomainConfig
-	if err := yaml.Unmarshal(data, &parsed); err != nil {
-		return cfg
-	}
-
-	if len(parsed.Extraction.Predicates) > 0 {
-		cfg.Extraction.Predicates = parsed.Extraction.Predicates
-	}
-	if len(parsed.Extraction.Priorities) > 0 {
-		cfg.Extraction.Priorities = parsed.Extraction.Priorities
-	}
-	if parsed.Resolution.Honorifics != nil {
-		// An explicitly empty list is meaningful: strip no honorifics.
-		cfg.Resolution.Honorifics = parsed.Resolution.Honorifics
-	}
-	if parsed.Resolution.FoldDiacritics.Valid() {
-		cfg.Resolution.FoldDiacritics = parsed.Resolution.FoldDiacritics
-	}
-	if len(parsed.Resolution.ProperNounPredicates) > 0 {
-		cfg.Resolution.ProperNounPredicates = parsed.Resolution.ProperNounPredicates
-	}
-	cfg.Resolution.StripFinalVowel = parsed.Resolution.StripFinalVowel
-
-	// Chunker overrides — a non-nil slice replaces the default entirely.
-	if parsed.Chunker.RefPatterns != nil {
-		cfg.Chunker.RefPatterns = parsed.Chunker.RefPatterns
-	}
-	if parsed.Chunker.TitleStopwords != nil {
-		cfg.Chunker.TitleStopwords = parsed.Chunker.TitleStopwords
-	}
-	cfg.Chunker.StripTitleStemVowel = parsed.Chunker.StripTitleStemVowel
-
-	// Entity description overrides
-	if parsed.EntityDescription.MinDegree > 0 {
-		cfg.EntityDescription.MinDegree = parsed.EntityDescription.MinDegree
-	}
-	if parsed.EntityDescription.MaxEntities > 0 {
-		cfg.EntityDescription.MaxEntities = parsed.EntityDescription.MaxEntities
-	}
-
+	cfg, _ := ResolveDomainConfig(nil, path)
 	return cfg
+}
+
+// ResolveDomainConfig layers configuration: built-in defaults, then the
+// generated corpus profile, then agent.yaml. Later layers win per field, and
+// any layer may be absent.
+//
+// The returned LayerNotes say which layer supplied each overridden value. A
+// three-layer merge is otherwise impossible to reason about from the outside —
+// "why is fold_diacritics latin when my corpus is Sanskrit" needs an answer
+// that does not require reading three files.
+//
+// Overrides replace a field wholesale; they never merge element-wise. Setting
+// ref_patterns in agent.yaml replaces the detected patterns rather than adding
+// to them.
+func ResolveDomainConfig(profile *DomainOverlay, agentYAMLPath string) (DomainConfig, []LayerNote) {
+	cfg := DefaultDomainConfig()
+	var notes []LayerNote
+
+	if profile != nil {
+		profile.applyTo(&cfg, layerProfile, &notes)
+	}
+	parseAgentYAMLOverlay(agentYAMLPath).applyTo(&cfg, layerAgentYAML, &notes)
+
+	return cfg, notes
 }
