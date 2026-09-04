@@ -756,6 +756,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	if len(incomplete) > 0 {
 		display.StepWarn(fmt.Sprintf("build finished with %d incomplete document(s): %s — run 'kash build' again to resume", len(incomplete), strings.Join(incomplete, ", ")))
 	}
+	warnStaleDockerfile()
+
 	display.Success(fmt.Sprintf("Build complete! Corpus version: %d", m.Version))
 	fmt.Println()
 	display.KeyValue("Vector index", fmt.Sprintf("%s (%d documents, %d entities, %d relationships)", vectorPath, vs.Count(), vs.EntityCount(), vs.RelationshipCount()), display.BrightGreen)
@@ -912,4 +914,26 @@ func findBestChunk(batch []chunker.Chunk, subject, object string) string {
 	// ID degrades correctly: the fact keeps its document citation and the
 	// document-level boost.
 	return ""
+}
+
+// warnStaleDockerfile reports a Dockerfile that copies individual artifacts.
+//
+// kash never rewrites a project's Dockerfile, so fixing the template only helps
+// new projects. An existing one copies memory.chromem and knowledge.cayley but
+// not the BM25 index, alias map or corpus profile — which means hybrid
+// retrieval and entity resolution are silently absent in the image, with
+// nothing at runtime to report it. This is the only mechanism that reaches
+// those projects.
+func warnStaleDockerfile() {
+	data, err := os.ReadFile("Dockerfile")
+	if err != nil {
+		return
+	}
+	text := string(data)
+	if !strings.Contains(text, "COPY data/memory.chromem") || strings.Contains(text, "COPY data/ ") {
+		return
+	}
+	display.StepWarn("Dockerfile copies individual artifacts, so the BM25 index, entity aliases " +
+		"and corpus profile will be missing from the image — hybrid retrieval and entity resolution " +
+		"degrade silently. Replace the per-file COPY lines with: COPY data/ /app/data/")
 }

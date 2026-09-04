@@ -254,9 +254,16 @@ FROM ghcr.io/akashicode/kash:latest
 
 WORKDIR /app
 
-# Copy the compiled database artifacts from 'kash build'
-COPY data/memory.chromem/ /app/data/memory.chromem/
-COPY data/knowledge.cayley/ /app/data/knowledge.cayley/
+# Copy every compiled artifact from 'kash build' in one go.
+#
+# Listing files individually went stale twice: the BM25 index, the entity alias
+# map and the corpus profile were all missing, so hybrid retrieval and entity
+# resolution silently degraded inside the image with nothing to report it. A
+# per-file COPY is also fragile — it FAILS the docker build when an optional
+# artifact was never generated.
+#
+# Raw sources are excluded by .dockerignore, so this ships only compiled output.
+COPY data/ /app/data/
 
 # Copy the agent configuration
 COPY agent.yaml /app/agent.yaml
@@ -341,12 +348,16 @@ EMBED_MODEL=
 }
 
 func generateDockerIgnore() string {
-	return `# Exclude raw source files from Docker image
-# The compiled databases (memory.chromem/, knowledge.cayley/) are what matters
+	return `# Exclude raw source files from the Docker image.
+#
+# The Dockerfile copies all of data/, so this list is what keeps the image
+# small. Keep the extensions in sync with reader.LoadDirectory: anything kash
+# can ingest is a source file and does not belong in the runtime image.
 
 # Raw data sources
 data/*.pdf
 data/*.md
+data/*.markdown
 data/*.txt
 data/*.docx
 
