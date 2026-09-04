@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/akashicode/kash/internal/config"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -76,4 +78,36 @@ func TestLoadMissingFileYieldsEmptyIndex(t *testing.T) {
 	require.NoError(t, err, "a corpus built before the lexical index existed must still serve")
 	assert.Equal(t, 0, ix.Len())
 	assert.Nil(t, ix.Search("anything", 5))
+}
+
+// The index must tokenise queries the way it tokenised its own documents. When
+// the fold mode lived only in configuration, a corpus built with IAST folding
+// and served with a different config tokenised queries differently from the
+// index — keyword search returned nothing, with no error and no log line.
+func TestFoldModeSurvivesSaveLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FileName)
+
+	ix := NewWithFold(config.DiacriticIAST)
+	ix.Add("c1", "dhāraṇā 49 gītādiviṣayāsvādā", map[string]string{"dharana": "49"})
+	ix.Finalize()
+	require.NoError(t, ix.Save(path))
+
+	loaded, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, config.DiacriticIAST, loaded.FoldMode,
+		"the index must remember the fold it was built with")
+
+	// The reader types ASCII; the text is transliterated. They only meet if the
+	// loaded index folds the way the original did.
+	got := loaded.Search("dharana 49", 5)
+	require.NotEmpty(t, got, "an IAST-folded index must still match an ASCII query after reload")
+	assert.Equal(t, "c1", got[0].ID)
+}
+
+// An index written before FoldMode existed decodes with an empty mode and must
+// keep working on the Latin default it was actually built with.
+func TestLoadDefaultsFoldModeForLegacyIndex(t *testing.T) {
+	ix := New()
+	assert.Equal(t, config.DiacriticLatin, ix.FoldMode)
+	assert.Equal(t, "resume", ix.Fold("résumé"), "the default fold must still apply")
 }

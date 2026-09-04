@@ -20,6 +20,7 @@ import (
 	"github.com/akashicode/kash/internal/lexical"
 	"github.com/akashicode/kash/internal/llm"
 	"github.com/akashicode/kash/internal/manifest"
+	"github.com/akashicode/kash/internal/profile"
 	"github.com/akashicode/kash/internal/vector"
 )
 
@@ -90,7 +91,10 @@ type Config struct {
 	// falls back to vector search alone — which is what a corpus built before
 	// the lexical index existed will do until it is rebuilt.
 	LexicalIndexPath string
-	AppCfg           *agentconfig.Config
+	// DomainProfilePath is the optional generated corpus profile. When absent,
+	// domain configuration falls back to generic defaults.
+	DomainProfilePath string
+	AppCfg            *agentconfig.Config
 }
 
 // New creates and initializes a new runtime Server.
@@ -136,13 +140,29 @@ func New(cfg Config) (*Server, error) {
 
 	// Lexical index is optional: a corpus built before it existed still serves,
 	// with vector search alone. A corrupt index must not take the agent down.
-	domainCfg := agentconfig.LoadDomainConfig(cfg.AgentYAMLPath)
+	// The corpus profile is optional. A missing one means generic defaults; a
+	// corrupt one must not take the server down, so it is reported and ignored
+	// exactly as a malformed alias file is.
+	prof, profErr := profile.Load(cfg.DomainProfilePath)
+	if profErr != nil {
+		slog.Warn("ignoring corpus profile", "error", profErr, "path", cfg.DomainProfilePath)
+	}
+	domainCfg, layers := agentconfig.ResolveDomainConfig(prof.Overlay(), cfg.AgentYAMLPath)
 	lexIndex := lexical.NewWithFold(domainCfg.Resolution.FoldDiacritics)
 	if cfg.LexicalIndexPath != "" {
 		if ix, lexErr := lexical.Load(cfg.LexicalIndexPath); lexErr != nil {
 			slog.Warn("ignoring lexical index", "error", lexErr, "path", cfg.LexicalIndexPath)
 		} else {
-			ix.SetFold(domainCfg.Resolution.FoldDiacritics)
+			// The index keeps the fold it was BUILT with. Overriding it from
+			// config is what breaks keyword search silently: an index built
+			// with IAST folding, served with a different configured mode,
+			// tokenises queries differently from its own documents and returns
+			// nothing, with no error anywhere. Config is reported, not applied.
+			if ix.Len() > 0 && ix.FoldMode != domainCfg.Resolution.FoldDiacritics {
+				slog.Warn("lexical index was built with a different diacritic mode; using the index's own mode",
+					"index_mode", ix.FoldMode, "configured_mode", domainCfg.Resolution.FoldDiacritics,
+					"hint", "run 'kash build --rebuild' to reindex with the configured mode")
+			}
 			lexIndex = ix
 		}
 	}
@@ -203,6 +223,8 @@ func New(cfg Config) (*Server, error) {
 		"lexical", lexIndex.Len(),
 		"triples", gdb.Count(),
 		"entity_aliases", aliasCount,
+		"domain_profile", profileStatus(prof, cfg.DomainProfilePath),
+		"config_overrides", len(layers),
 		"llm_model", cfg.AppCfg.LLM.Model,
 		"embed_model", cfg.AppCfg.Embedder.Model,
 		"embed_dimensions", cfg.AppCfg.Embedder.Dimensions,
@@ -1039,4 +1061,21 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 func generateID() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+// profileStatus renders the corpus profile state for the startup log.
+//
+// A missing profile is not an error, but it does change retrieval: the fold
+// mode reverts to the generic default, and if the index was built with a
+// different one, query tokens stop matching index tokens with no error
+// anywhere. Saying which state we are in is what makes that diagnosable.
+func profileStatus(p *profile.Profile, path string) string {
+	if p == nil {
+		return "none (generic defaults) at " + path
+	}
+	state := "complete"
+	if !p.Complete {
+		state = "partial"
+	}
+	return fmt.Sprintf("%s, %s, %d field(s) measured", path, state, len(p.Signals))
 }

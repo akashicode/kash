@@ -14,6 +14,7 @@ import (
 	"github.com/akashicode/kash/internal/display"
 	"github.com/akashicode/kash/internal/graph"
 	"github.com/akashicode/kash/internal/llm"
+	"github.com/akashicode/kash/internal/profile"
 )
 
 var resolveCmd = &cobra.Command{
@@ -105,7 +106,15 @@ func runResolve(_ *cobra.Command, _ []string) error {
 	display.StepResult("Loaded", fmt.Sprintf("%d triples", len(triples)))
 
 	display.Step(2, 3, "Grouping entity spelling variants...")
-	domainCfg := agentconfig.LoadDomainConfig("agent.yaml")
+	// Entity resolution must cluster with the same rules the corpus was built
+	// with, so it reads the same three layers the build does. Without the
+	// profile it would use different honorifics and a different fold mode, and
+	// silently under-merge.
+	prof, profErr := profile.Load(filepath.Join("data", profile.FileName))
+	if profErr != nil {
+		display.StepWarn(fmt.Sprintf("ignoring corpus profile: %v", profErr))
+	}
+	domainCfg, _ := agentconfig.ResolveDomainConfig(prof.Overlay(), "agent.yaml")
 	opts := graph.ResolveOptions{
 		MinDegree:            resolveMinDegree,
 		Honorifics:           domainCfg.Resolution.Honorifics,

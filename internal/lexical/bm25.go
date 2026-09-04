@@ -96,9 +96,19 @@ type Index struct {
 	Lengths []uint32
 	// AvgLen is the mean document length.
 	AvgLen float64
-	// fold is the diacritic normalisation function applied at index and query
-	// time. It is NOT serialised; it is re-set from the DiacriticMode stored
-	// in the agent config when the index is loaded.
+	// FoldMode records the diacritic mode this index was BUILT with, and is
+	// persisted.
+	//
+	// The index and the queries run against it must tokenise identically. When
+	// the mode lived only in configuration, a corpus built with IAST folding
+	// and served with a missing or changed config would tokenise queries
+	// differently from the index: keyword search would return nothing, with no
+	// error and no log line. Storing it here makes that impossible.
+	//
+	// Absent in indexes written before this field existed, where gob leaves it
+	// empty and the caller's configured mode still applies.
+	FoldMode config.DiacriticMode
+	// fold is the compiled form of FoldMode, rebuilt on load.
 	fold FoldFunc `gob:"-"`
 }
 
@@ -106,6 +116,7 @@ type Index struct {
 func New() *Index {
 	return &Index{
 		Postings: map[string][]posting{},
+		FoldMode: config.DiacriticLatin,
 		fold:     makeFoldFunc(config.DiacriticLatin),
 	}
 }
@@ -115,6 +126,7 @@ func New() *Index {
 func NewWithFold(mode config.DiacriticMode) *Index {
 	return &Index{
 		Postings: map[string][]posting{},
+		FoldMode: mode,
 		fold:     makeFoldFunc(mode),
 	}
 }
@@ -123,6 +135,7 @@ func NewWithFold(mode config.DiacriticMode) *Index {
 // to restore the corpus-specific normalisation that is not persisted in the
 // index file itself.
 func (ix *Index) SetFold(mode config.DiacriticMode) {
+	ix.FoldMode = mode
 	ix.fold = makeFoldFunc(mode)
 }
 
@@ -319,7 +332,13 @@ func Load(path string) (*Index, error) {
 	if ix.Postings == nil {
 		ix.Postings = map[string][]posting{}
 	}
-	// fold was not persisted; New() already sets the Latin default which is
-	// safe for most corpora. The caller should call SetFold if needed.
+	// Rebuild the fold from the mode the index was written with, so an index
+	// always tokenises queries the way it tokenised its own documents. An index
+	// written before FoldMode existed decodes as empty and keeps New()'s Latin
+	// default, which is what those indexes were built with.
+	if !ix.FoldMode.Valid() {
+		ix.FoldMode = config.DiacriticLatin
+	}
+	ix.fold = makeFoldFunc(ix.FoldMode)
 	return ix, nil
 }
