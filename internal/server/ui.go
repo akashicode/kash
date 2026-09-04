@@ -103,7 +103,7 @@ func (s *Server) handleAPISearch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "q parameter is required", http.StatusBadRequest)
 		return
 	}
-	topK := clampQueryInt(r, "top_k", defaultTopK, 1, 20)
+	topK := clampQueryInt(r, "top_k", s.topKOrDefault(0), 1, uiMaxTopK)
 
 	// Bound retrieval time — reranker and embedder are remote calls
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -118,6 +118,11 @@ func (s *Server) handleAPISearch(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
+
+// uiMaxTopK bounds the dashboard's top_k. It is deliberately above the
+// configurable retrieval.top_k range so a configured default is never clamped
+// below the value the rest of the server would use.
+const uiMaxTopK = 100
 
 // clampQueryInt reads an integer query parameter with a default and bounds.
 func clampQueryInt(r *http.Request, name string, def, min, max int) int {

@@ -113,7 +113,8 @@ func (s *Server) a2aQuery(r *http.Request, params json.RawMessage) (interface{},
 	ctx := r.Context()
 
 	// Run hybrid search
-	retrievedCtx, err := s.hybridSearch(ctx, p.Query, defaultTopK)
+	// 0 means "unspecified" — topKOrDefault resolves it from agent.yaml.
+	retrievedCtx, err := s.hybridSearch(ctx, p.Query, 0)
 	if err != nil {
 		retrievedCtx = ""
 	}
@@ -162,9 +163,9 @@ func (s *Server) a2aSearch(r *http.Request, params json.RawMessage) (interface{}
 	if p.Query == "" {
 		return nil, &A2AError{Code: -32602, Message: "query is required"}
 	}
-	if p.TopK <= 0 {
-		p.TopK = 5
-	}
+	// agent.search bypasses retrieve(), so it resolves the configured default
+	// itself rather than inheriting a hardcoded 5.
+	p.TopK = s.topKOrDefault(p.TopK)
 
 	ctx := r.Context()
 

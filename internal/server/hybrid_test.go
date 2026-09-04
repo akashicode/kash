@@ -189,3 +189,31 @@ func TestGraphRRFPromotion(t *testing.T) {
 	assert.Contains(t, ranked[0].routes, "graph")
 	assert.Contains(t, ranked[0].routes, "vector")
 }
+
+// retrieval.top_k was unreachable: topKOrDefault returns early on any non-zero
+// argument, and every caller passed the hardcoded defaultTopK, so the
+// configured value could never win. Callers now pass 0 to mean "unspecified".
+func TestTopKOrDefaultResolvesConfiguredValue(t *testing.T) {
+	cfg := &AgentConfig{}
+	cfg.Retrieval.TopK = 12
+	s := &Server{agentCfg: cfg}
+
+	assert.Equal(t, 12, s.topKOrDefault(0), "an unspecified top_k must resolve from agent.yaml")
+	assert.Equal(t, 3, s.topKOrDefault(3), "an explicit caller value still wins")
+}
+
+func TestTopKOrDefaultFallsBackWithoutConfig(t *testing.T) {
+	assert.Equal(t, defaultTopK, (&Server{agentCfg: &AgentConfig{}}).topKOrDefault(0))
+	assert.Equal(t, defaultTopK, (&Server{}).topKOrDefault(0))
+}
+
+// The dashboard clamps top_k. Its ceiling must sit above the configurable
+// range, or a configured value would be silently reduced for that one endpoint.
+func TestUIMaxTopKDoesNotClampConfiguredValue(t *testing.T) {
+	cfg := &AgentConfig{}
+	cfg.Retrieval.TopK = 50
+	s := &Server{agentCfg: cfg}
+
+	assert.LessOrEqual(t, s.topKOrDefault(0), uiMaxTopK,
+		"a configured top_k must survive the dashboard clamp")
+}

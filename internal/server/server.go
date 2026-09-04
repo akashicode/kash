@@ -826,7 +826,8 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	s.log.Info("chat completion request", "query", userQuery, "stream", req.Stream)
 
 	// Run hybrid search
-	retrievedCtx, err := s.hybridSearch(ctx, userQuery, defaultTopK)
+	// 0 means "unspecified" — topKOrDefault resolves it from agent.yaml.
+	retrievedCtx, err := s.hybridSearch(ctx, userQuery, 0)
 	if err != nil {
 		s.log.Error("hybrid search failed, proceeding without RAG context", "error", err)
 		retrievedCtx = ""

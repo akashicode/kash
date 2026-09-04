@@ -214,7 +214,7 @@ func (s *Server) mcpCallTool(r *http.Request, params json.RawMessage) (interface
 		return nil, &MCPError{Code: -32602, Message: "query argument is required"}
 	}
 
-	topK := 5
+	topK := 0 // resolved from agent.yaml by retrieve when the caller omits it
 	if tk, ok := p.Arguments["top_k"].(float64); ok && tk > 0 {
 		topK = int(tk)
 	}
