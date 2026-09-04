@@ -38,10 +38,7 @@ type AgentConfig struct {
 		} `yaml:"embedder"`
 	} `yaml:"runtime"`
 	MCP struct {
-		Tools []struct {
-			Name        string `yaml:"name"`
-			Description string `yaml:"description"`
-		} `yaml:"tools"`
+		Tools []mcpToolDef `yaml:"tools"`
 	} `yaml:"mcp"`
 	ServerConfig struct {
 		Port        int      `yaml:"port"`
@@ -57,6 +54,13 @@ type AgentConfig struct {
 	} `yaml:"retrieval"`
 }
 
+// mcpToolDef is one MCP tool's identity. Named rather than anonymous so the
+// corpus profile can supply one when agent.yaml declares none.
+type mcpToolDef struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+}
+
 // Server is the Kash runtime HTTP server.
 type Server struct {
 	vectorStore   *vector.Store
@@ -67,6 +71,7 @@ type Server struct {
 	agentCfg      *AgentConfig
 	appCfg        *agentconfig.Config
 	fusionCfg     *fusionConfig // compiled corpus-specific fusion settings
+	mcpTool       mcpToolDef    // generated tool identity from the corpus profile
 	mux           *http.ServeMux
 	log           *slog.Logger
 	apiKey        string             // optional API key for auth; empty = open access
@@ -206,6 +211,7 @@ func New(cfg Config) (*Server, error) {
 		agentCfg:      agentCfg,
 		appCfg:        cfg.AppCfg,
 		fusionCfg:     buildFusionConfig(domainCfg),
+		mcpTool:       mcpToolFromProfile(prof),
 		mux:           http.NewServeMux(),
 		log:           logger,
 		apiKey:        apiKey,
@@ -1078,4 +1084,13 @@ func profileStatus(p *profile.Profile, path string) string {
 		state = "partial"
 	}
 	return fmt.Sprintf("%s, %s, %d field(s) measured", path, state, len(p.Signals))
+}
+
+// mcpToolFromProfile returns the generated MCP tool identity, if the corpus was
+// built with one.
+func mcpToolFromProfile(p *profile.Profile) mcpToolDef {
+	if p == nil || p.MCPToolName == "" {
+		return mcpToolDef{}
+	}
+	return mcpToolDef{Name: p.MCPToolName, Description: p.MCPToolDescription}
 }

@@ -750,10 +750,12 @@ func runBuild(cmd *cobra.Command, args []string) error {
 			display.StepWarn(fmt.Sprintf("MCP description generation failed: %v", err))
 			mcpDesc = fmt.Sprintf("Search the %s expert knowledge base for relevant information.", agentName)
 		}
-		if err := updateAgentYAMLMCPDescription("agent.yaml", agentName, mcpDesc); err != nil {
-			display.StepWarn(fmt.Sprintf("failed to update agent.yaml: %v", err))
+		prof.MCPToolName = "search_" + agentName + "_knowledge"
+		prof.MCPToolDescription = mcpDesc
+		if err := prof.Save(profilePath); err != nil {
+			display.StepWarn(fmt.Sprintf("failed to record MCP tool description: %v", err))
 		} else {
-			display.StepResult("Updated", "agent.yaml with MCP tool description")
+			display.StepResult("Recorded", "MCP tool description in "+profilePath)
 		}
 	} else {
 		display.StepResult("Skipped", "no new content to describe")
@@ -863,41 +865,6 @@ func documentExcerpt(content string, n int) string {
 		runes = runes[:n]
 	}
 	return strings.TrimSpace(string(runes))
-}
-
-func updateAgentYAMLMCPDescription(path, agentName, description string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read agent.yaml: %w", err)
-	}
-
-	var config map[string]interface{}
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return fmt.Errorf("parse agent.yaml: %w", err)
-	}
-
-	// Update or create mcp.tools section
-	mcpSection, _ := config["mcp"].(map[string]interface{})
-	if mcpSection == nil {
-		mcpSection = map[string]interface{}{}
-	}
-
-	tools := []map[string]interface{}{
-		{
-			"name":        "search_" + agentName + "_knowledge",
-			"description": description,
-		},
-	}
-	mcpSection["tools"] = tools
-	config["mcp"] = mcpSection
-
-	// Marshal back to YAML
-	output, err := yaml.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("marshal agent.yaml: %w", err)
-	}
-
-	return os.WriteFile(path, output, 0644)
 }
 
 // findBestChunk finds the chunk in batch that best matches the subject and object of a triple.

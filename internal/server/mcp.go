@@ -156,8 +156,16 @@ func (s *Server) mcpListTools() map[string]interface{} {
 func (s *Server) buildMCPTools() []MCPTool {
 	tools := []MCPTool{}
 
-	// Build tools from agent.yaml definitions
-	for _, t := range s.agentCfg.MCP.Tools {
+	// The generated tool identity lives in the corpus profile; agent.yaml
+	// overrides it like any other field. Reading the profile first is what
+	// removed the need to rewrite agent.yaml on every build — a round-trip that
+	// deleted every comment in the file.
+	definitions := s.agentCfg.MCP.Tools
+	if len(definitions) == 0 && s.mcpTool.Name != "" {
+		definitions = []mcpToolDef{s.mcpTool}
+	}
+
+	for _, t := range definitions {
 		tools = append(tools, MCPTool{
 			Name:        t.Name,
 			Description: t.Description,

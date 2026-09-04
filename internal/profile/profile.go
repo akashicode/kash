@@ -105,6 +105,17 @@ type Profile struct {
 	// Config is the derived configuration, in agent.yaml's own shape.
 	Config config.DomainOverlay `json:"config"`
 
+	// MCPToolName and MCPToolDescription are the generated MCP tool identity.
+	//
+	// These live here rather than in agent.yaml because they are machine
+	// generated. Writing them back into agent.yaml meant round-tripping it
+	// through a map on every build, which deleted every comment in the file —
+	// including the only documentation for several options — reordered its
+	// keys, and rewrote it non-atomically. agent.yaml overrides these like any
+	// other field.
+	MCPToolName        string `json:"mcp_tool_name,omitempty"`
+	MCPToolDescription string `json:"mcp_tool_description,omitempty"`
+
 	// Signals is per-field provenance, ordered by field name.
 	Signals []Signal `json:"signals,omitempty"`
 }
