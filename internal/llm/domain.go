@@ -134,42 +134,56 @@ func MergePredicates(defaults, suggested []string) []string {
 	return out
 }
 
-// FilterToCandidates keeps only values the model was offered.
+// FilterToCandidates keeps only values the model was offered, and returns them
+// in the exact form the candidate list carried.
 //
 // The model may filter a mined list but never extend it. Without this an
 // adversarial or merely odd document could introduce arbitrary strings into
 // configuration by way of the sample.
+//
+// Returning the candidate rather than the model's echo of it is what makes the
+// value usable. Honorifics carry a trailing space because they are stripped
+// with a plain prefix cut, and the model's reply has already been trimmed by
+// the time it arrives here — echoing it back would turn "śrī " into "śrī" and
+// strip that prefix out of every word beginning with those letters.
 func FilterToCandidates(suggested, candidates []string) []string {
-	allowed := map[string]bool{}
+	canonical := make(map[string]string, len(candidates))
 	for _, c := range candidates {
-		allowed[strings.ToLower(strings.TrimSpace(c))] = true
+		canonical[matchKey(c)] = c
 	}
 
 	var out []string
 	seen := map[string]bool{}
 	for _, s := range suggested {
-		key := strings.ToLower(strings.TrimSpace(s))
-		if key == "" || seen[key] || !allowed[key] {
+		key := matchKey(s)
+		c, ok := canonical[key]
+		if key == "" || seen[key] || !ok {
 			continue
 		}
 		seen[key] = true
-		out = append(out, s)
+		out = append(out, c)
 	}
 	return out
 }
 
-// SubsetOf keeps only values present in the allowed set, compared
-// case-insensitively.
+// SubsetOf keeps only values present in the allowed set, returning the allowed
+// spelling so the result is byte-identical to the list it is a subset of.
 func SubsetOf(values, allowed []string) []string {
-	ok := map[string]bool{}
+	canonical := make(map[string]string, len(allowed))
 	for _, a := range allowed {
-		ok[strings.ToLower(strings.TrimSpace(a))] = true
+		canonical[matchKey(a)] = a
 	}
 	var out []string
 	for _, v := range values {
-		if ok[strings.ToLower(strings.TrimSpace(v))] {
-			out = append(out, v)
+		if a, ok := canonical[matchKey(v)]; ok {
+			out = append(out, a)
 		}
 	}
 	return out
+}
+
+// matchKey compares model output to a supplied list without letting whitespace
+// or case decide membership.
+func matchKey(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
 }

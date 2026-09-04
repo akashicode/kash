@@ -1,9 +1,11 @@
 package llm
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // The vocabulary is closed and unmatched facts are dropped, so losing a default
@@ -45,13 +47,35 @@ func TestFilterToCandidatesRejectsInventedValues(t *testing.T) {
 	assert.NotContains(t, got, "rm -rf / ", "a value not offered must not survive")
 }
 
-func TestFilterToCandidatesIsCaseInsensitive(t *testing.T) {
-	got := FilterToCandidates([]string{"SRI "}, []string{"sri "})
-	assert.Equal(t, []string{"SRI "}, got)
+func TestFilterToCandidatesReturnsTheCandidateSpelling(t *testing.T) {
+	// Matching ignores case and surrounding space, but the value that survives
+	// is the one from the candidate list, never the model's echo of it.
+	got := FilterToCandidates([]string{"SRI"}, []string{"sri "})
+	assert.Equal(t, []string{"sri "}, got)
+}
+
+func TestFilterToCandidatesKeepsHonorificTrailingSpace(t *testing.T) {
+	// The reply is trimmed before it reaches here, so a filter that echoed the
+	// model would yield "sri" — and stripHonorific cuts a plain prefix, so
+	// "sri" would eat the front of "sristi" and every word like it.
+	candidates := []string{"sri ", "dr ", "swami "}
+	got := FilterToCandidates(cleanStringSlice([]string{"sri", "dr"}), candidates)
+
+	require.Len(t, got, 2)
+	for _, h := range got {
+		assert.True(t, strings.HasSuffix(h, " "), "honorific %q must keep its trailing space", h)
+	}
 }
 
 func TestSubsetOfDropsNonMembers(t *testing.T) {
 	got := SubsetOf([]string{"authored", "invented"}, []string{"authored", "contains"})
+	assert.Equal(t, []string{"authored"}, got)
+}
+
+func TestSubsetOfReturnsTheAllowedSpelling(t *testing.T) {
+	// proper_noun_predicates is looked up against predicates by exact string,
+	// so the subset must be spelled the way the superset is.
+	got := SubsetOf([]string{"Authored "}, []string{"authored"})
 	assert.Equal(t, []string{"authored"}, got)
 }
 
