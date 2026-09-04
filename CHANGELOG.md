@@ -13,6 +13,8 @@ those are called out under **Requires rebuild**.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-04
+
 ### Added
 
 - **Corpus profile.** `kash build` now measures your documents and writes
@@ -84,6 +86,25 @@ those are called out under **Requires rebuild**.
 - Reranker responses are bounds-checked; a provider returning an out-of-range
   index previously panicked the request. `/health` now reports reranker status
   from the real gate rather than a partial one.
+- **A build could hang forever on one provider call.** Every HTTP client was a
+  zero-value `http.Client` and the build passed a context with no deadline, so
+  a provider that accepted a request and then stalled — or an intermediary that
+  dropped the connection without a RST — blocked the process indefinitely. The
+  retry loop was no defence: a call that never returns never returns an error
+  either. Provider calls are now bounded by a response-header timeout that
+  scales with reasoning effort, and extraction prints a live batch counter so a
+  stall no longer looks identical to slow progress.
+- **Every rerank request carried the whole candidate pool.** The pool is sized
+  for fusion, which is local and free, so a default `top_k` shipped 200 chunks
+  to a paid API billed per hundred, and a configured `top_k: 50` would have
+  shipped 1000 and likely been rejected — silently, since a failed rerank falls
+  back to cosine order. The reranker now sees the first 100 candidates and the
+  rest keep their similarity order behind them.
+- **Triple extraction was capped at two facts per chunk.** The prompt asked for
+  "5-20 triples" per batch of ten passages, which rationed dense passages
+  regardless of what they stated — measured at 15.3 triples per batch against
+  that ceiling of 20. The budget is now per passage, so a passage contributes
+  what it actually contains.
 
 ### Changed
 
@@ -106,6 +127,10 @@ the vector and lexical indexes disagreeing about the same chunk.
 Existing Docker projects should replace the per-file `COPY` lines in their
 Dockerfile with `COPY data/ /app/data/`; `kash build` warns when this applies.
 
+A rebuild also re-extracts the knowledge graph under the per-passage triple
+budget. That one is optional — an existing graph stays correct, just sparser
+than this release would produce.
+
 ## [1.0.0]
 
 - Entity resolution: spelling variants of the same entity are merged so graph
@@ -121,6 +146,7 @@ Dockerfile with `COPY data/ /app/data/`; `kash build` warns when this applies.
   into chromem-go, LLM triple extraction into cayley, and the REST, MCP and A2A
   interfaces.
 
-[Unreleased]: https://github.com/akashicode/kash/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/akashicode/kash/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/akashicode/kash/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/akashicode/kash/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/akashicode/kash/releases/tag/v0.1.0

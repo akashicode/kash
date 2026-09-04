@@ -135,11 +135,16 @@ jobs:
           # Prefer the hand-written CHANGELOG section for this version: it says
           # what changed for a user, including which changes need a rebuild.
           # The commit list is a fallback for a release with no entry yet.
-          CHANGELOG_SECTION=$(awk -v ver="${VERSION#v}" '
-            $0 ~ "^## \[" ver "\]" {found=1; next}
+          # Match the heading as a plain string. A dynamic regex would need
+          # its brackets escaped through both YAML and awk's string parser,
+          # and getting that wrong is silent: "^## [2.0.0]" is a character
+          # class, so it matches no heading and the notes quietly fall back
+          # to the commit list.
+          CHANGELOG_SECTION=$(awk -v hdr="## [${VERSION#v}]" '
+            index($0, hdr) == 1 {found=1; next}
             found && /^## \[/ {exit}
             found {print}
-          ' CHANGELOG.md 2>/dev/null | sed '/^$/{/./!d}')
+          ' CHANGELOG.md 2>/dev/null)
 
           if [ -n "$CHANGELOG_SECTION" ]; then
             echo "$CHANGELOG_SECTION" >> release_notes.md
