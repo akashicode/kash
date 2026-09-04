@@ -621,6 +621,20 @@ const (
 	maxCandidateDepth = 2000
 )
 
+// maxRerankCandidates bounds how many chunks go to the reranker in one request.
+//
+// The candidate pool is sized for fusion, which is local and free, and reaches
+// 2000 at a high top_k. The reranker is a paid API call with provider limits —
+// Cohere bills a search unit per 100 documents, and every provider caps the
+// documents and total tokens one request may carry. Handing it the whole pool
+// makes an expensive request that a provider may simply reject, and a rejected
+// rerank fails silently back to cosine order.
+//
+// So the reranker sees the head of the pool and the tail keeps its similarity
+// order behind it. That is the usual cascade: the reranker's job is to fix the
+// ordering near the top, which is the only part that reaches a reader.
+const maxRerankCandidates = 100
+
 // rerank reorders candidates with the configured reranker, falling back to
 // similarity order on any failure.
 func (s *Server) rerank(ctx context.Context, query string, in []vector.SearchResult) []vector.SearchResult {
@@ -628,8 +642,14 @@ func (s *Server) rerank(ctx context.Context, query string, in []vector.SearchRes
 		return in
 	}
 
-	docs := make([]string, len(in))
-	for i, r := range in {
+	head := in
+	var tail []vector.SearchResult
+	if len(in) > maxRerankCandidates {
+		head, tail = in[:maxRerankCandidates], in[maxRerankCandidates:]
+	}
+
+	docs := make([]string, len(head))
+	for i, r := range head {
 		docs[i] = r.Content
 	}
 
@@ -643,21 +663,22 @@ func (s *Server) rerank(ctx context.Context, query string, in []vector.SearchRes
 		return in
 	}
 
-	ranked := make([]vector.SearchResult, 0, len(out))
+	ranked := make([]vector.SearchResult, 0, len(in))
 	for _, r := range out {
 		// A provider echoing an index from a different document set would
 		// otherwise panic the request, and there is no recover middleware.
-		if r.Index < 0 || r.Index >= len(in) {
-			s.log.Warn("reranker returned out-of-range index", "index", r.Index, "candidates", len(in))
+		if r.Index < 0 || r.Index >= len(head) {
+			s.log.Warn("reranker returned out-of-range index", "index", r.Index, "candidates", len(head))
 			continue
 		}
-		ranked = append(ranked, in[r.Index])
+		ranked = append(ranked, head[r.Index])
 	}
 	if len(ranked) == 0 {
 		return in
 	}
+	ranked = append(ranked, tail...)
 
-	s.log.Info("reranker completed", "candidates", len(ranked),
+	s.log.Info("reranker completed", "reranked", len(out), "carried", len(tail),
 		"top_score", fmt.Sprintf("%.3f", out[0].RelevanceScore))
 	return ranked
 }
