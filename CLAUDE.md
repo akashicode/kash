@@ -90,6 +90,25 @@ build_providers:
     model: "voyage-3"
 ```
 
+### Corpus profile (generated)
+
+`kash build` derives corpus-specific settings into `data/domain.profile.json`:
+diacritic mode, structural reference patterns, title stopwords, stem-vowel
+folding, and (via one LLM call) extraction predicates, priorities and
+honorifics. Inspect with `kash profile`; re-derive with
+`kash build --refresh-profile`.
+
+Configuration is layered — later wins:
+
+```
+built-in defaults  <  data/domain.profile.json  <  agent.yaml
+```
+
+`agent.yaml` is an override layer, not a prerequisite. Setting a list there
+replaces the derived one rather than merging. Reference patterns and the fold
+mode are baked into chunk metadata at build time, so changing them under an
+existing corpus requires `kash build --rebuild`.
+
 ### Retrieval (agent.yaml, optional)
 ```yaml
 retrieval:
@@ -139,6 +158,7 @@ Kash/
 │   ├── mcp/               # MCP protocol server
 │   ├── chunker/           # Structure-aware chunking + citation metadata
 │   ├── lexical/           # Pure-Go BM25 index (keyword + exact-reference)
+│   ├── profile/           # Corpus profiling — derived domain configuration
 │   ├── reader/            # Document loading + text-quality gate
 │   └── server/            # HTTP server (REST, MCP, A2A) + RRF fusion
 ├── api/                   # OpenAPI schemas/types

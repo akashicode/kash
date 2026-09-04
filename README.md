@@ -211,27 +211,70 @@ build_providers:
 
 ### 🤖 Agent — `agent.yaml`
 
-Generated per project. Holds the persona, embedding dimensions, MCP tools — and the knobs that adapt Kash to **your subject matter**:
+Generated per project. Holds the persona, embedding dimensions and chunk sizes:
 
 ```yaml
+agent:
+  name: "my-agent"
+  system_prompt: |
+    You are a knowledgeable expert assistant...
+
 build:
   chunk_size: 1000       # characters per chunk (800–2000 works best)
   chunk_overlap: 200     # shared between consecutive chunks
 
-# The extractor MUST pick a predicate from this list, and DROPS facts that
-# fit none. Tune it to the relations your documents actually contain.
-extraction:
-  predicates: ["is a type of", "contains", "causes", "created by", ...]
+retrieval:
+  top_k: 5               # chunks injected as context
+  graph_facts: 10        # knowledge-graph facts injected
+```
 
+That is all you need to write. The settings that depend on **your subject
+matter** are measured from your documents, not asked for.
+
+### 🧭 Corpus profile — derived, not configured
+
+Extraction vocabulary, entity-resolution rules and structural numbering all
+depend on what a corpus actually contains, so nobody can write them before
+knowing it. `kash build` measures them into `data/domain.profile.json`:
+
+```bash
+kash profile              # what was measured, and the evidence for it
+kash profile --dry-run    # re-derive and print without writing
+kash build --refresh-profile
+```
+
+```
+• resolution.fold_diacritics = iast
+    IAST marks: 3597866 in 56/60 docs; Latin marks: 1439 in 37/60 docs
+• chunker.ref_patterns = 6 detected + 2 generic
+    "dhāraṇā" (105 hits, sequence 0.97); "śloka" (3209 hits, sequence 0.67)
+• chunker.title_stopwords = 31 words
+    4 token(s) appear in 9+ of 60 titles and cannot distinguish works
+```
+
+Configuration is layered, and **`agent.yaml` always wins**:
+
+```
+built-in defaults  <  data/domain.profile.json  <  agent.yaml
+```
+
+So you add a block to `agent.yaml` only when you disagree with what was
+measured. Setting a list there *replaces* the derived one rather than merging.
+
+```yaml
+# Only if the measurement got it wrong for your corpus.
+extraction:
+  predicates: ["manufactured by", "launched on", "powered by"]
 resolution:
   fold_diacritics: latin     # none | latin | iast | both
-  strip_final_vowel: false   # Sanskrit stem-vowel rule — opt-in
-  honorifics: ["dr. ", "prof. ", "the "]
-  proper_noun_predicates: ["created by", "designed by"]
 ```
 
 > [!IMPORTANT]
-> `extraction.predicates` is a **closed vocabulary** — it's what stops the model inventing a new phrasing for every fact. For an aerospace corpus you'd want `manufactured by`, `launched on`, `powered by`; leave the defaults and those facts get silently dropped.
+> `extraction.predicates` is a **closed vocabulary** — it is what stops the
+> model inventing a new phrasing for every fact, and facts matching no
+> predicate are dropped. The profile derives it from your corpus and unions it
+> with the generic set, so nothing is lost. If you override it by hand, make
+> sure the list covers the relations your documents actually contain.
 
 ---
 
@@ -263,6 +306,7 @@ Merges are applied **at query time**, never by rewriting the graph — so a bad 
 |---|---|
 | `kash init <name>` | Scaffold a new agent project (`data/`, `agent.yaml`, `Dockerfile`) |
 | `kash build` | Compile documents into vector + graph databases (incremental) |
+| `kash profile` | Show the domain settings derived from your corpus, and why |
 | `kash resolve-entities` | Merge entity spelling variants so graph chains connect |
 | `kash serve` | Start the runtime HTTP server + dashboard |
 | `kash version` | Print the Kash version |
@@ -271,7 +315,9 @@ Merges are applied **at query time**, never by rewriting the graph — so a bad 
 
 ## 📈 What Changed Recently
 
-A round of work focused on retrieval quality, measured against a real 42,000-triple corpus rather than assumed.
+Release history lives in [CHANGELOG.md](CHANGELOG.md). The highlights below cover
+a round of work focused on retrieval quality, measured against a real
+42,000-triple corpus rather than assumed.
 
 <details>
 <summary><strong>🔍 Retrieval</strong> — the graph could not reach most of the corpus</summary>

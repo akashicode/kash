@@ -12,9 +12,19 @@ endif
 
 BINARY=bin/kash$(EXE)
 
+# Version stamping.
+#
+# Derived from git so a local binary reports what it actually is. Without this
+# every non-release build reported "kash dev / commit none / built unknown",
+# which makes a bug report from a local build impossible to place.
+# The release workflow injects the same three symbols from the git tag.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+DATE    ?= $(shell git log -1 --format=%cI 2>/dev/null || echo unknown)
+
 # Go build flags
 GOFLAGS=-trimpath
-LDFLAGS=-s -w
+LDFLAGS=-s -w -X $(MODULE)/cmd.version=$(VERSION) -X $(MODULE)/cmd.commit=$(COMMIT) -X $(MODULE)/cmd.buildDate=$(DATE)
 
 .PHONY: all build build-linux build-darwin build-windows build-all install clean test lint fmt vet coverage
 
