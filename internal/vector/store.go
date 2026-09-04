@@ -3,6 +3,8 @@ package vector
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,11 +46,52 @@ type SearchResult struct {
 	Metadata   map[string]string
 }
 
+// EntityDesc represents an entity node and its description to embed.
+type EntityDesc struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Degree      int      `json:"degree,omitempty"`
+	Aliases     []string `json:"aliases,omitempty"`
+}
+
+// EntitySearchResult represents a single result from an entity vector search.
+type EntitySearchResult struct {
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Similarity  float32           `json:"similarity"`
+	Degree      int               `json:"degree,omitempty"`
+	Aliases     []string          `json:"aliases,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+}
+
+// RelationshipDoc represents a graph relationship/triple and its description to embed.
+type RelationshipDoc struct {
+	Subject     string  `json:"subject"`
+	Predicate   string  `json:"predicate"`
+	Object      string  `json:"object"`
+	Description string  `json:"description,omitempty"`
+	Source      string  `json:"source,omitempty"`
+	Weight      float64 `json:"weight,omitempty"`
+}
+
+// RelationshipSearchResult represents a single result from a relationship vector search.
+type RelationshipSearchResult struct {
+	Subject     string            `json:"subject"`
+	Predicate   string            `json:"predicate"`
+	Object      string            `json:"object"`
+	Description string            `json:"description,omitempty"`
+	Source      string            `json:"source,omitempty"`
+	Similarity  float32           `json:"similarity"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+}
+
 // Store wraps a chromem-go database for vector operations.
 type Store struct {
-	db         *chromem.DB
-	collection *chromem.Collection
-	embedCfg   *config.ProviderConfig
+	db                      *chromem.DB
+	collection              *chromem.Collection
+	entitiesCollection      *chromem.Collection
+	relationshipsCollection *chromem.Collection
+	embedCfg                *config.ProviderConfig
 }
 
 // NewStoreFromPath loads a persisted chromem-go database from disk.
@@ -72,10 +115,22 @@ func NewStoreFromPath(path string, embedCfg *config.ProviderConfig) (*Store, err
 		return nil, fmt.Errorf("get or create collection: %w", err)
 	}
 
+	entitiesCollection, err := db.GetOrCreateCollection("entities", nil, embeddingFunc)
+	if err != nil {
+		return nil, fmt.Errorf("get or create entities collection: %w", err)
+	}
+
+	relCollection, err := db.GetOrCreateCollection("relationships", nil, embeddingFunc)
+	if err != nil {
+		return nil, fmt.Errorf("get or create relationships collection: %w", err)
+	}
+
 	return &Store{
-		db:         db,
-		collection: collection,
-		embedCfg:   embedCfg,
+		db:                      db,
+		collection:              collection,
+		entitiesCollection:      entitiesCollection,
+		relationshipsCollection: relCollection,
+		embedCfg:                embedCfg,
 	}, nil
 }
 
@@ -102,10 +157,22 @@ func NewPersistentStore(path string, embedCfg *config.ProviderConfig) (*Store, e
 		return nil, fmt.Errorf("get or create collection: %w", err)
 	}
 
+	entitiesCollection, err := db.GetOrCreateCollection("entities", nil, embeddingFunc)
+	if err != nil {
+		return nil, fmt.Errorf("get or create entities collection: %w", err)
+	}
+
+	relCollection, err := db.GetOrCreateCollection("relationships", nil, embeddingFunc)
+	if err != nil {
+		return nil, fmt.Errorf("get or create relationships collection: %w", err)
+	}
+
 	return &Store{
-		db:         db,
-		collection: collection,
-		embedCfg:   embedCfg,
+		db:                      db,
+		collection:              collection,
+		entitiesCollection:      entitiesCollection,
+		relationshipsCollection: relCollection,
+		embedCfg:                embedCfg,
 	}, nil
 }
 
@@ -267,6 +334,237 @@ func (s *Store) DeleteBySource(ctx context.Context, source string) error {
 	}
 	if err := s.collection.Delete(ctx, map[string]string{"source": source}, nil); err != nil {
 		return fmt.Errorf("delete chunks for source %q: %w", source, err)
+	}
+	return nil
+}
+
+// AddEntityDescriptions adds or updates entity descriptions in the entities collection.
+func (s *Store) AddEntityDescriptions(ctx context.Context, entities []EntityDesc) error {
+	if len(entities) == 0 {
+		return nil
+	}
+
+	docs := make([]chromem.Document, len(entities))
+	for i, e := range entities {
+		content := e.Name
+		if len(e.Aliases) > 0 {
+			content += fmt.Sprintf("\nAlso known as: %s", strings.Join(e.Aliases, ", "))
+		}
+		if e.Description != "" {
+			content += "\n" + e.Description
+		}
+
+		meta := map[string]string{
+			"name":         e.Name,
+			"content_type": "entity_description",
+			"degree":       fmt.Sprintf("%d", e.Degree),
+		}
+		if len(e.Aliases) > 0 {
+			meta["aliases"] = strings.Join(e.Aliases, ", ")
+		}
+
+		docs[i] = chromem.Document{
+			ID:       "entity:" + e.Name,
+			Content:  content,
+			Metadata: meta,
+		}
+	}
+
+	if err := s.entitiesCollection.AddDocuments(ctx, docs, runtime.NumCPU()); err != nil {
+		return fmt.Errorf("add entities to collection: %w", err)
+	}
+	return nil
+}
+
+// QueryEntities performs a semantic similarity search against the entity descriptions.
+func (s *Store) QueryEntities(ctx context.Context, query string, topK int) ([]EntitySearchResult, error) {
+	if query == "" {
+		return nil, errors.New("query cannot be empty")
+	}
+	if topK <= 0 {
+		topK = 5
+	}
+	if s.entitiesCollection == nil || s.entitiesCollection.Count() == 0 {
+		return nil, nil
+	}
+
+	results, err := s.entitiesCollection.Query(ctx, query, topK, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("query entities: %w", err)
+	}
+
+	out := make([]EntitySearchResult, len(results))
+	for i, r := range results {
+		degree := 0
+		if dStr := r.Metadata["degree"]; dStr != "" {
+			fmt.Sscanf(dStr, "%d", &degree)
+		}
+		var aliases []string
+		if aStr := r.Metadata["aliases"]; aStr != "" {
+			for _, a := range strings.Split(aStr, ", ") {
+				if a = strings.TrimSpace(a); a != "" {
+					aliases = append(aliases, a)
+				}
+			}
+		}
+		name := r.Metadata["name"]
+		if name == "" {
+			name = strings.TrimPrefix(r.ID, "entity:")
+		}
+
+		desc := r.Content
+		lines := strings.Split(r.Content, "\n")
+		var descLines []string
+		for _, line := range lines[1:] {
+			if strings.HasPrefix(line, "Also known as:") {
+				continue
+			}
+			descLines = append(descLines, line)
+		}
+		if len(descLines) > 0 {
+			desc = strings.TrimSpace(strings.Join(descLines, "\n"))
+		}
+
+		out[i] = EntitySearchResult{
+			Name:        name,
+			Description: desc,
+			Similarity:  r.Similarity,
+			Degree:      degree,
+			Aliases:     aliases,
+			Metadata:    r.Metadata,
+		}
+	}
+	return out, nil
+}
+
+// EntityCount returns the number of entity descriptions stored.
+func (s *Store) EntityCount() int {
+	if s.entitiesCollection == nil {
+		return 0
+	}
+	return s.entitiesCollection.Count()
+}
+
+// ClearEntityDescriptions removes all entity descriptions from the entities collection.
+func (s *Store) ClearEntityDescriptions(ctx context.Context) error {
+	if s.entitiesCollection == nil || s.entitiesCollection.Count() == 0 {
+		return nil
+	}
+	if err := s.entitiesCollection.Delete(ctx, map[string]string{"content_type": "entity_description"}, nil); err != nil {
+		return fmt.Errorf("clear entity descriptions: %w", err)
+	}
+	return nil
+}
+
+// AddRelationships adds or updates relationship descriptions in the relationships collection.
+func (s *Store) AddRelationships(ctx context.Context, rels []RelationshipDoc) error {
+	if len(rels) == 0 {
+		return nil
+	}
+
+	docs := make([]chromem.Document, len(rels))
+	for i, r := range rels {
+		content := fmt.Sprintf("%s %s %s", r.Subject, r.Predicate, r.Object)
+		if r.Description != "" && r.Description != content {
+			content += "\n" + r.Description
+		}
+
+		meta := map[string]string{
+			"subject":      r.Subject,
+			"predicate":    r.Predicate,
+			"object":       r.Object,
+			"source":       r.Source,
+			"content_type": "relationship",
+		}
+		if r.Description != "" {
+			meta["description"] = r.Description
+		}
+
+		h := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s", r.Subject, r.Predicate, r.Object)))
+		id := "rel:" + hex.EncodeToString(h[:12])
+
+		docs[i] = chromem.Document{
+			ID:       id,
+			Content:  content,
+			Metadata: meta,
+		}
+	}
+
+	if err := s.relationshipsCollection.AddDocuments(ctx, docs, runtime.NumCPU()); err != nil {
+		return fmt.Errorf("add relationships to collection: %w", err)
+	}
+	return nil
+}
+
+// QueryRelationships performs a semantic similarity search against relationship descriptions.
+func (s *Store) QueryRelationships(ctx context.Context, query string, topK int) ([]RelationshipSearchResult, error) {
+	if query == "" {
+		return nil, errors.New("query cannot be empty")
+	}
+	if topK <= 0 {
+		topK = 5
+	}
+	if s.relationshipsCollection == nil || s.relationshipsCollection.Count() == 0 {
+		return nil, nil
+	}
+
+	results, err := s.relationshipsCollection.Query(ctx, query, topK, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("query relationships: %w", err)
+	}
+
+	out := make([]RelationshipSearchResult, len(results))
+	for i, r := range results {
+		desc := r.Metadata["description"]
+		if desc == "" {
+			lines := strings.Split(r.Content, "\n")
+			if len(lines) > 1 {
+				desc = strings.TrimSpace(strings.Join(lines[1:], "\n"))
+			}
+		}
+
+		out[i] = RelationshipSearchResult{
+			Subject:     r.Metadata["subject"],
+			Predicate:   r.Metadata["predicate"],
+			Object:      r.Metadata["object"],
+			Description: desc,
+			Source:      r.Metadata["source"],
+			Similarity:  r.Similarity,
+			Metadata:    r.Metadata,
+		}
+	}
+	return out, nil
+}
+
+// RelationshipCount returns the number of relationship descriptions stored.
+func (s *Store) RelationshipCount() int {
+	if s.relationshipsCollection == nil {
+		return 0
+	}
+	return s.relationshipsCollection.Count()
+}
+
+// ClearRelationships removes all relationship descriptions from the relationships collection.
+func (s *Store) ClearRelationships(ctx context.Context) error {
+	if s.relationshipsCollection == nil || s.relationshipsCollection.Count() == 0 {
+		return nil
+	}
+	if err := s.relationshipsCollection.Delete(ctx, map[string]string{"content_type": "relationship"}, nil); err != nil {
+		return fmt.Errorf("clear relationships: %w", err)
+	}
+	return nil
+}
+
+// DeleteRelationshipsBySource removes all relationships originating from the given source document.
+func (s *Store) DeleteRelationshipsBySource(ctx context.Context, source string) error {
+	if source == "" {
+		return errors.New("source cannot be empty")
+	}
+	if s.relationshipsCollection == nil || s.relationshipsCollection.Count() == 0 {
+		return nil
+	}
+	if err := s.relationshipsCollection.Delete(ctx, map[string]string{"source": source}, nil); err != nil {
+		return fmt.Errorf("delete relationships for source %q: %w", source, err)
 	}
 	return nil
 }

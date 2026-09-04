@@ -140,6 +140,14 @@ func (db *DB) index(ctx context.Context) *snapshot {
 	return s
 }
 
+// AllTriples returns all unique triples currently stored in the graph.
+func (db *DB) AllTriples(ctx context.Context) []SearchResult {
+	s := db.index(ctx)
+	out := make([]SearchResult, len(s.triples))
+	copy(out, s.triples)
+	return out
+}
+
 // NewDB creates a new in-memory graph DB.
 func NewDB() (*DB, error) {
 	store, err := cayley.NewMemoryGraph()
@@ -247,85 +255,7 @@ const (
 // Direct matches are always ranked above traversed facts. Set maxHops to 0 for
 // the flat behaviour of Search.
 func (db *DB) SearchWithHops(ctx context.Context, query string, topK, maxHops int) ([]SearchResult, error) {
-	if query == "" {
-		return nil, errors.New("query cannot be empty")
-	}
-	if topK <= 0 {
-		topK = 10
-	}
-
-	seeds, err := db.Search(ctx, query, topK)
-	if err != nil {
-		return nil, err
-	}
-	if maxHops <= 0 || len(seeds) == 0 {
-		return seeds, nil
-	}
-
-	snap := db.index(ctx)
-	seen := map[string]bool{}
-	for _, s := range seeds {
-		seen[FoldKey(s.Subject, s.Predicate, s.Object)] = true
-	}
-
-	expandFrom := seeds
-	if len(expandFrom) > maxSeedsToExpand {
-		expandFrom = expandFrom[:maxSeedsToExpand]
-	}
-
-	var expanded []SearchResult
-	for _, seed := range expandFrom {
-		for _, entity := range []string{seed.Subject, seed.Object} {
-			key := db.entityKey(entity)
-			neighbours := snap.byEntity[key]
-			// Skip hubs: too generic for their neighbours to mean anything
-			if len(neighbours) == 0 || len(neighbours) > maxHubDegree {
-				continue
-			}
-
-			added := 0
-			for _, i := range neighbours {
-				if added >= maxPerEntity {
-					break
-				}
-				t := snap.triples[i]
-				fk := FoldKey(t.Subject, t.Predicate, t.Object)
-				if seen[fk] {
-					continue
-				}
-				seen[fk] = true
-
-				t.Hop = 1
-				t.Via = entity
-				// Rank below its seed, and prefer connections through more
-				// specific (lower-degree) entities.
-				t.Score = seed.Score * hopDecay * (1 - float64(len(neighbours))/float64(maxHubDegree)*0.3)
-				expanded = append(expanded, t)
-				added++
-			}
-		}
-	}
-
-	sort.SliceStable(expanded, func(i, j int) bool {
-		return expanded[i].Score > expanded[j].Score
-	})
-
-	// Traversed facts are ADDITIVE — they never displace a direct match.
-	// Evicting a directly-matching fact (say "X was disciple of Y") to make
-	// room for a one-hop fact is a regression, since the direct match is by
-	// construction the more relevant one.
-	hopBudget := topK * hopSharePct / 100
-	if hopBudget == 0 && topK > 1 && len(expanded) > 0 {
-		hopBudget = 1
-	}
-	if hopBudget > len(expanded) {
-		hopBudget = len(expanded)
-	}
-
-	out := make([]SearchResult, 0, len(seeds)+hopBudget)
-	out = append(out, seeds...)
-	out = append(out, expanded[:hopBudget]...)
-	return out, nil
+	return db.SearchWithSeeds(ctx, query, nil, nil, topK, maxHops)
 }
 
 // Sample returns up to limit triples drawn uniformly from the whole graph

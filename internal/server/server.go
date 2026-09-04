@@ -60,12 +60,12 @@ type AgentConfig struct {
 type Server struct {
 	vectorStore   *vector.Store
 	lexicalIndex  *lexical.Index
-	fusionCfg     *fusionConfig // compiled corpus-specific fusion settings
 	graphDB       *graph.DB
 	llmClient     *llm.Client
 	reranker      *llm.Reranker
 	agentCfg      *AgentConfig
 	appCfg        *agentconfig.Config
+	fusionCfg     *fusionConfig // compiled corpus-specific fusion settings
 	mux           *http.ServeMux
 	log           *slog.Logger
 	apiKey        string             // optional API key for auth; empty = open access
@@ -179,12 +179,12 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{
 		vectorStore:   vs,
 		lexicalIndex:  lexIndex,
-		fusionCfg:     buildFusionConfig(domainCfg),
 		graphDB:       gdb,
 		llmClient:     llmClient,
 		reranker:      reranker,
 		agentCfg:      agentCfg,
 		appCfg:        cfg.AppCfg,
+		fusionCfg:     buildFusionConfig(domainCfg),
 		mux:           http.NewServeMux(),
 		log:           logger,
 		apiKey:        apiKey,
@@ -196,6 +196,8 @@ func New(cfg Config) (*Server, error) {
 	logger.Info("server initialized",
 		"agent", agentCfg.Agent.Name,
 		"vectors", vs.Count(),
+		"entities", vs.EntityCount(),
+		"relationships", vs.RelationshipCount(),
 		"lexical", lexIndex.Len(),
 		"triples", gdb.Count(),
 		"entity_aliases", aliasCount,
@@ -212,21 +214,23 @@ func New(cfg Config) (*Server, error) {
 // Info returns a ServerInfo struct for displaying the startup banner.
 func (s *Server) Info() display.ServerInfo {
 	info := display.ServerInfo{
-		AgentName:        s.agentCfg.Agent.Name,
-		AgentDescription: s.agentCfg.Agent.Description,
-		AgentVersion:     s.agentCfg.Agent.Version,
-		VectorCount:      s.vectorStore.Count(),
-		TripleCount:      s.graphDB.Count(),
-		MCPTools:         len(s.agentCfg.MCP.Tools),
-		EmbedDimensions:  s.appCfg.Embedder.Dimensions,
-		EmbedModel:       s.appCfg.Embedder.Model,
-		EmbedBaseURL:     s.appCfg.Embedder.BaseURL,
-		LLMModel:         s.appCfg.LLM.Model,
-		LLMBaseURL:       s.appCfg.LLM.BaseURL,
-		RerankModel:      s.appCfg.Reranker.Model,
-		RerankBaseURL:    s.appCfg.Reranker.BaseURL,
-		Port:             s.appCfg.Port,
-		AuthEnabled:      s.apiKey != "",
+		AgentName:         s.agentCfg.Agent.Name,
+		AgentDescription:  s.agentCfg.Agent.Description,
+		AgentVersion:      s.agentCfg.Agent.Version,
+		VectorCount:       s.vectorStore.Count(),
+		EntityCount:       s.vectorStore.EntityCount(),
+		RelationshipCount: s.vectorStore.RelationshipCount(),
+		TripleCount:       s.graphDB.Count(),
+		MCPTools:          len(s.agentCfg.MCP.Tools),
+		EmbedDimensions:   s.appCfg.Embedder.Dimensions,
+		EmbedModel:        s.appCfg.Embedder.Model,
+		EmbedBaseURL:      s.appCfg.Embedder.BaseURL,
+		LLMModel:          s.appCfg.LLM.Model,
+		LLMBaseURL:        s.appCfg.LLM.BaseURL,
+		RerankModel:       s.appCfg.Reranker.Model,
+		RerankBaseURL:     s.appCfg.Reranker.BaseURL,
+		Port:              s.appCfg.Port,
+		AuthEnabled:       s.apiKey != "",
 	}
 	return info
 }
@@ -365,8 +369,10 @@ const defaultTopK = 5
 
 // retrievalResult bundles structured hybrid search output.
 type retrievalResult struct {
-	Chunks []vector.SearchResult `json:"chunks"`
-	Facts  []graph.SearchResult  `json:"facts"`
+	Chunks        []vector.SearchResult             `json:"chunks"`
+	Entities      []vector.EntitySearchResult       `json:"entities,omitempty"`
+	Relationships []vector.RelationshipSearchResult `json:"relationships,omitempty"`
+	Facts         []graph.SearchResult              `json:"facts"`
 }
 
 // retrieve performs both vector and graph search and returns structured results.
@@ -391,6 +397,44 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 		}
 	}
 
+	// Dense entity retrieval: find key entities matching query semantically
+	var entityResults []vector.EntitySearchResult
+	if s.vectorStore.EntityCount() > 0 {
+		var err error
+		entityResults, err = s.vectorStore.QueryEntities(ctx, query, 5)
+		if err != nil {
+			s.log.Warn("entity vector search failed (non-fatal)", "error", err, "query", query)
+		}
+	}
+
+	var seedEntities []string
+	for _, e := range entityResults {
+		if e.Similarity > 0.4 {
+			seedEntities = append(seedEntities, e.Name)
+		}
+	}
+
+	// Dense relationship retrieval: find key relationships matching query semantically
+	var relResults []vector.RelationshipSearchResult
+	if s.vectorStore.RelationshipCount() > 0 {
+		var err error
+		relResults, err = s.vectorStore.QueryRelationships(ctx, query, 5)
+		if err != nil {
+			s.log.Warn("relationship vector search failed (non-fatal)", "error", err, "query", query)
+		}
+	}
+
+	var seedTriples []graph.Triple
+	for _, r := range relResults {
+		if r.Similarity > 0.4 {
+			seedTriples = append(seedTriples, graph.Triple{
+				Subject:   r.Subject,
+				Predicate: r.Predicate,
+				Object:    r.Object,
+			})
+		}
+	}
+
 	// Rerank before fusion so the semantic route contributes its best ordering.
 	vectorResults = s.rerank(ctx, query, vectorResults)
 
@@ -400,7 +444,8 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 	lexIDs, exact := lexicalRoutes(s.lexicalIndex, s.fusionCfg.router, query, candidateK)
 
 	s.log.Info("routes completed", "query", query,
-		"vector", len(vectorResults), "lexical", len(lexIDs), "exact", len(exact))
+		"vector", len(vectorResults), "lexical", len(lexIDs), "exact", len(exact),
+		"entities", len(entityResults), "relationships", len(relResults))
 
 	lists := map[string][]string{}
 	byID := map[string]vector.SearchResult{}
@@ -451,14 +496,15 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 	}
 
 	// Graph search runs last so it can be disambiguated by the vector layer.
-	// Graph matching is lexical: a query about saṃskāra in its alchemical sense
-	// matches triples about saṃskāra as karmic residue equally well. The
-	// embedding layer does understand the distinction, so facts coming from the
-	// documents semantic retrieval actually selected are promoted, and facts
-	// from unrelated documents are demoted.
-	graphResults := s.searchGraphInContext(ctx, query, chunks, s.graphFactLimit())
+	// Graph matching is seeded with text query tokens, semantic entity matches, and semantic relationship matches.
+	graphResults := s.searchGraphInContext(ctx, query, seedEntities, seedTriples, chunks, s.graphFactLimit())
 
-	return retrievalResult{Chunks: chunks, Facts: graphResults}, nil
+	return retrievalResult{
+		Chunks:        chunks,
+		Entities:      entityResults,
+		Relationships: relResults,
+		Facts:         graphResults,
+	}, nil
 }
 
 // nearDuplicateThreshold is the shingle overlap above which two chunks are
@@ -560,11 +606,12 @@ const contextBoost = 2.5
 // searchGraphInContext runs a graph search and re-ranks the results using the
 // source documents that semantic retrieval selected, resolving homonyms that
 // pure string matching cannot.
-func (s *Server) searchGraphInContext(ctx context.Context, query string, chunks []vector.SearchResult, limit int) []graph.SearchResult {
+func (s *Server) searchGraphInContext(ctx context.Context, query string, seedEntities []string, seedTriples []graph.Triple, chunks []vector.SearchResult, limit int) []graph.SearchResult {
 	// Pull a wider candidate pool so promotion has something to promote from.
 	// One hop of traversal surfaces connected chains (A taught B, B founded C)
-	// that a flat term match would never reach.
-	candidates, err := s.graphDB.SearchWithHops(ctx, query, limit*4, graphHops)
+	// that a flat term match would never reach. Seed entities and triples from
+	// dense vector retrieval seed graph traversal even when query terms differ.
+	candidates, err := s.graphDB.SearchWithSeeds(ctx, query, seedEntities, seedTriples, limit*4, graphHops)
 	if err != nil {
 		s.log.Warn("graph search failed (non-fatal)", "error", err, "query", query)
 		return nil
@@ -659,6 +706,14 @@ func (s *Server) hybridSearch(ctx context.Context, query string, topK int) (stri
 	}
 
 	var sb strings.Builder
+	if len(result.Entities) > 0 {
+		sb.WriteString("## Relevant Entities\n\n")
+		for _, e := range result.Entities {
+			fmt.Fprintf(&sb, "- **%s**: %s\n", e.Name, e.Description)
+		}
+		sb.WriteString("\n")
+	}
+
 	if len(result.Chunks) > 0 {
 		sb.WriteString("## Relevant Knowledge\n\n")
 		for i, r := range result.Chunks {
@@ -687,6 +742,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"version":          s.agentCfg.Agent.Version,
 		"corpus_version":   s.corpusVersion,
 		"vectors":          s.vectorStore.Count(),
+		"entities":         s.vectorStore.EntityCount(),
+		"relationships":    s.vectorStore.RelationshipCount(),
 		"triples":          s.graphDB.Count(),
 		"mcp_tools":        len(s.agentCfg.MCP.Tools),
 		"embed_dimensions": s.appCfg.Embedder.Dimensions,

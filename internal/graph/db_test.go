@@ -113,3 +113,22 @@ func TestScoreMatchPrefersWholeWords(t *testing.T) {
 
 	assert.Greater(t, wholeWord, substring)
 }
+
+func TestAllTriples(t *testing.T) {
+	db, err := NewDB()
+	require.NoError(t, err)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	triples := []Triple{
+		{Subject: "A", Predicate: "knows", Object: "B"},
+		{Subject: "B", Predicate: "knows", Object: "C"},
+	}
+	require.NoError(t, db.AddTriples(ctx, triples, "doc1.txt"))
+
+	all := db.AllTriples(ctx)
+	require.Len(t, all, 2)
+	assert.Equal(t, "A", all[0].Subject)
+	assert.Equal(t, "doc1.txt", all[0].Source)
+}

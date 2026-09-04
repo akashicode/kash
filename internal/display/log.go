@@ -11,10 +11,10 @@ import (
 // ────────────────────────────────────────────────────────────
 
 const (
-	Reset   = reset
-	Bold    = bold
-	Dim     = dim
-	Italic  = italic
+	Reset  = reset
+	Bold   = bold
+	Dim    = dim
+	Italic = italic
 
 	Red     = red
 	Green   = green

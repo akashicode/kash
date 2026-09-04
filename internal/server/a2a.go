@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/akashicode/kash/internal/vector"
 )
 
 // A2ARequest is an Agent-to-Agent JSON-RPC request.
@@ -173,6 +175,16 @@ func (s *Server) a2aSearch(r *http.Request, params json.RawMessage) (interface{}
 
 	graphResults, _ := s.graphDB.Search(ctx, p.Query, p.TopK*2)
 
+	var entityResults []vector.EntitySearchResult
+	if s.vectorStore.EntityCount() > 0 {
+		entityResults, _ = s.vectorStore.QueryEntities(ctx, p.Query, p.TopK)
+	}
+
+	var relResults []vector.RelationshipSearchResult
+	if s.vectorStore.RelationshipCount() > 0 {
+		relResults, _ = s.vectorStore.QueryRelationships(ctx, p.Query, p.TopK)
+	}
+
 	results := make([]map[string]interface{}, len(vectorResults))
 	for i, r := range vectorResults {
 		results[i] = map[string]interface{}{
@@ -183,9 +195,11 @@ func (s *Server) a2aSearch(r *http.Request, params json.RawMessage) (interface{}
 	}
 
 	return map[string]interface{}{
-		"vector_results": results,
-		"graph_results":  graphResults,
-		"query":          p.Query,
+		"vector_results":       results,
+		"entity_results":       entityResults,
+		"relationship_results": relResults,
+		"graph_results":        graphResults,
+		"query":                p.Query,
 	}, nil
 }
 

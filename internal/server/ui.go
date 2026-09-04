@@ -55,6 +55,8 @@ func (s *Server) handleAPIInfo(w http.ResponseWriter, r *http.Request) {
 		"version":          s.agentCfg.Agent.Version,
 		"corpus_version":   s.corpusVersion,
 		"vectors":          s.vectorStore.Count(),
+		"entities":         s.vectorStore.EntityCount(),
+		"relationships":    s.vectorStore.RelationshipCount(),
 		"triples":          s.graphDB.Count(),
 		"llm_model":        s.appCfg.LLM.Model,
 		"embed_model":      s.appCfg.Embedder.Model,

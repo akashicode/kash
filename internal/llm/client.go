@@ -19,9 +19,10 @@ var ErrEmptyResponse = errors.New("llm returned empty response")
 
 // Triple represents a Subject-Predicate-Object knowledge graph triple.
 type Triple struct {
-	Subject   string `json:"subject"`
-	Predicate string `json:"predicate"`
-	Object    string `json:"object"`
+	Subject     string `json:"subject"`
+	Predicate   string `json:"predicate"`
+	Object      string `json:"object"`
+	Description string `json:"description,omitempty"`
 }
 
 // Client wraps the OpenAI client for LLM interactions.

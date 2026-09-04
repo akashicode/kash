@@ -121,3 +121,202 @@ func TestDeleteBySourceRequiresSource(t *testing.T) {
 	require.NoError(t, err)
 	assert.Error(t, vs.DeleteBySource(context.Background(), ""))
 }
+
+func TestEntityDescriptions(t *testing.T) {
+	srv := stubEmbedder(t)
+	cfg := &config.ProviderConfig{BaseURL: srv.URL, APIKey: "test", Model: "test-embed"}
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	vs, err := NewPersistentStore(dir, cfg)
+	require.NoError(t, err)
+
+	// Initially empty
+	assert.Equal(t, 0, vs.EntityCount())
+
+	entities := []EntityDesc{
+		{
+			Name:        "Abhinavagupta",
+			Description: "10th-century philosopher and master of Kashmir Shaivism.",
+			Degree:      8,
+			Aliases:     []string{"Abhinava", "Acarya Abhinavagupta"},
+		},
+		{
+			Name:        "Gorakhnath",
+			Description: "Spiritual master and legendary founder of the Nath tradition.",
+			Degree:      5,
+			Aliases:     []string{"Gorakhnatha"},
+		},
+	}
+
+	require.NoError(t, vs.AddEntityDescriptions(ctx, entities))
+	assert.Equal(t, 2, vs.EntityCount())
+	// Regular document collection must be unaffected
+	assert.Equal(t, 0, vs.Count())
+
+	// Query entities
+	results, err := vs.QueryEntities(ctx, "philosopher of Kashmir Shaivism", 2)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+
+	// Verify fields populated
+	found := false
+	for _, r := range results {
+		if r.Name == "Abhinavagupta" {
+			found = true
+			assert.Equal(t, 8, r.Degree)
+			assert.Contains(t, r.Aliases, "Abhinava")
+			assert.Contains(t, r.Description, "10th-century philosopher")
+			assert.Greater(t, r.Similarity, float32(0))
+		}
+	}
+	assert.True(t, found, "Abhinavagupta must be returned")
+
+	// Empty query returns error
+	_, err = vs.QueryEntities(ctx, "", 2)
+	assert.Error(t, err)
+
+	// Clear entity descriptions
+	require.NoError(t, vs.ClearEntityDescriptions(ctx))
+	assert.Equal(t, 0, vs.EntityCount())
+}
+
+func TestEntityDescriptionsReopenPreserves(t *testing.T) {
+	srv := stubEmbedder(t)
+	cfg := &config.ProviderConfig{BaseURL: srv.URL, APIKey: "test", Model: "test-embed"}
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	vs, err := NewPersistentStore(dir, cfg)
+	require.NoError(t, err)
+
+	entities := []EntityDesc{
+		{
+			Name:        "Siva",
+			Description: "Supreme deity representing supreme consciousness.",
+			Degree:      20,
+		},
+	}
+	require.NoError(t, vs.AddEntityDescriptions(ctx, entities))
+	assert.Equal(t, 1, vs.EntityCount())
+
+	// Reopen persistent store
+	vs2, err := NewPersistentStore(dir, cfg)
+	require.NoError(t, err)
+	assert.Equal(t, 1, vs2.EntityCount(), "reopened persistent store must retain entities")
+
+	// Reopen with NewStoreFromPath (runtime serve path)
+	vs3, err := NewStoreFromPath(dir, cfg)
+	require.NoError(t, err)
+	assert.Equal(t, 1, vs3.EntityCount(), "serve path must retain entities")
+
+	results, err := vs3.QueryEntities(ctx, "supreme deity", 1)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "Siva", results[0].Name)
+}
+
+func TestRelationships(t *testing.T) {
+	srv := stubEmbedder(t)
+	cfg := &config.ProviderConfig{BaseURL: srv.URL, APIKey: "test", Model: "test-embed"}
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	vs, err := NewPersistentStore(dir, cfg)
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, vs.RelationshipCount())
+
+	rels := []RelationshipDoc{
+		{
+			Subject:     "Gorakhnath",
+			Predicate:   "founded",
+			Object:      "Nath tradition",
+			Description: "Established the Nath sampradaya and yogic discipline.",
+			Source:      "nath.md",
+		},
+		{
+			Subject:     "Gorakhnath",
+			Predicate:   "was disciple of",
+			Object:      "Matsyendranath",
+			Description: "Studied under the master Matsyendranath.",
+			Source:      "nath.md",
+		},
+		{
+			Subject:   "Abhinavagupta",
+			Predicate: "authored",
+			Object:    "Tantraloka",
+			Source:    "tantra.md",
+		},
+	}
+
+	require.NoError(t, vs.AddRelationships(ctx, rels))
+	assert.Equal(t, 3, vs.RelationshipCount())
+	// Document and Entity counts must remain isolated
+	assert.Equal(t, 0, vs.Count())
+	assert.Equal(t, 0, vs.EntityCount())
+
+	// Query relationships
+	results, err := vs.QueryRelationships(ctx, "founder of Nath tradition", 2)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+
+	found := false
+	for _, r := range results {
+		if r.Subject == "Gorakhnath" && r.Predicate == "founded" && r.Object == "Nath tradition" {
+			found = true
+			assert.Equal(t, "nath.md", r.Source)
+			assert.Equal(t, "Established the Nath sampradaya and yogic discipline.", r.Description)
+			assert.Greater(t, r.Similarity, float32(0))
+		}
+	}
+	assert.True(t, found, "matching relationship must be returned")
+
+	// Empty query returns error
+	_, err = vs.QueryRelationships(ctx, "", 2)
+	assert.Error(t, err)
+
+	// Delete by source
+	require.NoError(t, vs.DeleteRelationshipsBySource(ctx, "nath.md"))
+	assert.Equal(t, 1, vs.RelationshipCount())
+
+	// Clear remaining
+	require.NoError(t, vs.ClearRelationships(ctx))
+	assert.Equal(t, 0, vs.RelationshipCount())
+}
+
+func TestRelationshipsReopenPreserves(t *testing.T) {
+	srv := stubEmbedder(t)
+	cfg := &config.ProviderConfig{BaseURL: srv.URL, APIKey: "test", Model: "test-embed"}
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	vs, err := NewPersistentStore(dir, cfg)
+	require.NoError(t, err)
+
+	rels := []RelationshipDoc{
+		{
+			Subject:   "Kundalini",
+			Predicate: "pierces",
+			Object:    "Chakras",
+			Source:    "yoga.md",
+		},
+	}
+	require.NoError(t, vs.AddRelationships(ctx, rels))
+	assert.Equal(t, 1, vs.RelationshipCount())
+
+	// Reopen persistent store
+	vs2, err := NewPersistentStore(dir, cfg)
+	require.NoError(t, err)
+	assert.Equal(t, 1, vs2.RelationshipCount(), "reopened persistent store must retain relationships")
+
+	// Reopen with NewStoreFromPath (serve path)
+	vs3, err := NewStoreFromPath(dir, cfg)
+	require.NoError(t, err)
+	assert.Equal(t, 1, vs3.RelationshipCount(), "serve path must retain relationships")
+
+	results, err := vs3.QueryRelationships(ctx, "kundalini chakras", 1)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "Kundalini", results[0].Subject)
+}

@@ -196,7 +196,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Step 1: Load documents
-	display.Step(1, 5, "Loading documents from data/...")
+	display.Step(1, 6, "Loading documents from data/...")
 	docs, rejected, err := reader.LoadDirectory("data")
 	if err != nil {
 		return fmt.Errorf("load documents: %w", err)
@@ -213,7 +213,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 2: Plan — decide per document whether to skip, add, replace, or resume
-	display.Step(2, 5, "Planning incremental build...")
+	display.Step(2, 6, "Planning incremental build...")
 	var pending []docPlan
 	unchanged := 0
 	docNames := map[string]bool{}
@@ -265,7 +265,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 3: Process documents (embed + extract triples per document)
-	display.Step(3, 5, "Building documents (embeddings + knowledge graph)...")
+	display.Step(3, 6, "Building documents (embeddings + knowledge graph)...")
 
 	vs, err := vector.NewPersistentStore(vectorPath, &cfg.Embedder)
 	if err != nil {
@@ -290,6 +290,9 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		for _, name := range removed {
 			if err := vs.DeleteBySource(ctx, name); err != nil {
 				display.StepWarn(fmt.Sprintf("prune vectors for %s: %v", name, err))
+			}
+			if err := vs.DeleteRelationshipsBySource(ctx, name); err != nil {
+				display.StepWarn(fmt.Sprintf("prune relationships for %s: %v", name, err))
 			}
 			if err := gdb.DeleteBySource(ctx, name); err != nil {
 				display.StepWarn(fmt.Sprintf("prune triples for %s: %v", name, err))
@@ -328,9 +331,12 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 		state := m.Documents[name]
 		if p.Reason == reasonChanged {
-			// Replace: clear the document's old vectors and triples first
+			// Replace: clear the document's old vectors, relationships, and triples first
 			if err := vs.DeleteBySource(ctx, name); err != nil {
 				return fmt.Errorf("delete old vectors for %q: %w", name, err)
+			}
+			if err := vs.DeleteRelationshipsBySource(ctx, name); err != nil {
+				return fmt.Errorf("delete old relationships for %q: %w", name, err)
 			}
 			if err := gdb.DeleteBySource(ctx, name); err != nil {
 				return fmt.Errorf("delete old triples for %q: %w", name, err)
@@ -437,6 +443,22 @@ func runBuild(cmd *cobra.Command, args []string) error {
 					return fmt.Errorf("add triples for %q: %w", name, err)
 				}
 
+				if len(triples) > 0 {
+					relDocs := make([]vector.RelationshipDoc, len(triples))
+					for ti, t := range triples {
+						relDocs[ti] = vector.RelationshipDoc{
+							Subject:     t.Subject,
+							Predicate:   t.Predicate,
+							Object:      t.Object,
+							Description: t.Description,
+							Source:      name,
+						}
+					}
+					if err := vs.AddRelationships(ctx, relDocs); err != nil {
+						display.StepWarn(fmt.Sprintf("failed to embed relationships for %s chunks %d-%d (non-fatal): %v", name, i+1, end, err))
+					}
+				}
+
 				if err := commit(func() { state.Triples += len(triples); state.GraphBatchesDone++ }); err != nil {
 					wg.Wait()
 					return err
@@ -468,7 +490,26 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		corpusChanged = true
 	}
 
-	display.StepResult("Indexed", fmt.Sprintf("%d vectors, %d triples total", vs.Count(), gdb.Count()))
+	// Backfill relationship descriptions if graph has triples but relationship collection is empty
+	if vs.RelationshipCount() == 0 && gdb.Count() > 0 {
+		allTriples := gdb.AllTriples(ctx)
+		if len(allTriples) > 0 {
+			relDocs := make([]vector.RelationshipDoc, len(allTriples))
+			for i, t := range allTriples {
+				relDocs[i] = vector.RelationshipDoc{
+					Subject:   t.Subject,
+					Predicate: t.Predicate,
+					Object:    t.Object,
+					Source:    t.Source,
+				}
+			}
+			if err := vs.AddRelationships(ctx, relDocs); err != nil {
+				display.StepWarn(fmt.Sprintf("failed to embed relationships (non-fatal): %v", err))
+			}
+		}
+	}
+
+	display.StepResult("Indexed", fmt.Sprintf("%d vectors, %d relationships, %d triples total", vs.Count(), vs.RelationshipCount(), gdb.Count()))
 
 	// Build the lexical index over the whole corpus.
 	//
@@ -477,8 +518,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	// a partial lexical index would silently answer keyword queries from only
 	// the documents that happened to change in the last build.
 	if corpusChanged || !fileExists(lexicalPath) {
-		display.Step(4, 5, "Building lexical index...")
-		lx := lexical.New()
+		display.Step(4, 6, "Building lexical index...")
+		lx := lexical.NewWithFold(domainCfg.Resolution.FoldDiacritics)
 		for _, doc := range docs {
 			chunks, err := ck.SplitStructured(doc.Content, doc.Name, refMatchers)
 			if err != nil {
@@ -495,14 +536,105 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		display.StepResult("Indexed", fmt.Sprintf("%d chunks for keyword search", lx.Len()))
 	}
 
-	// Step 5: Generate MCP tool description (only when the corpus changed)
+	// Step 5: Generate and embed entity descriptions
+	//
+	// Dense embeddings over entity descriptions allow queries to find entities
+	// conceptually even when exact keywords don't match, and seed knowledge-graph
+	// traversal with relevant starting points.
+	if corpusChanged || vs.EntityCount() == 0 {
+		display.Step(5, 6, "Generating entity descriptions & embeddings...")
+		minDegree := domainCfg.EntityDescription.MinDegree
+		if minDegree <= 0 {
+			minDegree = 2
+		}
+		maxEntities := domainCfg.EntityDescription.MaxEntities
+		if maxEntities <= 0 {
+			maxEntities = 500
+		}
+
+		// Also check if an alias file exists to resolve spelling variants
+		aliasPath := filepath.Join("data", graph.AliasFileName)
+		if fileExists(aliasPath) {
+			if _, aliases, err := graph.LoadAliasFile(aliasPath); err == nil && aliases.Len() > 0 {
+				gdb.SetAliases(aliases)
+			}
+		}
+
+		entityFacts := gdb.EntityFacts(ctx, minDegree)
+		if len(entityFacts) > maxEntities && maxEntities > 0 {
+			entityFacts = entityFacts[:maxEntities]
+		}
+
+		if len(entityFacts) > 0 {
+			// Clear stale entity descriptions before rebuilding them
+			if err := vs.ClearEntityDescriptions(ctx); err != nil {
+				display.StepWarn(fmt.Sprintf("failed to clear old entity descriptions: %v", err))
+			}
+
+			// Batch entities for LLM description generation (15 per call)
+			const descBatchSize = 15
+			var entityDescs []vector.EntityDesc
+
+			for i := 0; i < len(entityFacts); i += descBatchSize {
+				end := i + descBatchSize
+				if end > len(entityFacts) {
+					end = len(entityFacts)
+				}
+				batchFacts := entityFacts[i:end]
+
+				toDescribe := make([]llm.EntityToDescribe, len(batchFacts))
+				for j, ef := range batchFacts {
+					toDescribe[j] = llm.EntityToDescribe{
+						Name:    ef.Name,
+						Aliases: ef.Aliases,
+						Facts:   ef.Facts,
+					}
+				}
+
+				llmResults, err := llmClient.DescribeEntities(ctx, toDescribe)
+				descMap := map[string]string{}
+				if err == nil {
+					for _, r := range llmResults {
+						descMap[r.Name] = r.Description
+					}
+				} else {
+					display.StepWarn(fmt.Sprintf("LLM entity description generation failed for batch %d-%d (using fallback): %v", i+1, end, err))
+				}
+
+				for _, ef := range batchFacts {
+					desc := descMap[ef.Name]
+					if desc == "" {
+						desc = llm.DeterministicDescription(ef.Name, ef.Facts)
+					}
+					entityDescs = append(entityDescs, vector.EntityDesc{
+						Name:        ef.Name,
+						Description: desc,
+						Degree:      ef.Degree,
+						Aliases:     ef.Aliases,
+					})
+				}
+			}
+
+			if err := vs.AddEntityDescriptions(ctx, entityDescs); err != nil {
+				display.StepWarn(fmt.Sprintf("failed to embed entity descriptions: %v", err))
+			} else {
+				display.StepResult("Embedded", fmt.Sprintf("%d entity descriptions into vector store", len(entityDescs)))
+			}
+		} else {
+			display.StepResult("Skipped", "no entities met degree threshold")
+		}
+	} else {
+		display.StepDetail(fmt.Sprintf("entity descriptions already up to date (%d entities)", vs.EntityCount()))
+	}
+
+	// Step 6: Generate MCP tool description (only when the corpus changed)
 	//
 	// The sample must span the WHOLE corpus, not the documents this run happened
 	// to process. Sampling the first pending document made an incremental build
 	// that touched one book rewrite the description to be about only that book —
 	// a 61-document Tantra corpus advertised itself as being about a single text,
 	// which is the only description an MCP client ever sees.
-	display.Step(5, 5, "Generating optimized MCP tool descriptions...")
+	display.Step(6, 6, "Generating optimized MCP tool descriptions...")
 	sampleContent := buildCorpusSample(docs, mcpSampleBudget)
 
 	agentYAMLData, err := os.ReadFile("agent.yaml")
@@ -551,7 +683,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	display.Success(fmt.Sprintf("Build complete! Corpus version: %d", m.Version))
 	fmt.Println()
-	display.KeyValue("Vector index", fmt.Sprintf("%s (%d documents)", vectorPath, vs.Count()), display.BrightGreen)
+	display.KeyValue("Vector index", fmt.Sprintf("%s (%d documents, %d entities, %d relationships)", vectorPath, vs.Count(), vs.EntityCount(), vs.RelationshipCount()), display.BrightGreen)
 	display.KeyValue("Graph store", fmt.Sprintf("%s (%d triples)", graphPath, gdb.Count()), display.BrightGreen)
 	if fileExists(lexicalPath) {
 		display.KeyValue("Lexical index", lexicalPath, display.BrightGreen)

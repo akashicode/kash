@@ -8,10 +8,10 @@ import (
 
 // ANSI color codes
 const (
-	reset   = "\033[0m"
-	bold    = "\033[1m"
-	dim     = "\033[2m"
-	italic  = "\033[3m"
+	reset  = "\033[0m"
+	bold   = "\033[1m"
+	dim    = "\033[2m"
+	italic = "\033[3m"
 
 	red     = "\033[31m"
 	green   = "\033[32m"
@@ -42,9 +42,11 @@ type ServerInfo struct {
 	AgentVersion     string
 
 	// Data stats
-	VectorCount int
-	TripleCount int64
-	MCPTools    int
+	VectorCount       int
+	EntityCount       int
+	RelationshipCount int
+	TripleCount       int64
+	MCPTools          int
 
 	// Embedding
 	EmbedDimensions int
@@ -97,6 +99,12 @@ func PrintBanner(info ServerInfo) {
 	// Knowledge Base section
 	printSectionHeader(w, "📚 Knowledge Base")
 	printKVColored(w, "Vectors", formatCount(info.VectorCount), brightGreen)
+	if info.EntityCount > 0 {
+		printKVColored(w, "Entities", formatCount(info.EntityCount), brightGreen)
+	}
+	if info.RelationshipCount > 0 {
+		printKVColored(w, "Relationships", formatCount(info.RelationshipCount), brightGreen)
+	}
 	printKVColored(w, "Graph Triples", formatCount64(info.TripleCount), brightGreen)
 	if info.MCPTools > 0 {
 		printKVColored(w, "MCP Tools", fmt.Sprintf("%d", info.MCPTools), brightGreen)
