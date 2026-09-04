@@ -234,6 +234,7 @@ func TestRelationships(t *testing.T) {
 			Object:      "Nath tradition",
 			Description: "Established the Nath sampradaya and yogic discipline.",
 			Source:      "nath.md",
+			ChunkID:     "nath_0",
 		},
 		{
 			Subject:     "Gorakhnath",
@@ -241,12 +242,14 @@ func TestRelationships(t *testing.T) {
 			Object:      "Matsyendranath",
 			Description: "Studied under the master Matsyendranath.",
 			Source:      "nath.md",
+			ChunkID:     "nath_1",
 		},
 		{
 			Subject:   "Abhinavagupta",
 			Predicate: "authored",
 			Object:    "Tantraloka",
 			Source:    "tantra.md",
+			ChunkID:   "tantra_0",
 		},
 	}
 
@@ -266,6 +269,7 @@ func TestRelationships(t *testing.T) {
 		if r.Subject == "Gorakhnath" && r.Predicate == "founded" && r.Object == "Nath tradition" {
 			found = true
 			assert.Equal(t, "nath.md", r.Source)
+			assert.Equal(t, "nath_0", r.ChunkID)
 			assert.Equal(t, "Established the Nath sampradaya and yogic discipline.", r.Description)
 			assert.Greater(t, r.Similarity, float32(0))
 		}

@@ -67,3 +67,12 @@ func TestParseTriplesDropsIncompleteEntries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, got, 1)
 }
+
+func TestParseTriplesPassageField(t *testing.T) {
+	raw := `[{"subject":"Gorakhnath","predicate":"was student of","object":"Matsyendranath","passage":2}]`
+	got, err := parseTriples(raw)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, 2, got[0].Passage)
+	assert.Equal(t, "Gorakhnath", got[0].Subject)
+}

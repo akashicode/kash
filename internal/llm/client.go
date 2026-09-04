@@ -23,6 +23,8 @@ type Triple struct {
 	Predicate   string `json:"predicate"`
 	Object      string `json:"object"`
 	Description string `json:"description,omitempty"`
+	Passage     int    `json:"passage,omitempty"`
+	ChunkID     string `json:"chunk_id,omitempty"`
 }
 
 // Client wraps the OpenAI client for LLM interactions.
@@ -138,7 +140,8 @@ from the list above. Never emit a non-English predicate.
 
 OUTPUT:
 - Return ONLY a valid JSON array, no explanation, no markdown fences.
-- Format: [{"subject": "X", "predicate": "Y", "object": "Z"}]
+- Format: [{"subject": "X", "predicate": "Y", "object": "Z", "passage": 1}]
+  where "passage" is the 1-based index of the passage from which the fact was extracted (e.g. 1 for PASSAGE 1).
 - Extract 5-20 triples. If nothing is explicitly stated, return [].`
 
 	prompt := fmt.Sprintf("Extract knowledge graph triples from these passages:\n\n%s", text)

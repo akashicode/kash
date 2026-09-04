@@ -132,3 +132,35 @@ func TestAllTriples(t *testing.T) {
 	assert.Equal(t, "A", all[0].Subject)
 	assert.Equal(t, "doc1.txt", all[0].Source)
 }
+
+func TestChunkIDProvenance(t *testing.T) {
+	db, err := NewDB()
+	require.NoError(t, err)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	triples := []Triple{
+		{Subject: "Abhinavagupta", Predicate: "authored", Object: "Tantraloka", ChunkID: "tantraloka_0"},
+		{Subject: "Abhinavagupta", Predicate: "systematized", Object: "Kashmir Shaivism", ChunkID: "shaivism_1"},
+	}
+	require.NoError(t, db.AddTriples(ctx, triples, "tantra.md"))
+
+	results, err := db.Search(ctx, "Abhinavagupta Tantraloka", 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+
+	assert.Equal(t, "tantra.md", results[0].Source)
+	assert.Equal(t, "tantraloka_0", results[0].ChunkID)
+
+	// Format with passage map
+	passages := map[string]int{
+		"tantraloka_0": 1,
+	}
+	formatted := FormatResultsWithPassages(results, passages)
+	assert.Contains(t, formatted, "(source: tantra.md [passage 1])")
+
+	// Verify DeleteBySource works with chunk ID labels
+	require.NoError(t, db.DeleteBySource(ctx, "tantra.md"))
+	assert.EqualValues(t, 0, db.Count())
+}

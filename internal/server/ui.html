@@ -634,9 +634,10 @@ async function runSearch() {
     let html = `<h3>Retrieved chunks (${chunks.length})</h3>`;
     html += chunks.length ? chunks.map((c, i) => {
       const sim = c.Similarity ?? c.similarity;
+      const chkID = c.ID || c.id || "";
       return `<div class="chunk">
         <div class="meta"><span class="rank">#${i + 1}</span>
-          <span class="src">📖 ${esc(c.Source || c.source || "unknown")}</span>
+          <span class="src">📖 ${esc(c.Source || c.source || "unknown")}${chkID ? ` <small>[${esc(chkID)}]</small>` : ""}</span>
           ${sim ? `<span class="sim">similarity ${Number(sim).toFixed(3)}</span>` : ""}
         </div>
         <div class="body">${esc(c.Content || c.content || "")}</div>
@@ -647,7 +648,7 @@ async function runSearch() {
         ${t.hop ? '<span class="hopmark" title="reached by traversing one edge">↳</span>' : ""}
         <span class="s">${esc(t.subject)}</span><span class="p">${esc(t.predicate)}</span><span class="o">${esc(t.object)}</span>
         ${t.via ? `<span class="via">via ${esc(t.via)}</span>` : ""}
-        ${t.source ? `<span class="src">📖 ${esc(t.source)}</span>` : ""}
+        ${t.source ? `<span class="src">📖 ${esc(t.source)}${t.chunk_id ? ` [${esc(t.chunk_id)}]` : ""}</span>` : (t.chunk_id ? `<span class="src">[${esc(t.chunk_id)}]</span>` : "")}
       </div>`).join("") + '</div>' : '<div class="empty">No graph facts matched</div>';
     out.innerHTML = html;
   } catch (e) {

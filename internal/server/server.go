@@ -438,13 +438,29 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 	// Rerank before fusion so the semantic route contributes its best ordering.
 	vectorResults = s.rerank(ctx, query, vectorResults)
 
-	// Routes 2 and 3: BM25, and exact structural lookup. Dense embeddings
-	// cannot match an exact token, so a query naming a verse number is
-	// unanswerable by similarity alone.
+	// Routes 2, 3 and 4: BM25, exact structural lookup, and knowledge-graph passage hits.
 	lexIDs, exact := lexicalRoutes(s.lexicalIndex, s.fusionCfg.router, query, candidateK)
 
+	var graphIDs []string
+	var graphCandidates []graph.SearchResult
+	if s.graphDB != nil && s.graphDB.Count() > 0 {
+		var err error
+		graphCandidates, err = s.graphDB.SearchWithSeeds(ctx, query, seedEntities, seedTriples, candidateK*2, graphHops)
+		if err != nil {
+			s.log.Warn("graph search failed (non-fatal)", "error", err, "query", query)
+		} else {
+			seenGraphChunk := map[string]bool{}
+			for _, f := range graphCandidates {
+				if f.ChunkID != "" && !seenGraphChunk[f.ChunkID] {
+					seenGraphChunk[f.ChunkID] = true
+					graphIDs = append(graphIDs, f.ChunkID)
+				}
+			}
+		}
+	}
+
 	s.log.Info("routes completed", "query", query,
-		"vector", len(vectorResults), "lexical", len(lexIDs), "exact", len(exact),
+		"vector", len(vectorResults), "lexical", len(lexIDs), "exact", len(exact), "graph_chunks", len(graphIDs),
 		"entities", len(entityResults), "relationships", len(relResults))
 
 	lists := map[string][]string{}
@@ -460,6 +476,9 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 	lists["lexical"] = lexIDs
 	if len(exact) > 0 {
 		lists["exact"] = exact
+	}
+	if len(graphIDs) > 0 {
+		lists["graph"] = graphIDs
 	}
 
 	cands := fuseRankLists(lists)
@@ -495,9 +514,9 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 		chunks = append(chunks, c.result)
 	}
 
-	// Graph search runs last so it can be disambiguated by the vector layer.
-	// Graph matching is seeded with text query tokens, semantic entity matches, and semantic relationship matches.
-	graphResults := s.searchGraphInContext(ctx, query, seedEntities, seedTriples, chunks, s.graphFactLimit())
+	// Re-rank graph facts against the selected chunks for context disambiguation:
+	// facts matching the exact chunk get highest priority, followed by facts from the same document.
+	graphResults := rankFactsByContext(graphCandidates, chunks, s.graphFactLimit())
 
 	return retrievalResult{
 		Chunks:        chunks,
@@ -599,18 +618,18 @@ const graphHops = 1
 // results, which would otherwise always be truncated away by their decayed score.
 const graphHopSharePct = 30
 
-// contextBoost multiplies the score of a fact whose source document also
-// surfaced in semantic retrieval.
-const contextBoost = 2.5
+// contextChunkBoost multiplies the score of a fact whose exact originating chunk
+// was surfaced in retrieval.
+const contextChunkBoost = 4.0
+
+// contextDocBoost multiplies the score of a fact whose source document also
+// surfaced in retrieval (resolving homonyms).
+const contextDocBoost = 2.5
 
 // searchGraphInContext runs a graph search and re-ranks the results using the
 // source documents that semantic retrieval selected, resolving homonyms that
 // pure string matching cannot.
 func (s *Server) searchGraphInContext(ctx context.Context, query string, seedEntities []string, seedTriples []graph.Triple, chunks []vector.SearchResult, limit int) []graph.SearchResult {
-	// Pull a wider candidate pool so promotion has something to promote from.
-	// One hop of traversal surfaces connected chains (A taught B, B founded C)
-	// that a flat term match would never reach. Seed entities and triples from
-	// dense vector retrieval seed graph traversal even when query terms differ.
 	candidates, err := s.graphDB.SearchWithSeeds(ctx, query, seedEntities, seedTriples, limit*4, graphHops)
 	if err != nil {
 		s.log.Warn("graph search failed (non-fatal)", "error", err, "query", query)
@@ -623,10 +642,8 @@ func (s *Server) searchGraphInContext(ctx context.Context, query string, seedEnt
 	return ranked
 }
 
-// rankFactsByContext promotes facts whose source document also surfaced in
-// semantic retrieval, then truncates to limit. This is what separates the
-// alchemical sense of a term from its karmic sense: both match the query
-// string, but only one appears in the documents the embedder selected.
+// rankFactsByContext promotes facts whose originating chunk or source document also surfaced in
+// retrieval, then truncates to limit. Facts matching the exact chunk are boosted highest.
 func rankFactsByContext(candidates []graph.SearchResult, chunks []vector.SearchResult, limit int) []graph.SearchResult {
 	// No semantic signal to disambiguate with — return as-is
 	if len(chunks) == 0 {
@@ -636,18 +653,24 @@ func rankFactsByContext(candidates []graph.SearchResult, chunks []vector.SearchR
 		return candidates
 	}
 
-	inContext := make(map[string]bool, len(chunks))
+	inContextChunks := make(map[string]bool, len(chunks))
+	inContextDocs := make(map[string]bool, len(chunks))
 	for _, c := range chunks {
+		if c.ID != "" {
+			inContextChunks[c.ID] = true
+		}
 		if c.Source != "" {
-			inContext[c.Source] = true
+			inContextDocs[c.Source] = true
 		}
 	}
 
 	ranked := make([]graph.SearchResult, len(candidates))
 	copy(ranked, candidates)
 	for i := range ranked {
-		if ranked[i].Source != "" && inContext[ranked[i].Source] {
-			ranked[i].Score *= contextBoost
+		if ranked[i].ChunkID != "" && inContextChunks[ranked[i].ChunkID] {
+			ranked[i].Score *= contextChunkBoost
+		} else if ranked[i].Source != "" && inContextDocs[ranked[i].Source] {
+			ranked[i].Score *= contextDocBoost
 		}
 	}
 
@@ -714,16 +737,22 @@ func (s *Server) hybridSearch(ctx context.Context, query string, topK int) (stri
 		sb.WriteString("\n")
 	}
 
+	chunkPassageMap := make(map[string]int, len(result.Chunks))
 	if len(result.Chunks) > 0 {
 		sb.WriteString("## Relevant Knowledge\n\n")
 		for i, r := range result.Chunks {
-			fmt.Fprintf(&sb, "**[%d] Source: %s**\n", i+1, r.Source)
+			chunkPassageMap[r.ID] = i + 1
+			if r.ID != "" {
+				fmt.Fprintf(&sb, "**[%d] Source: %s (chunk: %s)**\n", i+1, r.Source, r.ID)
+			} else {
+				fmt.Fprintf(&sb, "**[%d] Source: %s**\n", i+1, r.Source)
+			}
 			sb.WriteString(r.Content)
 			sb.WriteString("\n\n")
 		}
 	}
 
-	graphCtx := graph.FormatResults(result.Facts)
+	graphCtx := graph.FormatResultsWithPassages(result.Facts, chunkPassageMap)
 	if graphCtx != "" {
 		sb.WriteString("\n## Knowledge Graph Context\n\n")
 		sb.WriteString(graphCtx)

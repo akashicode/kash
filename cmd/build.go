@@ -438,6 +438,15 @@ func runBuild(cmd *cobra.Command, args []string) error {
 					break
 				}
 
+				for ti := range triples {
+					pIdx := triples[ti].Passage - 1
+					if pIdx >= 0 && pIdx < len(batch) {
+						triples[ti].ChunkID = batch[pIdx].ID
+					} else {
+						triples[ti].ChunkID = findBestChunk(batch, triples[ti].Subject, triples[ti].Object)
+					}
+				}
+
 				if err := gdb.AddTriples(ctx, triples, name); err != nil {
 					wg.Wait()
 					return fmt.Errorf("add triples for %q: %w", name, err)
@@ -452,6 +461,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 							Object:      t.Object,
 							Description: t.Description,
 							Source:      name,
+							ChunkID:     t.ChunkID,
 						}
 					}
 					if err := vs.AddRelationships(ctx, relDocs); err != nil {
@@ -501,6 +511,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 					Predicate: t.Predicate,
 					Object:    t.Object,
 					Source:    t.Source,
+					ChunkID:   t.ChunkID,
 				}
 			}
 			if err := vs.AddRelationships(ctx, relDocs); err != nil {
@@ -806,4 +817,26 @@ func updateAgentYAMLMCPDescription(path, agentName, description string) error {
 	}
 
 	return os.WriteFile(path, output, 0644)
+}
+
+// findBestChunk finds the chunk in batch that best matches the subject and object of a triple.
+func findBestChunk(batch []chunker.Chunk, subject, object string) string {
+	if len(batch) == 0 {
+		return ""
+	}
+	sLow := strings.ToLower(subject)
+	oLow := strings.ToLower(object)
+	for _, ch := range batch {
+		cLow := strings.ToLower(ch.Content)
+		if sLow != "" && oLow != "" && strings.Contains(cLow, sLow) && strings.Contains(cLow, oLow) {
+			return ch.ID
+		}
+	}
+	for _, ch := range batch {
+		cLow := strings.ToLower(ch.Content)
+		if (sLow != "" && strings.Contains(cLow, sLow)) || (oLow != "" && strings.Contains(cLow, oLow)) {
+			return ch.ID
+		}
+	}
+	return batch[0].ID
 }

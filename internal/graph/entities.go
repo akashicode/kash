@@ -178,6 +178,7 @@ func (db *DB) SearchWithSeeds(ctx context.Context, query string, seedEntities []
 			Subject:   st.Subject,
 			Predicate: st.Predicate,
 			Object:    st.Object,
+			ChunkID:   st.ChunkID,
 			Score:     2.5,
 			Hop:       0,
 		})

@@ -29,6 +29,7 @@ type SearchResult struct {
 	Predicate string  `json:"predicate"`
 	Object    string  `json:"object"`
 	Source    string  `json:"source,omitempty"`
+	ChunkID   string  `json:"chunk_id,omitempty"`
 	Score     float64 `json:"score"`
 	// Hop is 0 for a fact that matched the query directly, and 1 for a fact
 	// reached by traversing one edge from a direct match.
@@ -120,11 +121,13 @@ func (db *DB) index(ctx context.Context) *snapshot {
 		seen[key] = true
 
 		i := len(s.triples)
+		src, chkID := parseLabel(quadValueStr(q.Label))
 		s.triples = append(s.triples, SearchResult{
 			Subject:   subj,
 			Predicate: pred,
 			Object:    obj,
-			Source:    quadValueStr(q.Label),
+			Source:    src,
+			ChunkID:   chkID,
 		})
 		// Index under the alias-resolved key so spelling variants
 		// (Gorakhnath / Gorakhnatha) share one adjacency bucket and chains
@@ -180,11 +183,6 @@ func (db *DB) AddTriples(ctx context.Context, triples []Triple, source string) e
 		return nil
 	}
 
-	var label interface{}
-	if src := normalise(source); src != "" {
-		label = src
-	}
-
 	quads := make([]quad.Quad, 0, len(triples))
 	seen := map[string]bool{}
 	for _, t := range triples {
@@ -214,7 +212,18 @@ func (db *DB) AddTriples(ctx context.Context, triples []Triple, source string) e
 		}
 		seen[key] = true
 
-		quads = append(quads, quad.Make(subj, pred, obj, label))
+		var quadLabel interface{}
+		src := normalise(source)
+		chk := strings.TrimSpace(t.ChunkID)
+		if src != "" && chk != "" {
+			quadLabel = src + "|" + chk
+		} else if chk != "" {
+			quadLabel = chk
+		} else if src != "" {
+			quadLabel = src
+		}
+
+		quads = append(quads, quad.Make(subj, pred, obj, quadLabel))
 	}
 
 	if len(quads) == 0 {
@@ -274,11 +283,13 @@ func (db *DB) Sample(ctx context.Context, limit int) ([]SearchResult, error) {
 
 	for it.Next(ctx) {
 		q := db.store.Quad(it.Result())
+		src, chkID := parseLabel(quadValueStr(q.Label))
 		sr := SearchResult{
 			Subject:   quadValueStr(q.Subject),
 			Predicate: quadValueStr(q.Predicate),
 			Object:    quadValueStr(q.Object),
-			Source:    quadValueStr(q.Label),
+			Source:    src,
+			ChunkID:   chkID,
 		}
 		n++
 		if len(samples) < limit {
@@ -301,7 +312,8 @@ func (db *DB) DeleteBySource(ctx context.Context, source string) error {
 	it := db.store.QuadsAllIterator()
 	for it.Next(ctx) {
 		q := db.store.Quad(it.Result())
-		if quadValueStr(q.Label) == source {
+		src, _ := parseLabel(quadValueStr(q.Label))
+		if src == source || quadValueStr(q.Label) == source {
 			toRemove = append(toRemove, q)
 		}
 	}
@@ -354,11 +366,13 @@ func (db *DB) Search(ctx context.Context, query string, topK int) ([]SearchResul
 		score := scoreMatch(queryTerms, subj, pred, obj)
 		if score > 0 {
 			seen[key] = true
+			src, chkID := parseLabel(quadValueStr(q.Label))
 			results = append(results, SearchResult{
 				Subject:   subj,
 				Predicate: pred,
 				Object:    obj,
-				Source:    quadValueStr(q.Label),
+				Source:    src,
+				ChunkID:   chkID,
 				Score:     score,
 			})
 		}
@@ -374,8 +388,23 @@ func (db *DB) Search(ctx context.Context, query string, topK int) ([]SearchResul
 	return results, nil
 }
 
+// parseLabel extracts the source document and optional chunk ID from a quad label.
+// Labels are formatted as "source|chunk_id", or just "source" for older/legacy quads.
+func parseLabel(labelStr string) (source, chunkID string) {
+	if idx := strings.Index(labelStr, "|"); idx >= 0 {
+		return labelStr[:idx], labelStr[idx+1:]
+	}
+	return labelStr, ""
+}
+
 // FormatResults converts graph search results into a readable context string.
 func FormatResults(results []SearchResult) string {
+	return FormatResultsWithPassages(results, nil)
+}
+
+// FormatResultsWithPassages converts graph search results into a readable context string,
+// citing the 1-based passage number if a fact's ChunkID matches a retrieved passage.
+func FormatResultsWithPassages(results []SearchResult, chunkPassageMap map[string]int) string {
 	if len(results) == 0 {
 		return ""
 	}
@@ -392,11 +421,28 @@ func FormatResults(results []SearchResult) string {
 				suffix = fmt.Sprintf(" [connected via %s]", r.Via)
 			}
 		}
-		if r.Source != "" {
-			fmt.Fprintf(&sb, "%s%s %s %s (source: %s)%s\n", prefix, r.Subject, r.Predicate, r.Object, r.Source, suffix)
-		} else {
-			fmt.Fprintf(&sb, "%s%s %s %s%s\n", prefix, r.Subject, r.Predicate, r.Object, suffix)
+
+		citation := ""
+		if r.ChunkID != "" && chunkPassageMap != nil {
+			if pNum, ok := chunkPassageMap[r.ChunkID]; ok {
+				if r.Source != "" {
+					citation = fmt.Sprintf(" (source: %s [passage %d])", r.Source, pNum)
+				} else {
+					citation = fmt.Sprintf(" [passage %d]", pNum)
+				}
+			}
 		}
+		if citation == "" && r.Source != "" {
+			if r.ChunkID != "" {
+				citation = fmt.Sprintf(" (source: %s, chunk: %s)", r.Source, r.ChunkID)
+			} else {
+				citation = fmt.Sprintf(" (source: %s)", r.Source)
+			}
+		} else if citation == "" && r.ChunkID != "" {
+			citation = fmt.Sprintf(" (chunk: %s)", r.ChunkID)
+		}
+
+		fmt.Fprintf(&sb, "%s%s %s %s%s%s\n", prefix, r.Subject, r.Predicate, r.Object, citation, suffix)
 	}
 	return sb.String()
 }

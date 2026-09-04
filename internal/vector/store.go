@@ -71,6 +71,7 @@ type RelationshipDoc struct {
 	Object      string  `json:"object"`
 	Description string  `json:"description,omitempty"`
 	Source      string  `json:"source,omitempty"`
+	ChunkID     string  `json:"chunk_id,omitempty"`
 	Weight      float64 `json:"weight,omitempty"`
 }
 
@@ -81,6 +82,7 @@ type RelationshipSearchResult struct {
 	Object      string            `json:"object"`
 	Description string            `json:"description,omitempty"`
 	Source      string            `json:"source,omitempty"`
+	ChunkID     string            `json:"chunk_id,omitempty"`
 	Similarity  float32           `json:"similarity"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 }
@@ -476,6 +478,9 @@ func (s *Store) AddRelationships(ctx context.Context, rels []RelationshipDoc) er
 			"source":       r.Source,
 			"content_type": "relationship",
 		}
+		if r.ChunkID != "" {
+			meta["chunk_id"] = r.ChunkID
+		}
 		if r.Description != "" {
 			meta["description"] = r.Description
 		}
@@ -529,6 +534,7 @@ func (s *Store) QueryRelationships(ctx context.Context, query string, topK int) 
 			Object:      r.Metadata["object"],
 			Description: desc,
 			Source:      r.Metadata["source"],
+			ChunkID:     r.Metadata["chunk_id"],
 			Similarity:  r.Similarity,
 			Metadata:    r.Metadata,
 		}

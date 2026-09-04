@@ -58,6 +58,32 @@ func TestGraphContextBoostWithoutChunksIsPassthrough(t *testing.T) {
 	assert.Equal(t, candidates, ranked)
 }
 
+func TestGraphContextBoostChunkLevel(t *testing.T) {
+	// Retrieved chunk is specifically chunk "doc_1" from "big_book.md"
+	chunks := []vector.SearchResult{
+		{ID: "doc_1", Source: "big_book.md"},
+	}
+
+	candidates := []graph.SearchResult{
+		// Fact from same book but another chunk (only gets contextDocBoost 2.5)
+		{Subject: "general fact", Source: "big_book.md", ChunkID: "doc_99", Score: 2.0},
+		// Fact from exact retrieved chunk (gets contextChunkBoost 4.0)
+		{Subject: "precise fact", Source: "big_book.md", ChunkID: "doc_1", Score: 1.5},
+		// Fact from unrelated book (no boost)
+		{Subject: "other fact", Source: "other.md", ChunkID: "other_1", Score: 3.0},
+	}
+
+	ranked := rankFactsByContext(candidates, chunks, 3)
+	require.Len(t, ranked, 3)
+
+	// Precise fact: 1.5 * 4.0 = 6.0
+	// General fact: 2.0 * 2.5 = 5.0
+	// Other fact: 3.0 * 1.0 = 3.0
+	assert.Equal(t, "precise fact", ranked[0].Subject)
+	assert.Equal(t, "general fact", ranked[1].Subject)
+	assert.Equal(t, "other fact", ranked[2].Subject)
+}
+
 func cands(specs ...[2]string) []*candidate {
 	var out []*candidate
 	for _, sp := range specs {
@@ -142,4 +168,24 @@ func TestSelectDiverseFewerThanTopK(t *testing.T) {
 	in := cands([2]string{"a0", "bookA.pdf"}, [2]string{"b0", "bookB.pdf"})
 	fc := defaultTestFusionCfg()
 	assert.Equal(t, in, selectDiverse(in, 5, fc))
+}
+
+func TestGraphRRFPromotion(t *testing.T) {
+	// Chunk c1 is ranked lower in vector search, but is top-ranked in graph search.
+	// Chunk c2 is top-ranked in vector search, but absent in graph search.
+	lists := map[string][]string{
+		"vector": {"c2", "c1", "c3"},
+		"graph":  {"c1"},
+	}
+
+	cands := fuseRankLists(lists)
+	ranked := rankCandidates(cands)
+
+	require.NotEmpty(t, ranked)
+	// c1 receives votes from both vector (rank 1) and graph (rank 0), so it outranks c2:
+	// c1: 1/(60+1) + 1/(60+0) = 0.01639 + 0.01667 = 0.03306
+	// c2: 1/(60+0) = 0.01667
+	assert.Equal(t, "c1", ranked[0].id)
+	assert.Contains(t, ranked[0].routes, "graph")
+	assert.Contains(t, ranked[0].routes, "vector")
 }
