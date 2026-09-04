@@ -755,3 +755,25 @@ func CompileRefMatchersVerbose(patterns []config.RefPattern) ([]refMatcher, []st
 	}
 	return out, warnings
 }
+
+// DocumentHeadings returns every heading in a document, outermost first, in
+// document order.
+//
+// Exposed for corpus profiling, which scores candidate numbering patterns
+// against headings. It reuses parseSections rather than re-implementing the
+// fence and level handling, so a profiler and the chunker always agree on what
+// counts as a heading.
+func DocumentHeadings(text string) []string {
+	sections := parseSections(strings.ReplaceAll(text, "\r\n", "\n"))
+	out := make([]string, 0, len(sections))
+	for _, s := range sections {
+		if h := strings.TrimSpace(s.heading); h != "" {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+// BookTitle derives a human-readable work title from a source filename.
+// Exposed so corpus profiling tokenizes titles exactly as work-grouping does.
+func BookTitle(source string) string { return bookTitle(source) }
