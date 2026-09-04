@@ -34,10 +34,11 @@ func ConfigFilePath() (string, error) {
 
 // ProviderConfig holds connection details for a single AI provider.
 type ProviderConfig struct {
-	BaseURL    string `mapstructure:"base_url"    yaml:"base_url"`
-	APIKey     string `mapstructure:"api_key"     yaml:"api_key"`
-	Model      string `mapstructure:"model"       yaml:"model"`
-	Dimensions int    `mapstructure:"dimensions"  yaml:"dimensions,omitempty"`
+	BaseURL         string `mapstructure:"base_url"         yaml:"base_url"`
+	APIKey          string `mapstructure:"api_key"          yaml:"api_key"`
+	Model           string `mapstructure:"model"            yaml:"model"`
+	Dimensions      int    `mapstructure:"dimensions"       yaml:"dimensions,omitempty"`
+	ReasoningEffort string `mapstructure:"reasoning_effort" yaml:"reasoning_effort,omitempty"`
 }
 
 // Config holds the unified application configuration.
@@ -64,6 +65,7 @@ func Load() (*Config, error) {
 	applyEnv(&cfg.LLM.BaseURL, "LLM_BASE_URL")
 	applyEnv(&cfg.LLM.APIKey, "LLM_API_KEY")
 	applyEnv(&cfg.LLM.Model, "LLM_MODEL")
+	applyEnv(&cfg.LLM.ReasoningEffort, "LLM_REASONING_EFFORT")
 
 	applyEnv(&cfg.Embedder.BaseURL, "EMBED_BASE_URL")
 	applyEnv(&cfg.Embedder.APIKey, "EMBED_API_KEY")
@@ -182,6 +184,7 @@ llm:
   base_url: ""
   api_key: ""
   model: ""
+  # reasoning_effort: "" # optional: low | medium | high (default: disabled)
 
 # Embedding provider (required) — must be OpenAI-compatible
 # Model is optional when using an embedding router.
@@ -315,4 +318,113 @@ func ApplyAgentYAMLDimensions(cfg *Config, agentYAMLPath string) {
 	if cfg.Embedder.Dimensions == 0 {
 		cfg.Embedder.Dimensions = 1024
 	}
+}
+
+// NormalizeReasoningEffort validates and canonicalizes a reasoning effort string.
+// Allowed values (case-insensitive): "low", "medium" (or "med"), "high".
+// Empty string or "none"/"off"/"disabled" returns "" (disabled).
+// Any other value returns an error.
+func NormalizeReasoningEffort(val string) (string, error) {
+	val = strings.ToLower(strings.TrimSpace(val))
+	switch val {
+	case "", "none", "off", "disabled":
+		return "", nil
+	case "low":
+		return "low", nil
+	case "med", "medium":
+		return "medium", nil
+	case "high":
+		return "high", nil
+	default:
+		return "", fmt.Errorf("invalid reasoning effort %q: must be \"low\", \"medium\", or \"high\"", val)
+	}
+}
+
+// AgentYAMLReasoningEffort reads reasoning_effort from an agent.yaml file.
+// Supports runtime.llm.reasoning_effort, runtime.reasoning_effort, llm.reasoning_effort,
+// agent.reasoning_effort, and their .reasoning aliases.
+// Returns (effort, specified, error). When specified is true but effort is "",
+// reasoning effort was explicitly disabled (e.g. "none" or "off").
+func AgentYAMLReasoningEffort(path string) (effort string, specified bool, err error) {
+	data, readErr := os.ReadFile(path)
+	if readErr != nil {
+		return "", false, nil
+	}
+
+	var raw struct {
+		Runtime struct {
+			LLM struct {
+				ReasoningEffort string `yaml:"reasoning_effort"`
+				Reasoning       string `yaml:"reasoning"`
+			} `yaml:"llm"`
+			ReasoningEffort string `yaml:"reasoning_effort"`
+			Reasoning       string `yaml:"reasoning"`
+		} `yaml:"runtime"`
+		LLM struct {
+			ReasoningEffort string `yaml:"reasoning_effort"`
+			Reasoning       string `yaml:"reasoning"`
+		} `yaml:"llm"`
+		Agent struct {
+			ReasoningEffort string `yaml:"reasoning_effort"`
+			Reasoning       string `yaml:"reasoning"`
+		} `yaml:"agent"`
+		ReasoningEffort string `yaml:"reasoning_effort"`
+		Reasoning       string `yaml:"reasoning"`
+	}
+
+	if unmarshalErr := yaml.Unmarshal(data, &raw); unmarshalErr != nil {
+		return "", false, nil
+	}
+
+	candidates := []string{
+		raw.Runtime.LLM.ReasoningEffort,
+		raw.Runtime.LLM.Reasoning,
+		raw.Runtime.ReasoningEffort,
+		raw.Runtime.Reasoning,
+		raw.LLM.ReasoningEffort,
+		raw.LLM.Reasoning,
+		raw.Agent.ReasoningEffort,
+		raw.Agent.Reasoning,
+		raw.ReasoningEffort,
+		raw.Reasoning,
+	}
+
+	for _, c := range candidates {
+		if strings.TrimSpace(c) != "" {
+			norm, normErr := NormalizeReasoningEffort(c)
+			if normErr != nil {
+				return "", true, normErr
+			}
+			return norm, true, nil
+		}
+	}
+
+	return "", false, nil
+}
+
+// ApplyAgentYAMLReasoningEffort reads reasoning effort from agent.yaml and applies it
+// to the config. Priority:
+//  1. agent.yaml (explicit value, or explicit disable)
+//  2. config.yaml / env var LLM_REASONING_EFFORT (already populated in cfg.LLM.ReasoningEffort)
+//  3. Default: "" (disabled)
+func ApplyAgentYAMLReasoningEffort(cfg *Config, agentYAMLPath string) error {
+	if cfg == nil {
+		return ErrNilConfig
+	}
+	effort, specified, err := AgentYAMLReasoningEffort(agentYAMLPath)
+	if err != nil {
+		return fmt.Errorf("agent.yaml reasoning_effort: %w", err)
+	}
+	if specified {
+		cfg.LLM.ReasoningEffort = effort
+		return nil
+	}
+	if cfg.LLM.ReasoningEffort != "" {
+		normalized, normErr := NormalizeReasoningEffort(cfg.LLM.ReasoningEffort)
+		if normErr != nil {
+			return fmt.Errorf("llm.reasoning_effort: %w", normErr)
+		}
+		cfg.LLM.ReasoningEffort = normalized
+	}
+	return nil
 }

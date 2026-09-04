@@ -154,6 +154,9 @@ runtime:
                         # check your model docs (e.g. voyage-3: 32000, text-embedding-3-small: 8191)
     # parallel: true    # optional: enable parallel embedding requests (for local embedders)
                         # default: false (sequential with retry, safe for hosted APIs)
+  llm:
+    # reasoning_effort: low  # optional: low | medium | high (default: disabled)
+                             # controls reasoning effort for OpenAI-compatible reasoning models
 
 # Build settings (used by 'kash build')
 build:
@@ -246,6 +249,7 @@ COPY agent.yaml /app/agent.yaml
 ENV LLM_BASE_URL=""
 ENV LLM_API_KEY=""
 ENV LLM_MODEL=""
+ENV LLM_REASONING_EFFORT=""
 ENV EMBED_BASE_URL=""
 ENV EMBED_API_KEY=""
 ENV EMBED_MODEL=""
@@ -301,6 +305,7 @@ func generateEnvExample() string {
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_API_KEY=sk-your-key-here
 LLM_MODEL=gpt-4o
+# LLM_REASONING_EFFORT=  # optional: low | medium | high (default: disabled)
 
 # Embedding Provider (required) - must be OpenAI-compatible
 # Model is optional when using an embedding router.

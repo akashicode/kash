@@ -104,8 +104,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return errors.New("data/ directory not found — run 'kash init <name>' first")
 	}
 
-	// Apply dimensions from agent.yaml (canonical source) before validation
+	// Apply dimensions and reasoning effort from agent.yaml (canonical source) before validation
 	agentconfig.ApplyAgentYAMLDimensions(cfg, "agent.yaml")
+	if err := agentconfig.ApplyAgentYAMLReasoningEffort(cfg, "agent.yaml"); err != nil {
+		return err
+	}
 
 	if err := agentconfig.ValidateBuild(cfg); err != nil {
 		return err
@@ -185,6 +188,9 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	display.KeyValue("Corpus Version", m.Version, display.Bold+display.BrightYellow)
 	display.KeyValue("Embed Dimensions", cfg.Embedder.Dimensions, display.Bold+display.BrightYellow)
 	display.KeyValue("LLM Model", cfg.LLM.Model, display.BrightMagenta)
+	if cfg.LLM.ReasoningEffort != "" {
+		display.KeyValue("Reasoning Effort", cfg.LLM.ReasoningEffort, display.BrightCyan)
+	}
 	display.KeyValue("Embed Endpoint", cfg.Embedder.BaseURL, display.Dim+display.White)
 	display.KeyValue("Chunk Size (chars)", chunkOpts.ChunkSize, display.Dim+display.White)
 	display.KeyValue("Chunk Overlap (chars)", chunkOpts.Overlap, display.Dim+display.White)

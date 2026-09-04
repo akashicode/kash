@@ -101,6 +101,7 @@ func runProfile(_ *cobra.Command, _ []string) error {
 	if !profileNoLLM && (status != profile.StatusLoaded || !prof.Complete) {
 		cfg, cfgErr := agentconfig.Load()
 		if cfgErr == nil {
+			_ = agentconfig.ApplyAgentYAMLReasoningEffort(cfg, "agent.yaml")
 			if client, clientErr := llm.NewClient(&cfg.LLM); clientErr == nil {
 				profile.Enrich(context.Background(), prof, profDocs, client)
 			} else {

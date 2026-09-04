@@ -36,8 +36,9 @@ type DecomposedQuery struct {
 
 // Client wraps the OpenAI client for LLM interactions.
 type Client struct {
-	client *openai.Client
-	model  string
+	client          *openai.Client
+	model           string
+	reasoningEffort string
 }
 
 // NewClient creates a new LLM client from a ProviderConfig.
@@ -59,8 +60,9 @@ func NewClient(cfg *config.ProviderConfig) (*Client, error) {
 	clientCfg.BaseURL = cfg.BaseURL
 
 	return &Client{
-		client: openai.NewClientWithConfig(clientCfg),
-		model:  cfg.Model,
+		client:          openai.NewClientWithConfig(clientCfg),
+		model:           cfg.Model,
+		reasoningEffort: cfg.ReasoningEffort,
 	}, nil
 }
 
@@ -78,10 +80,12 @@ func (c *Client) Complete(ctx context.Context, systemPrompt, userMessage string)
 		Content: userMessage,
 	})
 
-	resp, err := c.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model:    c.model,
-		Messages: messages,
-	})
+	req := openai.ChatCompletionRequest{
+		Model:           c.model,
+		Messages:        messages,
+		ReasoningEffort: c.reasoningEffort,
+	}
+	resp, err := c.client.CreateChatCompletion(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("chat completion: %w", err)
 	}
@@ -225,7 +229,9 @@ Rules:
 }
 
 // ChatWithContext proxies a chat completion request, injecting context into the system message.
-func (c *Client) ChatWithContext(ctx context.Context, messages []openai.ChatCompletionMessage, retrievedContext string) (string, error) {
+// An optional reasoningEffort override can be supplied; if omitted, the client's configured
+// reasoning effort is used.
+func (c *Client) ChatWithContext(ctx context.Context, messages []openai.ChatCompletionMessage, retrievedContext string, reasoningEffort ...string) (string, error) {
 	augmented := make([]openai.ChatCompletionMessage, 0, len(messages)+1)
 
 	// Inject retrieved context as first system message
@@ -242,10 +248,17 @@ Use this information to provide accurate, grounded responses.
 	}
 	augmented = append(augmented, messages...)
 
-	resp, err := c.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model:    c.model,
-		Messages: augmented,
-	})
+	effort := c.reasoningEffort
+	if len(reasoningEffort) > 0 && reasoningEffort[0] != "" {
+		effort = reasoningEffort[0]
+	}
+
+	req := openai.ChatCompletionRequest{
+		Model:           c.model,
+		Messages:        augmented,
+		ReasoningEffort: effort,
+	}
+	resp, err := c.client.CreateChatCompletion(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("chat with context: %w", err)
 	}
@@ -259,6 +272,9 @@ Use this information to provide accurate, grounded responses.
 func (c *Client) ChatCompletionStream(ctx context.Context, req openai.ChatCompletionRequest, handler func(delta string) error) error {
 	req.Model = c.model
 	req.Stream = true
+	if req.ReasoningEffort == "" && c.reasoningEffort != "" {
+		req.ReasoningEffort = c.reasoningEffort
+	}
 
 	stream, err := c.client.CreateChatCompletionStream(ctx, req)
 	if err != nil {
@@ -292,6 +308,11 @@ func (c *Client) ChatCompletionStream(ctx context.Context, req openai.ChatComple
 // Model returns the configured model name.
 func (c *Client) Model() string {
 	return c.model
+}
+
+// ReasoningEffort returns the configured reasoning effort level ("low", "medium", "high", or "").
+func (c *Client) ReasoningEffort() string {
+	return c.reasoningEffort
 }
 
 // DecomposeQuery extracts specific entities (low-level keywords) and broad

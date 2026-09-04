@@ -62,8 +62,11 @@ func runServe(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	// Apply dimensions from agent.yaml (canonical source for agent-specific settings)
+	// Apply dimensions and reasoning effort from agent.yaml (canonical source for agent-specific settings)
 	agentconfig.ApplyAgentYAMLDimensions(cfg, serveAgentYAML)
+	if err := agentconfig.ApplyAgentYAMLReasoningEffort(cfg, serveAgentYAML); err != nil {
+		return err
+	}
 
 	if err := agentconfig.ValidateServe(cfg); err != nil {
 		return err

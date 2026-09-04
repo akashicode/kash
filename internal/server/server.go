@@ -36,6 +36,9 @@ type AgentConfig struct {
 		Embedder struct {
 			Dimensions int `yaml:"dimensions"`
 		} `yaml:"embedder"`
+		LLM struct {
+			ReasoningEffort string `yaml:"reasoning_effort"`
+		} `yaml:"llm"`
 	} `yaml:"runtime"`
 	MCP struct {
 		Tools []mcpToolDef `yaml:"tools"`
@@ -116,6 +119,9 @@ func New(cfg Config) (*Server, error) {
 
 	// Apply agent.yaml dimensions as fallback if not set via env/config
 	agentconfig.ApplyAgentYAMLDimensions(cfg.AppCfg, cfg.AgentYAMLPath)
+	if err := agentconfig.ApplyAgentYAMLReasoningEffort(cfg.AppCfg, cfg.AgentYAMLPath); err != nil {
+		return nil, fmt.Errorf("apply reasoning effort: %w", err)
+	}
 
 	// Initialize vector store
 	vs, err := vector.NewStoreFromPath(cfg.VectorStorePath, &cfg.AppCfg.Embedder)
@@ -232,6 +238,7 @@ func New(cfg Config) (*Server, error) {
 		"domain_profile", profileStatus(prof, cfg.DomainProfilePath),
 		"config_overrides", len(layers),
 		"llm_model", cfg.AppCfg.LLM.Model,
+		"reasoning_effort", cfg.AppCfg.LLM.ReasoningEffort,
 		"embed_model", cfg.AppCfg.Embedder.Model,
 		"embed_dimensions", cfg.AppCfg.Embedder.Dimensions,
 		"auth_enabled", apiKey != "",
@@ -819,6 +826,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"mcp_tools":        len(s.agentCfg.MCP.Tools),
 		"embed_dimensions": s.appCfg.Embedder.Dimensions,
 		"llm_model":        s.appCfg.LLM.Model,
+		"reasoning_effort": s.appCfg.LLM.ReasoningEffort,
 		"embed_model":      s.appCfg.Embedder.Model,
 		"reranker_enabled": s.reranker != nil,
 		"auth_enabled":     s.apiKey != "",
@@ -845,6 +853,16 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	// A client may ask for a different reasoning effort than the server was
+	// configured with. Validate it here: passing an unknown value straight
+	// through turns a caller's typo into an opaque 502 from the provider.
+	effort, effortErr := agentconfig.NormalizeReasoningEffort(req.ReasoningEffort)
+	if effortErr != nil {
+		http.Error(w, effortErr.Error(), http.StatusBadRequest)
+		return
+	}
+	req.ReasoningEffort = effort
 
 	ctx := r.Context()
 
@@ -877,7 +895,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	// Non-streaming response
 	s.log.Debug("calling LLM", "messages", len(augmented))
-	response, err := s.llmClient.ChatWithContext(ctx, augmented, "")
+	response, err := s.llmClient.ChatWithContext(ctx, augmented, "", req.ReasoningEffort)
 	if err != nil {
 		s.log.Error("LLM call failed", "error", err)
 		http.Error(w, "upstream LLM request failed", http.StatusBadGateway)

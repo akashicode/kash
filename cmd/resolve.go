@@ -223,6 +223,9 @@ func adjudicateWithLLM(ctx context.Context, clusters []graph.Cluster, triples []
 	if err := agentconfig.ValidateLLM(cfg); err != nil {
 		return err
 	}
+	if err := agentconfig.ApplyAgentYAMLReasoningEffort(cfg, "agent.yaml"); err != nil {
+		return err
+	}
 	client, err := llm.NewClient(&cfg.LLM)
 	if err != nil {
 		return fmt.Errorf("create LLM client: %w", err)
