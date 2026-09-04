@@ -78,15 +78,19 @@ Kash/
 ├── cmd/                      # Cobra command definitions
 │   ├── root.go               # Root command (Execute(), initConfig)
 │   ├── init.go               # `kash init` subcommand
-│   └── build.go              # `kash build` subcommand
+│   ├── build.go              # `kash build` subcommand
+│   └── profile.go            # `kash profile` subcommand
 ├── internal/                 # Private application code
-│   ├── config/               # Configuration handling (Viper)
+│   ├── config/               # Configuration handling (Viper) + domain layering
+│   ├── profile/              # Corpus profiling — derived domain configuration
 │   ├── vector/               # chromem-go vector store operations
 │   ├── graph/                # cayley graph database operations
+│   ├── lexical/              # Pure-Go BM25 index (keyword + exact reference)
 │   ├── llm/                  # go-openai client wrappers
 │   ├── mcp/                  # MCP protocol server (mark3labs/mcp-go)
-│   ├── chunker/              # Document chunking logic
-│   └── server/               # HTTP server (REST, MCP, A2A)
+│   ├── chunker/              # Structure-aware chunking + citation metadata
+│   ├── reader/               # Document loading + text-quality gate
+│   └── server/               # HTTP server (REST, MCP, A2A) + RRF fusion
 ├── pkg/                      # Public packages (if any)
 ├── api/                      # API contracts (OpenAPI schemas, types)
 ├── docs/                     # Documentation
@@ -310,6 +314,40 @@ type Embedder interface {
 ### Global Config Path
 `~/.Kash/config.yaml`
 
+### Corpus profile (generated) — do not hand-author domain settings
+
+`kash build` measures the corpus and writes `data/domain.profile.json`: the
+diacritic mode, structural reference patterns, title stopwords, stem-vowel
+folding, and — via one model call — extraction predicates, priorities and
+honorifics. Inspect it with `kash profile`; re-derive with
+`kash build --refresh-profile`.
+
+Domain configuration is layered, and later wins:
+
+```
+built-in defaults  <  data/domain.profile.json  <  agent.yaml
+```
+
+Resolve it with `config.ResolveDomainConfig(overlay, "agent.yaml")`, never by
+reading `agent.yaml` directly — the middle layer is invisible otherwise. The
+returned `[]LayerNote` says which layer won each field; print it.
+
+Two rules the code depends on:
+
+- **Setting a list in `agent.yaml` replaces the derived one; it never merges.**
+  The one exception is `extraction.predicates`, where an explicitly empty list
+  is rejected — the vocabulary is closed and an empty one drops every fact.
+- **The model never emits a regex, a number or a boolean.** It picks from lists
+  it was given and returns words. The corpus sample is untrusted text and the
+  output becomes configuration that runs against every query, so anything the
+  model returns is re-validated against what it was offered
+  (`llm.FilterToCandidates`, `llm.SubsetOf`, `llm.MergePredicates`), and those
+  return the *offered* spelling rather than the model's echo of it.
+
+`ref_patterns` and `fold_diacritics` are baked into chunk metadata at build
+time, so changing them under an existing corpus requires `kash build --rebuild`.
+The manifest carries a `domain_signature` and refuses a build when they drift.
+
 ### Config Structure
 ```go
 type Config struct {
@@ -323,9 +361,10 @@ type BuildProviders struct {
 }
 
 type ProviderConfig struct {
-    BaseURL string `mapstructure:"base_url"`
-    APIKey  string `mapstructure:"api_key"`
-    Model   string `mapstructure:"model"`
+    BaseURL         string `mapstructure:"base_url"`
+    APIKey          string `mapstructure:"api_key"`
+    Model           string `mapstructure:"model"`
+    ReasoningEffort string `mapstructure:"reasoning_effort,omitempty"`
 }
 ```
 
@@ -394,6 +433,7 @@ results, _ := collection.Query(ctx, query, 10, nil, nil)
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_API_KEY=sk-xxx
 LLM_MODEL=gpt-4o
+LLM_REASONING_EFFORT=                       # Optional: low | medium | high
 EMBED_BASE_URL=https://api.voyageai.com/v1
 EMBED_API_KEY=pa-xxx
 EMBED_MODEL=voyage-3

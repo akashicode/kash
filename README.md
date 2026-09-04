@@ -191,6 +191,7 @@ build_providers:
     base_url: "https://api.openai.com/v1"
     api_key: "sk-..."
     model: "gpt-4o"
+    # reasoning_effort: medium   # low | medium | high — reasoning models only
   embedder:
     base_url: "https://api.voyageai.com/v1"
     api_key: "pa-..."
@@ -202,6 +203,7 @@ build_providers:
 | Variable | Required | Purpose |
 |---|:---:|---|
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | ✅ | The model that answers queries |
+| `LLM_REASONING_EFFORT` | ➖ | `low` │ `medium` │ `high` for reasoning models; unset disables it |
 | `EMBED_BASE_URL` / `EMBED_API_KEY` / `EMBED_MODEL` | ✅ | Embeds queries for vector search |
 | `RERANK_BASE_URL` / `RERANK_API_KEY` / `RERANK_MODEL` | ➖ | Optional reranker (Cohere-compatible `/rerank`) |
 | `AGENT_API_KEY` | ➖ | Optional auth for all endpoints |
@@ -218,6 +220,12 @@ agent:
   name: "my-agent"
   system_prompt: |
     You are a knowledgeable expert assistant...
+
+runtime:
+  embedder:
+    dimensions: 1024     # must match at build AND serve time
+  llm:
+    reasoning_effort: medium   # optional: low | medium | high
 
 build:
   chunk_size: 1000       # characters per chunk (800–2000 works best)

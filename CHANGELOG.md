@@ -42,6 +42,13 @@ those are called out under **Requires rebuild**.
   most queries cost no extra model call.
 - **Version stamping.** Local builds now report a real version, commit and build
   date; the manifest and profile record the binary that produced them.
+- **Reasoning effort.** Reasoning models can be driven at `low`, `medium` or
+  `high` through `LLM_REASONING_EFFORT`, `llm.reasoning_effort` in
+  `~/.kash/config.yaml`, or `runtime.llm.reasoning_effort` in `agent.yaml`
+  — last wins. It applies to build-time extraction, entity adjudication and
+  profiling as well as to serving, and a chat request may override it per call.
+  Unset means the parameter is not sent at all, so non-reasoning models are
+  unaffected.
 
 ### Fixed
 
@@ -69,6 +76,11 @@ those are called out under **Requires rebuild**.
   index and returned nothing, with no error. The index now pins its own mode.
 - **Graph term matching measured length in bytes**, discarding short Latin terms
   like "om" while admitting any single Devanagari character.
+- **Derived honorifics lost their trailing space**, which is what separates a
+  title from the start of a word. Honorifics are stripped with a plain prefix
+  cut, so a mined `"śrī "` echoed back as `"śrī"` would have eaten the front of
+  every entity beginning with those letters. Values filtered against a supplied
+  list now come back in the list's own spelling rather than the model's.
 - Reranker responses are bounds-checked; a provider returning an out-of-range
   index previously panicked the request. `/health` now reports reranker status
   from the real gate rather than a partial one.
