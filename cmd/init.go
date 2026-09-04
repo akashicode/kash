@@ -208,6 +208,12 @@ resolution:
   # those merges are auto-approved instead of held for review.
   proper_noun_predicates: ["created by", "authored", "was written by", "designed by", "developed by"]
 
+# Node description embeddings — embeds entity descriptions into chromem-go
+# for semantic entity discovery and seeded graph traversal.
+entity_description:
+  min_degree: 2      # minimum appearances in graph to generate description
+  max_entities: 500  # maximum entity descriptions to embed (0 = unlimited)
+
 # MCP tool definitions (auto-populated by 'kash build')
 mcp:
   tools:

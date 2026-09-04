@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/akashicode/kash/internal/chunker"
+	agentconfig "github.com/akashicode/kash/internal/config"
 	"github.com/akashicode/kash/internal/lexical"
 	"github.com/akashicode/kash/internal/vector"
 )
@@ -19,15 +20,15 @@ const rrfK = 60.0
 
 // noisePenalty is how much a chunk's apparatus score suppresses it. Index
 // tables, concordances and page listings are term-dense, so they score
-// moderately against almost any query — in the corpus that motivated this, a
-// query for "dharana 49" returned five index tables and no scripture. They are
-// down-ranked rather than dropped: a concordance is legitimate content for a
-// lookup, it just must not outrank an actual explanation.
+// moderately against almost any query and crowd genuine prose out of a small
+// result slate. They are down-ranked rather than dropped: a concordance is
+// legitimate content for a lookup, it just must not outrank an actual
+// explanation.
 const noisePenalty = 0.7
 
 // exactRefBoost is added to a chunk whose metadata exactly matches a reference
-// named in the query. An exact verse match is the strongest signal available
-// and should outrank any similarity score.
+// named in the query. An exact match is the strongest signal available and
+// should outrank any similarity score.
 const exactRefBoost = 1.0
 
 // candidate accumulates evidence for one chunk across retrieval routes.
@@ -71,56 +72,77 @@ func applyNoisePenalty(c *candidate) {
 	c.score *= 1 - noisePenalty*noise
 }
 
-// refPattern captures a structural reference named in a query: "dharana 49",
-// "verse 32", "sutra 12". These are the queries dense retrieval cannot serve,
-// because the number carries almost no signal in an embedding.
-var refPattern = regexp.MustCompile(`(?i)\b(dharana|dhāraṇā|dharan[aā]|vidhi|verse|sloka|śloka|shloka|sutra|sūtra)\s*[-–—.:]?\s*(\d{1,3})\b`)
-
-// queryRefs extracts structural references from a query, returning the metadata
-// fields and value to look up.
-func queryRefs(query string) []queryRef {
-	var refs []queryRef
-	for _, m := range refPattern.FindAllStringSubmatch(query, -1) {
-		word, num := strings.ToLower(m[1]), m[2]
-		// A reader asking for "dharana 49" wants that technique whichever way
-		// their edition numbers it: the Sanskrit editions head it "dhāraṇā-49",
-		// the Osho/Hindi edition "vidhi 49", and the English editions number the
-		// same 112 techniques as verses. Try every field.
-		switch word {
-		case "verse", "sloka", "śloka", "shloka", "sutra", "sūtra":
-			refs = append(refs,
-				queryRef{Field: chunker.MetaVerse, Value: num},
-				queryRef{Field: chunker.MetaDharana, Value: num})
-		default:
-			refs = append(refs,
-				queryRef{Field: chunker.MetaDharana, Value: num},
-				queryRef{Field: chunker.MetaVerse, Value: num})
-		}
-	}
-	return refs
-}
-
 // queryRef is a metadata field and value to match exactly.
 type queryRef struct {
 	Field string
 	Value string
 }
 
+// refRouter holds compiled corpus-specific reference patterns. It is built
+// once at server startup from the domain config and reused for every query.
+type refRouter struct {
+	matchers []routerMatcher
+}
+
+// routerMatcher pairs a compiled regexp (one capture group = the number) with
+// the metadata key to look up in FindByRef.
+type routerMatcher struct {
+	re      *regexp.Regexp
+	metaKey string
+}
+
+// buildRefRouter compiles the RefPatterns from the domain config into a
+// refRouter. Patterns that fail to compile are skipped (not fatal).
+func buildRefRouter(patterns []agentconfig.RefPattern) *refRouter {
+	r := &refRouter{}
+	for _, p := range patterns {
+		if p.Pattern == "" || p.MetaKey == "" {
+			continue
+		}
+		re, err := regexp.Compile(p.Pattern)
+		if err != nil {
+			continue
+		}
+		r.matchers = append(r.matchers, routerMatcher{re: re, metaKey: p.MetaKey})
+	}
+	return r
+}
+
+// queryRefs extracts structural references from a query using the compiled
+// patterns. Returns field+value pairs to look up via FindByRef.
+func (r *refRouter) queryRefs(query string) []queryRef {
+	if r == nil {
+		return nil
+	}
+	var refs []queryRef
+	seen := map[string]bool{}
+	for _, m := range r.matchers {
+		for _, hit := range m.re.FindAllStringSubmatch(query, -1) {
+			key := m.metaKey + ":" + hit[1]
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			refs = append(refs, queryRef{Field: m.metaKey, Value: hit[1]})
+		}
+	}
+	return refs
+}
+
 // maxExactHits caps the exact-reference route.
 //
-// A number alone is ambiguous across a multi-book corpus: every text has a
-// verse 49. Without a cap the route lifted all of them above genuinely better
-// matches, so a query for "Verse 32 Vigyan Bhairava" returned verse 32 from
-// four unrelated books. Capping the route to its best few keeps the remaining
-// slots for ordinary relevance.
+// A number alone is ambiguous across a multi-document corpus: every document
+// may have a "Section 4". Without a cap the route lifts all of them above
+// genuinely better matches. Capping the route to its best few keeps the
+// remaining slots for ordinary relevance.
 const maxExactHits = 6
 
 // lexicalRoutes builds the BM25 and exact-reference rank lists for a query.
 //
 // Exact hits are ordered by their BM25 score against the whole query, not by
-// document order: that is what makes the rest of the query — the book name, the
-// surrounding words — decide which text's verse 49 is meant.
-func lexicalRoutes(ix *lexical.Index, query string, depth int) (lex, exact []string) {
+// document order: that is what makes the rest of the query — the document
+// name, the surrounding words — decide which document's section is meant.
+func lexicalRoutes(ix *lexical.Index, router *refRouter, query string, depth int) (lex, exact []string) {
 	hits := ix.Search(query, depth)
 	score := make(map[string]float64, len(hits))
 	for _, h := range hits {
@@ -133,23 +155,8 @@ func lexicalRoutes(ix *lexical.Index, query string, depth int) (lex, exact []str
 		s  float64
 	}
 
-	// Fields are tried in priority order and the first one that matches wins.
-	//
-	// "dharana 49" names a technique, so chunks whose dhāraṇā number is 49 are
-	// what was asked for. Merging them with every book's *verse* 49 — sixty
-	// texts, all with a verse 49 — buried the intended passage: measured over
-	// all 112 techniques, mixing the fields gave recall@5 of 0.38; trying the
-	// named field first gives 0.88.
-	//
-	// The verse field stays as a fallback for editions that number the same
-	// techniques as verses. Treat that fallback as approximate: where an edition
-	// numbers ślokas separately, the two do not line up — in the Dwivedi
-	// Vijñānabhairava, dhāraṇā 49 is verse 72 — so a fallback hit may be a
-	// neighbouring technique rather than the one asked for. It is used only when
-	// no edition tags that dhāraṇā number at all, which is the case for 12 of
-	// the 112 techniques in this corpus.
 	seen := map[string]bool{}
-	for _, ref := range queryRefs(query) {
+	for _, ref := range router.queryRefs(query) {
 		var ex []scored
 		for _, r := range ix.FindByRef(ref.Field, ref.Value) {
 			if seen[r.ID] {
@@ -209,10 +216,18 @@ func rankCandidates(cands map[string]*candidate) []*candidate {
 type workGrouper struct {
 	canonical map[string]string // raw title -> canonical work key
 	tokens    []workToken       // every known token, mapped to its work
+	stopwords map[string]bool   // domain-specific title stopwords
+	foldFn    func(string) string
+	stripStem bool
 }
 
-func newWorkGrouper() *workGrouper {
-	return &workGrouper{canonical: map[string]string{}}
+func newWorkGrouper(stopwords map[string]bool, foldFn func(string) string, stripStem bool) *workGrouper {
+	return &workGrouper{
+		canonical: map[string]string{},
+		stopwords: stopwords,
+		foldFn:    foldFn,
+		stripStem: stripStem,
+	}
 }
 
 // Key returns a stable work key for a result, creating one on first sight.
@@ -225,7 +240,7 @@ func (g *workGrouper) Key(r vector.SearchResult) string {
 		return k
 	}
 
-	toks := titleTokens(raw)
+	toks := g.titleTokens(raw)
 	if len(toks) == 0 {
 		g.canonical[raw] = raw
 		return raw
@@ -257,8 +272,7 @@ type workToken struct {
 }
 
 // minContainmentLen is the shortest token allowed to match by containment.
-// Below it, containment produces false merges: "rasa" is a substring of
-// "rasarnava", but Rasa Hṛdaya Tantra and the Rasārṇavam are different works.
+// Below it, containment produces false merges.
 const minContainmentLen = 6
 
 // relatedToken reports whether two title tokens identify the same work.
@@ -274,53 +288,36 @@ func relatedToken(a, b string) bool {
 }
 
 var nonWordRe = regexp.MustCompile(`[^a-z0-9]+`)
-
-// titleStopwords are words that identify an edition or a format rather than the
-// work: translators, publishers, volume markers, file-pipeline suffixes.
-var titleStopwords = map[string]bool{
-	"the": true, "of": true, "and": true, "with": true, "by": true, "for": true,
-	"vol": true, "volume": true, "part": true, "final": true, "iast": true,
-	"ocr": true, "original": true, "hindi": true, "english": true,
-	"sanskrit": true, "translation": true, "commentary": true, "tika": true,
-	"tantra": true, "tantram": true, "tantras": true,
-	// Generic Sanskrit title words: a shared "paddhati" (manual) merged
-	// Gorakṣa Paddhati with Siddha Siddhānta Paddhati, which are distinct texts.
-	"paddhati": true, "paddhat": true, "samhita": true, "samhit": true,
-	"shastra": true, "sastra": true, "grantha": true, "granth": true,
-	"yoga": true, "yog": true, "prasang": true, "katha": true, "kath": true,
-	// Honorifics and forms of address, which name a person rather than a work.
-	"swami": true, "shri": true, "sri": true, "maharaj": true, "kaviraj": true,
-	"pandit": true, "acharya": true, "acary": true,
-}
-
 var creditSplitRe = regexp.MustCompile(`(?i)\s+(?:-|–|—|by|with)\s+`)
 
 // titleTokens reduces a title to its identifying tokens, most significant first.
 //
 // The translator or publisher credit is dropped first: these titles follow
-// "Work - Translator" or "Work by Author", and keeping the credit merged two
-// unrelated Gopinath Kaviraj works into one "work" purely because they share an
-// editor. What remains is folded, stemmed and stripped of edition words.
-func titleTokens(title string) []string {
+// "Work - Translator" or "Work by Author". What remains is folded, stemmed
+// and stripped of edition words from the domain config's stopwords list.
+func (g *workGrouper) titleTokens(title string) []string {
 	head := creditSplitRe.Split(title, 2)[0]
-	s := foldDiacritics(strings.ToLower(head))
+	s := g.foldFn(strings.ToLower(head))
 	s = nonWordRe.ReplaceAllString(s, " ")
 
 	var out []string
 	for _, f := range strings.Fields(s) {
-		if titleStopwords[f] || len([]rune(f)) < 4 {
+		if g.stopwords[f] || len([]rune(f)) < 4 {
 			continue
 		}
 		if _, err := strconv.Atoi(f); err == nil {
 			continue
 		}
-		out = append(out, stripFinalVowel(f))
+		if g.stripStem {
+			f = stripFinalVowel(f)
+		}
+		out = append(out, f)
 	}
 	return out
 }
 
-// stripFinalVowel normalizes the Sanskrit/Hindi difference between "bhairava"
-// and "bhairav", which is purely a transliteration convention.
+// stripFinalVowel normalises the Sanskrit/Hindi difference between "bhairava"
+// and "bhairav". Only used when ChunkerConfig.StripTitleStemVowel is true.
 func stripFinalVowel(s string) string {
 	if len(s) < 5 {
 		return s
@@ -332,15 +329,47 @@ func stripFinalVowel(s string) string {
 	return s
 }
 
-// iastFolds maps the IAST diacritics used across this corpus to ASCII.
-var iastFolds = strings.NewReplacer(
-	"ā", "a", "ī", "i", "ū", "u", "ṛ", "r", "ṝ", "r", "ḷ", "l",
-	"ṅ", "n", "ñ", "n", "ṇ", "n", "ṃ", "m", "ṁ", "m",
-	"ṭ", "t", "ḍ", "d", "ś", "s", "ṣ", "s", "ḥ", "h",
-	"é", "e", "è", "e", "ê", "e", "ô", "o",
-)
+// fusionConfig holds all corpus-specific fusion settings compiled from the
+// domain config. Build one at server startup and pass it to the fusion funcs.
+type fusionConfig struct {
+	router    *refRouter
+	grouper   func() *workGrouper // factory so each query gets a fresh grouper
+	foldTitle func(string) string
+}
 
-func foldDiacritics(s string) string { return iastFolds.Replace(s) }
+// buildFusionConfig compiles a fusionConfig from the domain config.
+func buildFusionConfig(dc agentconfig.DomainConfig) *fusionConfig {
+	router := buildRefRouter(dc.Chunker.RefPatterns)
+
+	// Build the title stopwords set from config.
+	stops := make(map[string]bool, len(dc.Chunker.TitleStopwords))
+	for _, w := range dc.Chunker.TitleStopwords {
+		stops[strings.ToLower(w)] = true
+	}
+
+	// The fold function for title comparison is derived from the same
+	// diacritic mode used by the lexical index.
+	foldFn := makeTitleFoldFn(dc.Resolution.FoldDiacritics)
+	stripStem := dc.Chunker.StripTitleStemVowel
+
+	return &fusionConfig{
+		router: router,
+		grouper: func() *workGrouper {
+			return newWorkGrouper(stops, foldFn, stripStem)
+		},
+		foldTitle: foldFn,
+	}
+}
+
+// makeTitleFoldFn returns a fold function for title comparison based on the
+// configured DiacriticMode. This keeps title normalisation consistent with
+// the BM25 index fold so the same corpus produces matching tokens.
+func makeTitleFoldFn(mode agentconfig.DiacriticMode) func(string) string {
+	// Reuse the same fold tables from the lexical package by delegating through
+	// a temporary index instance. This avoids duplicating the fold tables here.
+	tmp := lexical.NewWithFold(mode)
+	return tmp.Fold
+}
 
 // selectDiverse fills topK slots, capping how many may come from one work while
 // letting a dominant work take the whole slate when the evidence really is
@@ -349,12 +378,12 @@ func foldDiacritics(s string) string { return iastFolds.Replace(s) }
 // The previous rule capped every source at (topK+1)/2 unconditionally, which
 // for a focused question about a single text — the normal case — discarded the
 // best-ranked chunks in favour of lower-ranked ones from other books.
-func selectDiverse(ranked []*candidate, topK int) []*candidate {
+func selectDiverse(ranked []*candidate, topK int, fc *fusionConfig) []*candidate {
 	if len(ranked) <= topK {
 		return ranked
 	}
 
-	g := newWorkGrouper()
+	g := fc.grouper()
 
 	maxPerWork := (topK + 1) / 2
 	if maxPerWork < 1 {

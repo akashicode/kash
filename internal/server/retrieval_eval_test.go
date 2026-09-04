@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/akashicode/kash/internal/chunker"
+	agentconfig "github.com/akashicode/kash/internal/config"
 	"github.com/akashicode/kash/internal/lexical"
 	"github.com/akashicode/kash/internal/vector"
 )
@@ -107,18 +108,48 @@ rāmāścayo yugma yugma vadānta ṣaṭ ṣaḍagāśca tataḥ ṣaṭsu nām
 `,
 }
 
+// sanskritTestDomainConfig returns the domain configuration for the Indic/VBT
+// fixture corpus used throughout these evaluation tests.
+func sanskritTestDomainConfig() agentconfig.DomainConfig {
+	return agentconfig.DomainConfig{
+		Resolution: agentconfig.ResolutionConfig{
+			FoldDiacritics:  agentconfig.DiacriticIAST,
+			StripFinalVowel: true,
+		},
+		Chunker: agentconfig.ChunkerConfig{
+			RefPatterns: []agentconfig.RefPattern{
+				{Pattern: `(?i)(?:^|[^a-z])(?:verse|śloka|shloka|sloka|sutra|sūtra)\s*[-–—.]?\s*(\d{1,3})\b`, MetaKey: "verse"},
+				{Pattern: `(?i)(?:dh[aā]ra[nṇ][aā]|vidhi)\s*[-–—.]?\s*(\d+)`, MetaKey: "dharana"},
+				{Pattern: `(?:\.\.|\|\||॥)\s*(\d+)\s*(?:\.\.|\|\||॥)`, MetaKey: "verse"},
+				{Pattern: `^\s*(\d{1,3})\)`, MetaKey: "verse"},
+			},
+			TitleStopwords: []string{
+				"the", "of", "and", "with", "by", "for", "vol", "volume", "part",
+				"final", "iast", "ocr", "original", "hindi", "english", "sanskrit",
+				"translation", "commentary", "tika", "tantra", "tantram", "tantras",
+				"paddhati", "paddhat", "samhita", "samhit",
+			},
+			StripTitleStemVowel: true,
+		},
+	}
+}
+
 // evalIndex builds the fixture corpus exactly as `kash build` would.
 func evalIndex(t *testing.T) (*lexical.Index, map[string]vector.SearchResult) {
 	t.Helper()
 
+	// Use Sanskrit domain config for this corpus (VBT-based eval fixtures).
+	dc := sanskritTestDomainConfig()
+	refMatchers := chunker.CompileRefMatchers(dc.Chunker.RefPatterns)
+
 	ck, err := chunker.NewChunker(chunker.Options{ChunkSize: 2000, Overlap: 400})
 	require.NoError(t, err)
 
-	ix := lexical.New()
+	ix := lexical.NewWithFold(dc.Resolution.FoldDiacritics)
 	byID := map[string]vector.SearchResult{}
 
 	for name, body := range evalCorpus {
-		chunks, err := ck.SplitStructured(body, name)
+		chunks, err := ck.SplitStructured(body, name, refMatchers)
 		require.NoError(t, err)
 		for _, c := range chunks {
 			meta := map[string]string{"source": c.Source}
@@ -160,6 +191,9 @@ func pathologicalVectorRoute(byID map[string]vector.SearchResult) []string {
 // the same code path retrieve() uses, with the vector route stubbed to the
 // measured failure mode.
 func evalRetrieve(ix *lexical.Index, byID map[string]vector.SearchResult, query string, topK int) []vector.SearchResult {
+	dc := sanskritTestDomainConfig()
+	fc := buildFusionConfig(dc)
+
 	lists := map[string][]string{
 		"vector": pathologicalVectorRoute(byID),
 	}
@@ -171,7 +205,7 @@ func evalRetrieve(ix *lexical.Index, byID map[string]vector.SearchResult, query 
 	lists["lexical"] = lexIDs
 
 	var exact []string
-	for _, ref := range queryRefs(query) {
+	for _, ref := range fc.router.queryRefs(query) {
 		for _, r := range ix.FindByRef(ref.Field, ref.Value) {
 			exact = append(exact, r.ID)
 		}
@@ -196,7 +230,7 @@ func evalRetrieve(ix *lexical.Index, byID map[string]vector.SearchResult, query 
 
 	ranked := dedupeNearDuplicates(rankCandidates(cands), nearDuplicateThreshold)
 	out := make([]vector.SearchResult, 0, topK)
-	for _, c := range selectDiverse(ranked, topK) {
+	for _, c := range selectDiverse(ranked, topK, fc) {
 		out = append(out, c.result)
 	}
 	return out
@@ -332,6 +366,7 @@ func TestNegativeControlVectorOnly(t *testing.T) {
 		{"joy blossoming from eating", "vigyan-bhairava-tantra_FINAL_iast.md"},
 	}
 
+	fc := buildFusionConfig(sanskritTestDomainConfig())
 	hits := 0
 	for _, c := range cases {
 		cands := fuseRankLists(map[string][]string{"vector": pathologicalVectorRoute(byID)})
@@ -339,7 +374,7 @@ func TestNegativeControlVectorOnly(t *testing.T) {
 			cd.result = byID[id]
 		}
 		ranked := dedupeNearDuplicates(rankCandidates(cands), nearDuplicateThreshold)
-		for _, cd := range selectDiverse(ranked, 5) {
+		for _, cd := range selectDiverse(ranked, 5, fc) {
 			if cd.result.Source == c.wantSource {
 				hits++
 				break

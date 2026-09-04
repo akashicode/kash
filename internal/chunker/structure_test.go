@@ -1,11 +1,14 @@
 package chunker
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/akashicode/kash/internal/config"
 )
 
 const vbtDoc = `# Vigyan Bhairava Tantra
@@ -25,6 +28,17 @@ gītādiviṣayāsvādāsamasaukhyaikatātmanaḥ .
 yoginastanmayatvena manorūḍhestadātmatā ..72..
 `
 
+// sanskritMatchers returns the ref matchers for the Sanskrit preset, matching
+// verse/shloka/sutra/dharana/vidhi numbering patterns.
+func sanskritMatchers() []refMatcher {
+	return CompileRefMatchers([]config.RefPattern{
+		{Pattern: `(?i)(?:^|[^a-z])(?:verse|śloka|shloka|sloka)\s*[-–—]?\s*(\d+)`, MetaKey: MetaVerse},
+		{Pattern: `(?i)(?:dh[aā]ra[nṇ][aā]|vidhi)\s*[-–—]?\s*(\d+)`, MetaKey: MetaDharana},
+		// Bare "32)" numbering used by some English VBT editions
+		{Pattern: `^\s*(\d{1,3})\)`, MetaKey: MetaVerse},
+	})
+}
+
 func newTestChunker(t *testing.T) *Chunker {
 	t.Helper()
 	ck, err := NewChunker(Options{ChunkSize: 2000, Overlap: 400})
@@ -34,8 +48,9 @@ func newTestChunker(t *testing.T) *Chunker {
 
 func TestSplitStructuredExtractsReferences(t *testing.T) {
 	ck := newTestChunker(t)
+	matchers := sanskritMatchers()
 
-	chunks, err := ck.SplitStructured(vbtDoc, "vigyan-bhairava-tantra_FINAL_iast.md")
+	chunks, err := ck.SplitStructured(vbtDoc, "vigyan-bhairava-tantra_FINAL_iast.md", matchers)
 	require.NoError(t, err)
 	require.NotEmpty(t, chunks)
 
@@ -59,8 +74,9 @@ func TestSplitStructuredExtractsReferences(t *testing.T) {
 // is the failure this metadata exists to fix.
 func TestSplitStructuredKeepsNumberedSectionsSeparate(t *testing.T) {
 	ck := newTestChunker(t)
+	matchers := sanskritMatchers()
 
-	chunks, err := ck.SplitStructured(vbtDoc, "vbt.md")
+	chunks, err := ck.SplitStructured(vbtDoc, "vbt.md", matchers)
 	require.NoError(t, err)
 
 	for _, c := range chunks {
@@ -75,8 +91,9 @@ func TestSplitStructuredKeepsNumberedSectionsSeparate(t *testing.T) {
 
 func TestSplitStructuredAttachesBreadcrumb(t *testing.T) {
 	ck := newTestChunker(t)
+	matchers := sanskritMatchers()
 
-	chunks, err := ck.SplitStructured(vbtDoc, "vigyan-bhairava-tantra_FINAL_iast.md")
+	chunks, err := ck.SplitStructured(vbtDoc, "vigyan-bhairava-tantra_FINAL_iast.md", matchers)
 	require.NoError(t, err)
 	require.NotEmpty(t, chunks)
 
@@ -97,7 +114,7 @@ func TestSplitStructuredWithoutHeadings(t *testing.T) {
 		sb.WriteString("This is an ordinary paragraph of running prose without any heading.\n\n")
 	}
 
-	chunks, err := ck.SplitStructured(sb.String(), "plain.txt")
+	chunks, err := ck.SplitStructured(sb.String(), "plain.txt", nil)
 	require.NoError(t, err)
 	assert.Greater(t, len(chunks), 1, "an unstructured document must still be split")
 	for _, c := range chunks {
@@ -162,7 +179,8 @@ The Divine Energy breaks out and rises above to the crown of the head.
 When the circles dissolve, one will enter into the Supreme Void within.
 `
 	ck := newTestChunker(t)
-	chunks, err := ck.SplitStructured(doc, "vigyan-bhairava-tantra_FINAL_iast.md")
+	matchers := sanskritMatchers()
+	chunks, err := ck.SplitStructured(doc, "vigyan-bhairava-tantra_FINAL_iast.md", matchers)
 	require.NoError(t, err)
 
 	got := map[string]bool{}
@@ -188,10 +206,39 @@ The practitioner should observe the following.
 2) second item
 `
 	ck := newTestChunker(t)
-	chunks, err := ck.SplitStructured(doc, "treatise.md")
+	matchers := sanskritMatchers()
+	chunks, err := ck.SplitStructured(doc, "treatise.md", matchers)
 	require.NoError(t, err)
 	require.NotEmpty(t, chunks)
 
 	assert.Equal(t, "5", chunks[0].Metadata[MetaVerse],
 		"a heading-numbered section must not pick up list numbers as verses")
+}
+
+// When a table is split across chunk boundaries, continuation chunks must
+// carry the table header forward so column context is preserved.
+func TestSplitStructuredCarriesTableHeaderAcrossChunks(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("# Policy Document\n\n## Fee Schedule\n\n")
+	sb.WriteString("| Service Code | Description | Standard Fee | Copay |\n")
+	sb.WriteString("|---|---|---|---|\n")
+	for i := 1; i <= 60; i++ {
+		sb.WriteString(fmt.Sprintf("| SVC-%03d | Detailed procedure description for item number %d | $%.2f | $20.00 |\n",
+			i, i, float64(i)*15.5))
+	}
+
+	ck, err := NewChunker(Options{ChunkSize: 1000, Overlap: 100})
+	require.NoError(t, err)
+
+	chunks, err := ck.SplitStructured(sb.String(), "policy.md", nil)
+	require.NoError(t, err)
+	require.Greater(t, len(chunks), 1, "a 60-row table must split into multiple chunks")
+
+	expectedHeader := "| Service Code | Description | Standard Fee | Copay |\n|---|---|---|---|"
+	for i, c := range chunks {
+		assert.Contains(t, c.Content, expectedHeader,
+			"chunk %d of split table must contain the column header row", i)
+		assert.Equal(t, ContentTable, c.Metadata[MetaContentType],
+			"chunk %d must be classified as a table", i)
+	}
 }

@@ -7,9 +7,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	agentconfig "github.com/akashicode/kash/internal/config"
 	"github.com/akashicode/kash/internal/graph"
 	"github.com/akashicode/kash/internal/vector"
 )
+
+// defaultTestFusionCfg returns a fusionConfig with generic defaults for tests.
+// Tests that don't care about Sanskrit folding or custom stopwords use this.
+func defaultTestFusionCfg() *fusionConfig {
+	return buildFusionConfig(agentconfig.DefaultDomainConfig())
+}
 
 // TestGraphContextBoostResolvesHomonyms models the reported saṃskāra failure:
 // a query about the alchemical sense matched facts about the karmic sense
@@ -80,10 +87,11 @@ func TestSelectDiverseSpreadsAcrossWorks(t *testing.T) {
 		[2]string{"d0", "Sambodhi.md"}, [2]string{"d1", "Sambodhi.md"},
 	)
 
-	selected := selectDiverse(cands(specs...), 5)
+	fc := defaultTestFusionCfg()
+	selected := selectDiverse(cands(specs...), 5, fc)
 
 	assert.Len(t, selected, 5)
-	g := newWorkGrouper()
+	g := fc.grouper()
 	perWork := map[string]int{}
 	for _, c := range selected {
 		perWork[g.Key(c.result)]++
@@ -102,7 +110,8 @@ func TestSelectDiverseAllowsDominantWork(t *testing.T) {
 	}
 	specs = append(specs, [2]string{"x0", "Merutantra.txt"})
 
-	selected := selectDiverse(cands(specs...), 5)
+	fc := defaultTestFusionCfg()
+	selected := selectDiverse(cands(specs...), 5, fc)
 
 	require.Len(t, selected, 5)
 	for _, c := range selected {
@@ -120,7 +129,8 @@ func TestWorkKeyGroupsEditions(t *testing.T) {
 		"vigyan-bhairav-tantra-hindi_FINAL_iast.md",
 		"VijnanaBhairava-khemraj_FINAL_iast.md",
 	}
-	g := newWorkGrouper()
+	fc := defaultTestFusionCfg()
+	g := fc.grouper()
 	keys := map[string]bool{}
 	for _, e := range editions {
 		keys[g.Key(vector.SearchResult{Source: e})] = true
@@ -130,5 +140,6 @@ func TestWorkKeyGroupsEditions(t *testing.T) {
 
 func TestSelectDiverseFewerThanTopK(t *testing.T) {
 	in := cands([2]string{"a0", "bookA.pdf"}, [2]string{"b0", "bookB.pdf"})
-	assert.Equal(t, in, selectDiverse(in, 5))
+	fc := defaultTestFusionCfg()
+	assert.Equal(t, in, selectDiverse(in, 5, fc))
 }

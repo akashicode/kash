@@ -60,6 +60,7 @@ type AgentConfig struct {
 type Server struct {
 	vectorStore   *vector.Store
 	lexicalIndex  *lexical.Index
+	fusionCfg     *fusionConfig // compiled corpus-specific fusion settings
 	graphDB       *graph.DB
 	llmClient     *llm.Client
 	reranker      *llm.Reranker
@@ -134,11 +135,13 @@ func New(cfg Config) (*Server, error) {
 
 	// Lexical index is optional: a corpus built before it existed still serves,
 	// with vector search alone. A corrupt index must not take the agent down.
-	lexIndex := lexical.New()
+	domainCfg := agentconfig.LoadDomainConfig(cfg.AgentYAMLPath)
+	lexIndex := lexical.NewWithFold(domainCfg.Resolution.FoldDiacritics)
 	if cfg.LexicalIndexPath != "" {
 		if ix, lexErr := lexical.Load(cfg.LexicalIndexPath); lexErr != nil {
 			slog.Warn("ignoring lexical index", "error", lexErr, "path", cfg.LexicalIndexPath)
 		} else {
+			ix.SetFold(domainCfg.Resolution.FoldDiacritics)
 			lexIndex = ix
 		}
 	}
@@ -176,6 +179,7 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{
 		vectorStore:   vs,
 		lexicalIndex:  lexIndex,
+		fusionCfg:     buildFusionConfig(domainCfg),
 		graphDB:       gdb,
 		llmClient:     llmClient,
 		reranker:      reranker,
@@ -393,7 +397,7 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 	// Routes 2 and 3: BM25, and exact structural lookup. Dense embeddings
 	// cannot match an exact token, so a query naming a verse number is
 	// unanswerable by similarity alone.
-	lexIDs, exact := lexicalRoutes(s.lexicalIndex, query, candidateK)
+	lexIDs, exact := lexicalRoutes(s.lexicalIndex, s.fusionCfg.router, query, candidateK)
 
 	s.log.Info("routes completed", "query", query,
 		"vector", len(vectorResults), "lexical", len(lexIDs), "exact", len(exact))
@@ -439,7 +443,7 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 
 	ranked := rankCandidates(cands)
 	ranked = dedupeNearDuplicates(ranked, nearDuplicateThreshold)
-	selected := selectDiverse(ranked, topK)
+	selected := selectDiverse(ranked, topK, s.fusionCfg)
 
 	chunks := make([]vector.SearchResult, 0, len(selected))
 	for _, c := range selected {

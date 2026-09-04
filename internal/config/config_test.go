@@ -24,8 +24,8 @@ func TestAgentYAMLChunkOptions(t *testing.T) {
 		wantOverlap int
 	}{
 		{
-			name: "both set",
-			yaml: "build:\n  chunk_size: 1500\n  chunk_overlap: 300\n",
+			name:        "both set",
+			yaml:        "build:\n  chunk_size: 1500\n  chunk_overlap: 300\n",
 			wantSize:    1500,
 			wantOverlap: 300,
 		},

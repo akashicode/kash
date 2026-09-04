@@ -3,15 +3,18 @@ package chunker
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/akashicode/kash/internal/config"
 )
 
-// Metadata keys attached to every chunk. These exist so retrieval can filter and
-// rank on structure rather than on embedding similarity alone — a query naming a
-// verse number carries almost no signal in a dense embedding, but is an exact
-// match against MetaVerse.
+// Metadata keys attached to every chunk. These exist so retrieval can filter
+// and rank on structure rather than on embedding similarity alone — a query
+// naming a section number carries almost no signal in a dense embedding, but
+// is an exact match against the right metadata key.
 const (
 	// MetaBook is the work the chunk came from, derived from the filename.
 	MetaBook = "book"
@@ -19,16 +22,23 @@ const (
 	MetaHeading = "heading"
 	// MetaBreadcrumb is the full heading path, joined with " > ".
 	MetaBreadcrumb = "breadcrumb"
-	// MetaVerse is a verse number parsed from the heading or body.
-	MetaVerse = "verse"
-	// MetaDharana is a dhāraṇā number, numbered separately from verses in
-	// several Vijñāna Bhairava editions.
-	MetaDharana = "dharana"
+	// MetaSection is the generic structural reference number (Section 4.2,
+	// Clause 7, Article 12, …). Domain-specific patterns (verse, dharana)
+	// write to whatever meta_key the agent.yaml declares — this constant is
+	// the key used by the built-in generic defaults.
+	MetaSection = "section"
 	// MetaContentType is one of the contentType* constants.
 	MetaContentType = "content_type"
 	// MetaNoiseScore is a 0..1 estimate of how much this chunk looks like
 	// apparatus (index tables, concordances, page listings) rather than prose.
 	MetaNoiseScore = "noise_score"
+
+	// MetaVerse and MetaDharana are kept as deprecated aliases for the string
+	// literals they wrap, so existing tantra-expert configurations that read
+	// these metadata keys from their own agent.yaml ref_patterns still work.
+	// New code should use the meta_key value from config.RefPattern directly.
+	MetaVerse   = "verse"
+	MetaDharana = "dharana"
 )
 
 // Content classifications.
@@ -38,30 +48,32 @@ const (
 	ContentIndex = "index"
 )
 
+// structuralMetaKeys is the set of chunk metadata keys that are domain-neutral
+// infrastructure. contextHeader skips these and only renders user-defined
+// reference keys.
+var structuralMetaKeys = map[string]bool{
+	MetaBook:        true,
+	MetaHeading:     true,
+	MetaBreadcrumb:  true,
+	MetaContentType: true,
+	MetaNoiseScore:  true,
+}
+
+// refMatcher pairs a compiled regexp (with one capture group for the number)
+// with the metadata key to write.
+type refMatcher struct {
+	re      *regexp.Regexp
+	metaKey string
+}
+
 var (
-	headingRe = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
-	fenceRe   = regexp.MustCompile("^\\s*(```|~~~)")
-
-	verseHeadingRe = regexp.MustCompile(`(?i)(?:^|[^a-z])(?:verse|śloka|shloka|sloka)\s*[-–—]?\s*(\d+)`)
-	// The 112 techniques are numbered as "dhāraṇā-49" in the Sanskrit editions
-	// and as "vidhi 01" in the Osho/Hindi edition; they are the same thing, and
-	// a reader asking for one by number must reach either.
-	dharanaHeadingRe = regexp.MustCompile(`(?i)(?:dh[aā]ra[nṇ][aā]|vidhi)\s*[-–—]?\s*(\d+)`)
-
-	// Sanskrit verse markers as they appear in this corpus: "..71..", "|| 40 ||",
-	// and the Devanagari double danda "॥ 14 ॥".
-	verseBodyRe = regexp.MustCompile(`(?:\.\.|\|\||॥)\s*(\d+)\s*(?:\.\.|\|\||॥)`)
-
-	// Editions that number techniques as a bare "32)" rather than "Verse 32".
-	// The English Vijñāna Bhairava uses this for most of its 112 techniques —
-	// missing it made those techniques unaddressable by number even though the
-	// text was fully present.
-	parenHeadingRe = regexp.MustCompile(`^\s*(\d{1,3})\)`)
-	parenBodyRe    = regexp.MustCompile(`(?m)^\s{0,3}(\d{1,3})\)\s`)
-
+	headingRe  = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
+	fenceRe    = regexp.MustCompile("^\\s*(```|~~~)")
 	tableRowRe = regexp.MustCompile(`^\s*\|.*\|\s*$`)
 	// A concordance/index row: some text, then one or more page numbers.
 	indexRowRe = regexp.MustCompile(`^\s*\S.*?\s+\d+(\s*[,/]\s*\d+)*\s*$`)
+	// Table separator row: |---|---|  or  |:--|:--:|
+	tableSepRe = regexp.MustCompile(`^\s*\|(?:\s*:?-+:?\s*\|)+\s*$`)
 )
 
 // section is a heading-delimited span of a document.
@@ -351,31 +363,47 @@ func bookTitle(source string) string {
 	return strings.Join(fields, " ")
 }
 
-// extractRefs pulls verse and dhāraṇā numbers from a heading and body.
-func extractRefs(heading, body string) (verse, dharana string) {
-	if m := dharanaHeadingRe.FindStringSubmatch(heading); m != nil {
-		dharana = m[1]
-	}
-	if m := verseHeadingRe.FindStringSubmatch(heading); m != nil {
-		verse = m[1]
-	}
-	if verse == "" {
-		if m := parenHeadingRe.FindStringSubmatch(heading); m != nil {
-			verse = m[1]
+// extractRefs runs every refMatcher against each heading and the body, returning a
+// map from meta_key to comma-separated list of matched numbers.
+func extractRefs(headings []string, body string, matchers []refMatcher) map[string][]string {
+	out := map[string][]string{}
+	seen := map[string]map[string]bool{}
+
+	add := func(key, val string) {
+		if val == "" {
+			return
+		}
+		if seen[key] == nil {
+			seen[key] = map[string]bool{}
+		}
+		if !seen[key][val] {
+			seen[key][val] = true
+			out[key] = append(out[key], val)
 		}
 	}
-	if verse == "" {
-		if m := verseBodyRe.FindStringSubmatch(body); m != nil {
-			verse = m[1]
+
+	for _, m := range matchers {
+		for _, h := range headings {
+			for _, hit := range m.re.FindAllStringSubmatch(h, -1) {
+				add(m.metaKey, hit[1])
+			}
+		}
+		for _, hit := range m.re.FindAllStringSubmatch(body, -1) {
+			add(m.metaKey, hit[1])
 		}
 	}
-	return verse, dharana
+	return out
 }
 
 // contextHeader renders the citation header prefixed to a chunk. It is kept
 // short and is deliberately part of the stored text: it gives the answering
-// model the reference it needs to cite a verse, and gives the embedding a
+// model the reference it needs to cite a section, and gives the embedding a
 // little topical anchoring.
+//
+// Any metadata key that is not a structural infrastructure key (book, heading,
+// breadcrumb, content_type, noise_score) is rendered as a reference label.
+// This makes contextHeader domain-neutral: whether the key is "section",
+// "verse", "clause", or "dharana", it is rendered uniformly.
 func contextHeader(meta map[string]string) string {
 	var parts []string
 	if b := meta[MetaBook]; b != "" {
@@ -390,12 +418,25 @@ func contextHeader(meta map[string]string) string {
 		}
 		parts = append(parts, crumb)
 	}
-	// Only state a reference the heading path does not already carry.
-	if v := meta[MetaVerse]; v != "" && !anyHasNumber(parts, v) {
-		parts = append(parts, "Verse "+v)
+	// Render every user-defined reference key that isn't already in the breadcrumb.
+	// Keys are sorted so the header string is deterministic across runs.
+	var refKeys []string
+	for k := range meta {
+		if !structuralMetaKeys[k] && meta[k] != "" {
+			refKeys = append(refKeys, k)
+		}
 	}
-	if d := meta[MetaDharana]; d != "" && !anyHasNumber(parts, d) {
-		parts = append(parts, "Dharana "+d)
+	sort.Strings(refKeys)
+
+	for _, key := range refKeys {
+		val := meta[key]
+		// Use the first number only in the header label; full list is in metadata.
+		num := strings.SplitN(val, ",", 2)[0]
+		if num != "" && !anyHasNumber(parts, num) {
+			// Capitalise the key for readability: "section" → "Section"
+			label := strings.ToUpper(key[:1]) + key[1:]
+			parts = append(parts, label+" "+num)
+		}
 	}
 	if len(parts) == 0 {
 		return ""
@@ -413,10 +454,10 @@ func containsFold(list []string, s string) bool {
 }
 
 // anyHasNumber reports whether any part already cites this number, so the
-// header does not repeat "Verse 25" after a heading that reads "Verse 25".
+// header does not repeat "Section 4.2" after a heading that reads "4.2".
 func anyHasNumber(parts []string, num string) bool {
 	for _, p := range parts {
-		for _, f := range strings.FieldsFunc(p, func(r rune) bool { return !unicode.IsDigit(r) }) {
+		for _, f := range strings.FieldsFunc(p, func(r rune) bool { return !unicode.IsDigit(r) && r != '.' }) {
 			if f == num {
 				return true
 			}
@@ -440,15 +481,63 @@ type unit struct {
 	text       string
 	breadcrumb string
 	heading    string
+	// refs holds the reference numbers extracted from this unit's heading,
+	// keyed by meta_key. Used to decide whether to start a new chunk.
+	refs map[string]string
+}
+
+// extractTableHeader returns the header rows (column names + separator) from
+// a table body, plus a bool indicating whether the body starts without a
+// header row (i.e., is a mid-table continuation).
+func extractTableHeader(body string) (header string, startsPartial bool) {
+	lines := strings.Split(body, "\n")
+	var headerLines []string
+	foundSep := false
+	nonTableBefore := 0
+	inTable := false
+
+	for _, line := range lines {
+		t := strings.TrimSpace(line)
+		if t == "" {
+			continue
+		}
+		if tableRowRe.MatchString(t) {
+			inTable = true
+			headerLines = append(headerLines, line)
+			if tableSepRe.MatchString(t) {
+				foundSep = true
+				break
+			}
+			// If we see multiple table rows at the very start without a separator,
+			// it's a partial table continuation.
+			if len(headerLines) >= 2 && !foundSep && nonTableBefore == 0 {
+				return "", true
+			}
+		} else {
+			if inTable {
+				break
+			}
+			nonTableBefore++
+		}
+	}
+	if foundSep && len(headerLines) >= 2 {
+		return strings.Join(headerLines, "\n"), false
+	}
+	if len(headerLines) > 0 && !foundSep && nonTableBefore == 0 {
+		return "", true
+	}
+	return "", false
 }
 
 // SplitStructured chunks a document along its heading structure, attaching
-// citation metadata to every chunk.
+// citation metadata to every chunk. The matchers slice controls which
+// numbered-item patterns are recognised; build it from config.ChunkerConfig
+// using CompileRefMatchers.
 //
 // Documents without headings degrade to the same scored line splitting, which
 // is still a strict improvement on blind character splitting: it cuts at
 // paragraph boundaries rather than mid-word.
-func (c *Chunker) SplitStructured(text, source string) ([]Chunk, error) {
+func (c *Chunker) SplitStructured(text, source string, matchers []refMatcher) ([]Chunk, error) {
 	if !utf8.ValidString(text) {
 		return nil, fmt.Errorf("text is not valid UTF-8")
 	}
@@ -468,8 +557,8 @@ func (c *Chunker) SplitStructured(text, source string) ([]Chunk, error) {
 
 		breadcrumb := strings.Join(sec.breadcrumb, " > ")
 
-		// Reserve worst-case header space out of the budget before splitting, so
-		// an annotated chunk cannot exceed the embedder's limit.
+		// Reserve worst-case header space out of the budget before splitting,
+		// so an annotated chunk cannot exceed the embedder's limit.
 		headerLen := utf8.RuneCountInString(contextHeader(map[string]string{
 			MetaBook: book, MetaBreadcrumb: breadcrumb,
 		}))
@@ -486,16 +575,32 @@ func (c *Chunker) SplitStructured(text, source string) ([]Chunk, error) {
 			body = sec.heading + "\n\n" + body
 		}
 
+		// Extract first reference for each key from the heading.
+		headRefs := map[string]string{}
+		for _, m := range matchers {
+			if hit := m.re.FindStringSubmatch(sec.heading); hit != nil {
+				if _, ok := headRefs[m.metaKey]; !ok {
+					headRefs[m.metaKey] = hit[1]
+				}
+			}
+		}
+
 		for _, piece := range splitScored(body, budget, c.opts.Overlap) {
-			units = append(units, unit{text: piece, breadcrumb: breadcrumb, heading: sec.heading})
+			units = append(units, unit{
+				text:       piece,
+				breadcrumb: breadcrumb,
+				heading:    sec.heading,
+				refs:       headRefs,
+			})
 		}
 	}
 
 	var (
-		chunks []Chunk
-		idx    int
-		buf    []unit
-		bufLen int
+		chunks          []Chunk
+		idx             int
+		buf             []unit
+		bufLen          int
+		lastTableHeader string // carries table header across chunk boundaries
 	)
 
 	flush := func() {
@@ -508,22 +613,40 @@ func (c *Chunker) SplitStructured(text, source string) ([]Chunk, error) {
 		}
 		body := strings.Join(texts, "\n\n")
 
+		// Table header carry-forward (Issue 5 fix):
+		// When a table chunk starts with a data row (no header), prepend the
+		// last known header so the column context is not lost.
+		ctype, noise := classify(body)
+		if ctype == ContentTable {
+			_, startsPartial := extractTableHeader(body)
+			if startsPartial && lastTableHeader != "" {
+				body = lastTableHeader + "\n" + body
+			}
+			// Update the stored header for the next chunk.
+			if hdr, partial := extractTableHeader(body); !partial && hdr != "" {
+				lastTableHeader = hdr
+			}
+		} else {
+			lastTableHeader = ""
+		}
+
 		meta := map[string]string{
 			MetaBook:       book,
 			MetaHeading:    buf[0].heading,
 			MetaBreadcrumb: buf[0].breadcrumb,
 		}
-		// Record every reference in the chunk, not just the first: a packed
-		// chunk can span several verses, and an exact-lookup route needs to
-		// match any of them.
-		if v := collectRefs(body, verseBodyRe, verseHeadingRe, buf); v != "" {
-			meta[MetaVerse] = v
+
+		// Collect every reference number in the chunk, deduplicated.
+		// One chunk can span multiple sections (e.g. Section 4.1 and 4.2).
+		headings := make([]string, len(buf))
+		for i, u := range buf {
+			headings[i] = u.heading
 		}
-		if d := collectDharanas(buf); d != "" {
-			meta[MetaDharana] = d
+		allRefs := extractRefs(headings, body, matchers)
+		for key, vals := range allRefs {
+			meta[key] = strings.Join(vals, ",")
 		}
 
-		ctype, noise := classify(body)
 		meta[MetaContentType] = ctype
 		meta[MetaNoiseScore] = fmt.Sprintf("%.2f", noise)
 
@@ -546,11 +669,9 @@ func (c *Chunker) SplitStructured(text, source string) ([]Chunk, error) {
 	for _, u := range units {
 		n := utf8.RuneCountInString(u.text)
 
-		// Start a new chunk when this unit opens a numbered verse or technique
-		// and the buffer already covers a different one. Packing keeps a verse
-		// with the commentary that explains it, but merging "Verse 25" into
-		// "Verse 26" would make neither addressable by number — which is the
-		// precise failure this metadata exists to fix.
+		// Start a new chunk when this unit opens a numbered reference that
+		// differs from what the buffer already covers, so that numbered items
+		// remain individually addressable.
 		if bufLen > 0 && startsNewReference(buf, u) {
 			flush()
 		} else if bufLen > 0 && bufLen+n+2 > c.opts.ChunkSize {
@@ -565,76 +686,38 @@ func (c *Chunker) SplitStructured(text, source string) ([]Chunk, error) {
 	return chunks, nil
 }
 
-// startsNewReference reports whether u opens a numbered verse or technique that
-// differs from the one the buffer already covers.
+// startsNewReference reports whether u opens a numbered reference under any
+// known meta key that differs from what the buffer already covers.
 func startsNewReference(buf []unit, u unit) bool {
-	uv := headingRef(u.heading)
-	if uv == "" {
-		return false
-	}
-	for _, b := range buf {
-		if r := headingRef(b.heading); r != "" && r != uv {
-			return true
+	for key, uVal := range u.refs {
+		if uVal == "" {
+			continue
+		}
+		for _, b := range buf {
+			if bVal, ok := b.refs[key]; ok && bVal != "" && bVal != uVal {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-// headingRef returns a heading's verse or technique reference, if it has one.
-func headingRef(heading string) string {
-	if m := dharanaHeadingRe.FindStringSubmatch(heading); m != nil {
-		return "d" + m[1]
-	}
-	if m := verseHeadingRe.FindStringSubmatch(heading); m != nil {
-		return "v" + m[1]
-	}
-	if m := parenHeadingRe.FindStringSubmatch(heading); m != nil {
-		return "v" + m[1]
-	}
-	return ""
-}
-
-// collectRefs gathers every verse number appearing in a packed chunk, in order,
-// deduplicated, as a comma-separated list.
-func collectRefs(body string, bodyRe, headRe *regexp.Regexp, units []unit) string {
-	var out []string
-	seen := map[string]bool{}
-	add := func(s string) {
-		if s != "" && !seen[s] {
-			seen[s] = true
-			out = append(out, s)
+// CompileRefMatchers compiles the RefPatterns from the domain config into
+// refMatcher instances. Patterns that fail to compile are skipped with a
+// warning to avoid a fatal crash from a user typo in agent.yaml.
+func CompileRefMatchers(patterns []config.RefPattern) []refMatcher {
+	out := make([]refMatcher, 0, len(patterns))
+	for _, p := range patterns {
+		if p.Pattern == "" || p.MetaKey == "" {
+			continue
 		}
-	}
-	for _, u := range units {
-		if m := headRe.FindStringSubmatch(u.heading); m != nil {
-			add(m[1])
-		} else if m := parenHeadingRe.FindStringSubmatch(u.heading); m != nil {
-			add(m[1])
+		re, err := regexp.Compile(p.Pattern)
+		if err != nil {
+			// A bad pattern should not crash the build; skip silently.
+			_ = fmt.Sprintf("chunker: skipping invalid ref_pattern %q: %v", p.Pattern, err)
+			continue
 		}
+		out = append(out, refMatcher{re: re, metaKey: p.MetaKey})
 	}
-	for _, m := range bodyRe.FindAllStringSubmatch(body, -1) {
-		add(m[1])
-	}
-	// Editions that mark techniques as a bare "32)" at the start of a line.
-	// Only consulted when nothing else numbered the chunk, because an ordinary
-	// numbered list would otherwise be read as verse numbers.
-	if len(out) == 0 {
-		for _, m := range parenBodyRe.FindAllStringSubmatch(body, -1) {
-			add(m[1])
-		}
-	}
-	return strings.Join(out, ",")
-}
-
-// collectDharanas gathers dhāraṇā numbers from the headings in a packed chunk.
-func collectDharanas(units []unit) string {
-	var out []string
-	seen := map[string]bool{}
-	for _, u := range units {
-		if m := dharanaHeadingRe.FindStringSubmatch(u.heading); m != nil && !seen[m[1]] {
-			seen[m[1]] = true
-			out = append(out, m[1])
-		}
-	}
-	return strings.Join(out, ",")
+	return out
 }
