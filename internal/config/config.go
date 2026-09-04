@@ -373,7 +373,7 @@ func AgentYAMLReasoningEffort(path string) (effort string, specified bool, err e
 	}
 
 	if unmarshalErr := yaml.Unmarshal(data, &raw); unmarshalErr != nil {
-		return "", false, nil
+		return "", false, unmarshalErr
 	}
 
 	candidates := []string{

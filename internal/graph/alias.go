@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/akashicode/kash/internal/fsutil"
 )
 
 // AliasFileName is the entity alias file, stored next to the compiled graph.
@@ -138,22 +139,7 @@ func (f *AliasFile) Save(path string) error {
 		return fmt.Errorf("marshal alias file: %w", err)
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".aliases-*.tmp")
-	if err != nil {
-		return fmt.Errorf("create temp alias file: %w", err)
-	}
-	tmpPath := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("write temp alias file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("close temp alias file: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
+	if err := fsutil.WriteFileAtomic(path, data, 0o644); err != nil {
 		return fmt.Errorf("replace alias file: %w", err)
 	}
 	return nil

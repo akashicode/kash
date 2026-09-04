@@ -8,8 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
+
+	"github.com/akashicode/kash/internal/fsutil"
 )
 
 // FileName is the manifest file name inside the agent's data/ directory.
@@ -106,24 +107,7 @@ func (m *Manifest) Save(path string) error {
 		return fmt.Errorf("marshal manifest: %w", err)
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".manifest-*.tmp")
-	if err != nil {
-		return fmt.Errorf("create temp manifest: %w", err)
-	}
-	tmpPath := tmp.Name()
-
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("write temp manifest: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("close temp manifest: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
+	if err := fsutil.WriteFileAtomic(path, data, 0o644); err != nil {
 		return fmt.Errorf("replace manifest: %w", err)
 	}
 	return nil

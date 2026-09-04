@@ -146,6 +146,11 @@ func TestAgentYAMLReasoningEffort(t *testing.T) {
 			wantSpecified: true,
 			wantErr:       true,
 		},
+		{
+			name:    "malformed yaml syntax",
+			yaml:    "runtime:\n  llm: [unclosed\n",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

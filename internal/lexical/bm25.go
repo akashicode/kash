@@ -18,6 +18,7 @@ import (
 	"unicode"
 
 	"github.com/akashicode/kash/internal/config"
+	"github.com/akashicode/kash/internal/fsutil"
 )
 
 // BM25 tuning. These are the standard defaults and are not worth tuning before
@@ -302,7 +303,7 @@ func (ix *Index) Save(path string) error {
 		os.Remove(tmpPath)
 		return fmt.Errorf("close temp index: %w", err)
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
+	if err := fsutil.ReplaceFile(tmpPath, path); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("replace index: %w", err)
 	}

@@ -14,11 +14,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"time"
 
 	"github.com/akashicode/kash/internal/config"
+	"github.com/akashicode/kash/internal/fsutil"
 )
 
 // FileName is the profile, stored next to the compiled databases.
@@ -217,27 +217,7 @@ func (p *Profile) Save(path string) error {
 		return fmt.Errorf("marshal profile: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create profile dir: %w", err)
-	}
-
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".profile-*.tmp")
-	if err != nil {
-		return fmt.Errorf("create temp profile: %w", err)
-	}
-	tmpPath := tmp.Name()
-
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("write temp profile: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("close temp profile: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
+	if err := fsutil.WriteFileAtomic(path, data, 0o644); err != nil {
 		return fmt.Errorf("replace profile: %w", err)
 	}
 	return nil

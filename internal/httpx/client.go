@@ -23,7 +23,9 @@ const (
 	RerankTimeout = 45 * time.Second
 
 	// ChatTimeout bounds one chat completion with reasoning disabled.
-	ChatTimeout = 2 * time.Minute
+	// Bounded so a stalled provider fails and gets retried, but with enough
+	// headroom (4m) for dense 10-chunk knowledge-graph extraction passes.
+	ChatTimeout = 4 * time.Minute
 )
 
 // ChatTimeoutFor returns the response-header budget for a chat completion at a
@@ -36,11 +38,11 @@ const (
 func ChatTimeoutFor(reasoningEffort string) time.Duration {
 	switch reasoningEffort {
 	case "low":
-		return 4 * time.Minute
+		return 5 * time.Minute
 	case "medium":
-		return 6 * time.Minute
+		return 8 * time.Minute
 	case "high":
-		return 10 * time.Minute
+		return 12 * time.Minute
 	default:
 		return ChatTimeout
 	}
