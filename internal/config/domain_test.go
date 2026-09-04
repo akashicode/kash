@@ -26,6 +26,12 @@ func TestDefaultsAreDomainNeutral(t *testing.T) {
 	assert.NotEmpty(t, d.Extraction.Predicates)
 	assert.NotContains(t, d.Extraction.Predicates, "was disciple of",
 		"default vocabulary must not assume a scholarly-lineage corpus")
+	assert.False(t, d.Chunker.StripTitleStemVowel,
+		"title stem-vowel stripping must be opt-in")
+	assert.NotEmpty(t, d.Chunker.RefPatterns,
+		"default ref patterns should be provided")
+	assert.NotEmpty(t, d.Chunker.TitleStopwords,
+		"default title stopwords should be provided")
 }
 
 func TestLoadDomainConfigMissingFileFallsBack(t *testing.T) {
@@ -97,4 +103,40 @@ func TestLoadDomainConfigEmptyHonorificsIsMeaningful(t *testing.T) {
 	d := LoadDomainConfig(path)
 	assert.Empty(t, d.Resolution.Honorifics,
 		"an explicitly empty list must disable honorific stripping")
+}
+
+func TestLoadDomainConfigChunkerOverrides(t *testing.T) {
+	path := writeYAML(t, `
+chunker:
+  ref_patterns:
+    - pattern: '(?i)article\s+(\d+)'
+      meta_key: article
+  title_stopwords:
+    - "amended"
+    - "restated"
+  strip_title_stem_vowel: true
+`)
+	d := LoadDomainConfig(path)
+	require.Len(t, d.Chunker.RefPatterns, 1)
+	assert.Equal(t, `(?i)article\s+(\d+)`, d.Chunker.RefPatterns[0].Pattern)
+	assert.Equal(t, "article", d.Chunker.RefPatterns[0].MetaKey)
+	assert.Equal(t, []string{"amended", "restated"}, d.Chunker.TitleStopwords)
+	assert.True(t, d.Chunker.StripTitleStemVowel)
+}
+
+func TestLoadDomainConfigEntityDescription(t *testing.T) {
+	// Defaults
+	d := DefaultDomainConfig()
+	assert.Equal(t, 2, d.EntityDescription.MinDegree)
+	assert.Equal(t, 500, d.EntityDescription.MaxEntities)
+
+	// Overrides
+	path := writeYAML(t, `
+entity_description:
+  min_degree: 5
+  max_entities: 100
+`)
+	loaded := LoadDomainConfig(path)
+	assert.Equal(t, 5, loaded.EntityDescription.MinDegree)
+	assert.Equal(t, 100, loaded.EntityDescription.MaxEntities)
 }

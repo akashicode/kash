@@ -30,12 +30,62 @@ func (m DiacriticMode) Valid() bool {
 	return false
 }
 
+// RefPattern configures one corpus-specific numbered-item pattern used by the
+// chunker (to tag metadata) and the retrieval layer (to boost exact hits).
+// Each pattern must contain exactly one capture group for the number.
+type RefPattern struct {
+	// Pattern is a Go regular expression with exactly one capture group that
+	// captures the number (e.g. "4.2" or "7").
+	Pattern string `yaml:"pattern"`
+	// MetaKey is the chunk metadata field written when the pattern matches
+	// (e.g. "section", "clause", "verse", "dharana").
+	MetaKey string `yaml:"meta_key"`
+}
+
+// ChunkerConfig controls structural reference recognition used by both the
+// chunker (to tag chunk metadata) and the retrieval layer (to boost exact
+// reference hits). Everything here has a generic default; a specialised corpus
+// overrides what it needs in agent.yaml.
+type ChunkerConfig struct {
+	// RefPatterns are the corpus-specific numbered-item patterns.
+	// Each entry must contain exactly one capture group (the number).
+	// Patterns are tried in order; the first match wins per heading/body.
+	// The meta_key is the metadata field written on the chunk and used by
+	// the exact-reference retrieval route (e.g. "section", "clause", "verse").
+	RefPatterns []RefPattern `yaml:"ref_patterns"`
+
+	// TitleStopwords are words stripped from document titles before grouping
+	// editions of the same work together (diversity capping in fusion).
+	// Override for your domain: a Sanskrit corpus needs "tantra", "paddhati";
+	// a legal corpus needs "amended", "schedule", "exhibit".
+	TitleStopwords []string `yaml:"title_stopwords"`
+
+	// StripTitleStemVowel removes a trailing a/i/u/o/e from title tokens
+	// before comparing them, normalising transliteration variants like
+	// "bhairava"/"bhairav". This is a Sanskrit convention: leave false for
+	// every other domain.
+	StripTitleStemVowel bool `yaml:"strip_title_stem_vowel"`
+}
+
 // DomainConfig holds the corpus-specific knobs that make Kash work on any
 // subject matter. Everything here has a generic default; a specialised corpus
 // (Sanskrit texts, aerospace engineering, case law) overrides what it needs.
 type DomainConfig struct {
-	Extraction ExtractionConfig `yaml:"extraction"`
-	Resolution ResolutionConfig `yaml:"resolution"`
+	Extraction        ExtractionConfig        `yaml:"extraction"`
+	Resolution        ResolutionConfig        `yaml:"resolution"`
+	Chunker           ChunkerConfig           `yaml:"chunker"`
+	EntityDescription EntityDescriptionConfig `yaml:"entity_description"`
+}
+
+// EntityDescriptionConfig controls node description generation and embedding.
+type EntityDescriptionConfig struct {
+	// MinDegree is the minimum number of graph facts an entity must appear in
+	// to have a description generated and embedded (default: 2).
+	MinDegree int `yaml:"min_degree"`
+
+	// MaxEntities is the maximum number of entity descriptions to embed
+	// (default: 500, 0 = unlimited).
+	MaxEntities int `yaml:"max_entities"`
 }
 
 // ExtractionConfig controls build-time knowledge graph extraction.
@@ -69,6 +119,39 @@ type ResolutionConfig struct {
 	ProperNounPredicates []string `yaml:"proper_noun_predicates"`
 }
 
+// defaultTitleStopwords are words that identify an edition, format, or
+// document-lifecycle stage rather than the work itself. Generic across
+// languages and domains; domain-specific words belong in agent.yaml.
+var defaultTitleStopwords = []string{
+	// English articles / prepositions
+	"the", "of", "and", "with", "by", "for", "in", "on", "at", "to",
+	// Document structure markers
+	"vol", "volume", "part", "section", "chapter",
+	"appendix", "schedule", "exhibit", "annex", "amendment",
+	// Document lifecycle / pipeline suffixes
+	"final", "draft", "revised", "original", "ocr",
+	// Language / format tags
+	"english", "translation",
+}
+
+// defaultRefPatterns are generic numbered-item patterns that work for
+// contracts, policies, RFCs, standards, and API docs. Corpus-specific
+// patterns (verse/dharana for Sanskrit, CFR § for US regulations) should
+// be set in agent.yaml.
+var defaultRefPatterns = []RefPattern{
+	// Named structural units: "Section 4.2", "Clause 7", "Article 12", "§ 3"
+	{
+		Pattern: `(?i)\b(?:section|clause|article|part|§)\s*(\d[\d.]*)`,
+		MetaKey: "section",
+	},
+	// Bare decimal heading numbers: "4.2", "3.1.4" — requires at least X.Y
+	// to avoid matching bare years (2024) or single item numbers (1, 2, 3).
+	{
+		Pattern: `(?i)(?:^|[\s#(\[])(\d{1,4}(?:\.\d+)+)\b`,
+		MetaKey: "section",
+	},
+}
+
 // DefaultDomainConfig returns settings that work on a general-purpose corpus
 // with no domain assumptions.
 func DefaultDomainConfig() DomainConfig {
@@ -91,11 +174,20 @@ func DefaultDomainConfig() DomainConfig {
 			StripFinalVowel:      false,
 			ProperNounPredicates: []string{"created by", "authored", "was written by", "designed by", "developed by"},
 		},
+		Chunker: ChunkerConfig{
+			RefPatterns:         defaultRefPatterns,
+			TitleStopwords:      defaultTitleStopwords,
+			StripTitleStemVowel: false,
+		},
+		EntityDescription: EntityDescriptionConfig{
+			MinDegree:   2,
+			MaxEntities: 500,
+		},
 	}
 }
 
-// LoadDomainConfig reads the extraction and resolution sections from an
-// agent.yaml. Missing sections fall back to the generic defaults, so an old
+// LoadDomainConfig reads the extraction, resolution, and chunker sections from
+// an agent.yaml. Missing sections fall back to the generic defaults, so an old
 // agent.yaml keeps working unchanged.
 func LoadDomainConfig(path string) DomainConfig {
 	cfg := DefaultDomainConfig()
@@ -117,7 +209,7 @@ func LoadDomainConfig(path string) DomainConfig {
 		cfg.Extraction.Priorities = parsed.Extraction.Priorities
 	}
 	if parsed.Resolution.Honorifics != nil {
-		// An explicitly empty list is meaningful: strip no honorifics
+		// An explicitly empty list is meaningful: strip no honorifics.
 		cfg.Resolution.Honorifics = parsed.Resolution.Honorifics
 	}
 	if parsed.Resolution.FoldDiacritics.Valid() {
@@ -127,6 +219,23 @@ func LoadDomainConfig(path string) DomainConfig {
 		cfg.Resolution.ProperNounPredicates = parsed.Resolution.ProperNounPredicates
 	}
 	cfg.Resolution.StripFinalVowel = parsed.Resolution.StripFinalVowel
+
+	// Chunker overrides — a non-nil slice replaces the default entirely.
+	if parsed.Chunker.RefPatterns != nil {
+		cfg.Chunker.RefPatterns = parsed.Chunker.RefPatterns
+	}
+	if parsed.Chunker.TitleStopwords != nil {
+		cfg.Chunker.TitleStopwords = parsed.Chunker.TitleStopwords
+	}
+	cfg.Chunker.StripTitleStemVowel = parsed.Chunker.StripTitleStemVowel
+
+	// Entity description overrides
+	if parsed.EntityDescription.MinDegree > 0 {
+		cfg.EntityDescription.MinDegree = parsed.EntityDescription.MinDegree
+	}
+	if parsed.EntityDescription.MaxEntities > 0 {
+		cfg.EntityDescription.MaxEntities = parsed.EntityDescription.MaxEntities
+	}
 
 	return cfg
 }
