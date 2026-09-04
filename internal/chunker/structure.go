@@ -174,17 +174,18 @@ func breakScore(prev, cur string) int {
 // splitScored cuts text into windows of at most size runes, preferring the
 // highest-scoring break point found in the last 30% of each window. This keeps
 // a heading with the text it introduces instead of severing them.
-func splitScored(text string, size, overlap int) []string {
+func splitScored(text string, size, overlap int) []scoredPiece {
 	lines := strings.Split(text, "\n")
 	if size <= 0 {
-		return []string{text}
+		return []scoredPiece{{text: text}}
 	}
 
 	var (
-		out     []string
+		out     []scoredPiece
 		cur     []string
 		curLen  int
 		lastLen int
+		carry   string // leading text of cur repeated from the previous window
 	)
 
 	emit := func() {
@@ -192,11 +193,18 @@ func splitScored(text string, size, overlap int) []string {
 			return
 		}
 		chunk := strings.TrimSpace(strings.Join(cur, "\n"))
-		if chunk != "" {
-			out = append(out, chunk)
+		// A window holding nothing but the carried tail repeats the previous
+		// piece and adds no text of its own. Emitting it stores the same
+		// passage twice — this is the guard this function has always claimed
+		// to have.
+		if chunk != "" && hasTextBeyond(cur, carry) {
+			out = append(out, scoredPiece{text: chunk, carry: carry})
 		}
 		// Carry an overlap tail of whole lines.
-		cur, curLen = carryTail(cur, overlap)
+		var tail []string
+		tail, curLen = carryTail(cur, overlap)
+		cur = tail
+		carry = strings.TrimSpace(strings.Join(tail, "\n"))
 		lastLen = curLen
 	}
 
@@ -219,9 +227,69 @@ func splitScored(text string, size, overlap int) []string {
 		_ = i
 	}
 	emit()
-
-	// emit() seeds cur with an overlap tail; drop a trailing carry-only window.
 	return out
+}
+
+// scoredPiece is one window of a section body, plus the leading text it repeats
+// from the window before it.
+//
+// The repetition is deliberate — consecutive chunks share an overlap tail so a
+// passage split across a boundary stays readable in both. It becomes a defect
+// only when two consecutive pieces are packed into the *same* chunk, where the
+// carried text would be stored twice. Recording what was carried, at the point
+// it is carried, is what lets the packer strip it there and only there.
+type scoredPiece struct {
+	text string
+	// carry is the leading portion of text repeated from the previous piece,
+	// trimmed. Empty for the first piece of a section.
+	carry string
+}
+
+// hasTextBeyond reports whether lines hold any non-blank content beyond the
+// carried prefix.
+func hasTextBeyond(lines []string, carry string) bool {
+	if carry == "" {
+		return true
+	}
+	return stripCarry(strings.TrimSpace(strings.Join(lines, "\n")), carry) != ""
+}
+
+// stripCarry removes the carried prefix from a piece, comparing line by line
+// and ignoring blank lines on either side.
+//
+// It returns text unchanged unless the piece genuinely begins with the carry.
+// That conservatism is the point: a corpus repeats lines for real reasons — a
+// refrain, a table header, a digitisation footer on every page — and those must
+// survive. Only text known to have been carried is removed.
+func stripCarry(text, carry string) string {
+	if carry == "" {
+		return text
+	}
+	textLines := strings.Split(text, "\n")
+	carryLines := strings.Split(carry, "\n")
+
+	i, j := 0, 0
+	for i < len(textLines) && j < len(carryLines) {
+		if strings.TrimSpace(textLines[i]) == "" {
+			i++
+			continue
+		}
+		if strings.TrimSpace(carryLines[j]) == "" {
+			j++
+			continue
+		}
+		if strings.TrimSpace(textLines[i]) != strings.TrimSpace(carryLines[j]) {
+			return text
+		}
+		i++
+		j++
+	}
+	for ; j < len(carryLines); j++ {
+		if strings.TrimSpace(carryLines[j]) != "" {
+			return text // the piece ended before the carry did
+		}
+	}
+	return strings.TrimSpace(strings.Join(textLines[i:], "\n"))
 }
 
 // bestBreak returns the index in lines of the best cut point within the last
@@ -437,7 +505,7 @@ func contextHeader(meta map[string]string) string {
 		if crumb == "" || containsFold(parts, crumb) {
 			continue
 		}
-		parts = append(parts, crumb)
+		parts = append(parts, truncateSegment(crumb))
 	}
 	// Render every user-defined reference key that isn't already in the breadcrumb.
 	// Keys are sorted so the header string is deterministic across runs.
@@ -465,6 +533,36 @@ func contextHeader(meta map[string]string) string {
 	return "[" + strings.Join(parts, " > ") + "]"
 }
 
+// maxHeaderSegment bounds one breadcrumb segment in a citation header.
+//
+// A heading is whatever follows the hashes on a line, so a document that
+// numbers its passages by putting the whole passage in the heading yields a
+// breadcrumb segment hundreds of characters long. That header is prefixed to
+// the chunk text, embedded with it, and shown as the citation — so an uncapped
+// one is unquotable and crowds out the passage it is meant to locate.
+//
+// The cap is on display only. Chunk metadata keeps the full heading, so
+// nothing that reads MetaHeading or MetaBreadcrumb loses fidelity.
+const maxHeaderSegment = 60
+
+// truncateSegment shortens one breadcrumb segment at a word boundary where it
+// can, marking the cut so a reader can see the heading was longer.
+func truncateSegment(s string) string {
+	if utf8.RuneCountInString(s) <= maxHeaderSegment {
+		return s
+	}
+	runes := []rune(s)
+	cut := maxHeaderSegment
+	// Prefer the last space in the final quarter, so the label ends on a word.
+	for i := cut - 1; i > maxHeaderSegment*3/4; i-- {
+		if runes[i] == ' ' {
+			cut = i
+			break
+		}
+	}
+	return strings.TrimRight(string(runes[:cut]), " ,;:-") + "…"
+}
+
 func containsFold(list []string, s string) bool {
 	for _, v := range list {
 		if strings.EqualFold(v, s) {
@@ -487,11 +585,12 @@ func anyHasNumber(parts []string, num string) bool {
 	return false
 }
 
-// maxHeaderRatio caps the share of a chunk's budget the context header may take,
-// following zvec-grep's MAX_METADATA_BUDGET_RATIO. The header is deducted from
-// the content budget before splitting, so annotated chunks cannot silently
-// exceed the embedder's limit.
-const maxHeaderRatio = 0.25
+// The context header used to be bounded by a ratio of the chunk size, applied
+// as a clamp on the *deduction* rather than on the header. That inverted the
+// guarantee it was written for: an oversized header was under-counted, so it
+// rendered in full and the finished chunk ran past the size it was budgeted
+// against. The header is now bounded at the source instead, one breadcrumb
+// segment at a time — see maxHeaderSegment — and its real length is deducted.
 
 // unit is one indivisible piece of text plus the section context it came from.
 // Sections are turned into units first and packed into chunks second: emitting
@@ -505,6 +604,15 @@ type unit struct {
 	// refs holds the reference numbers extracted from this unit's heading,
 	// keyed by meta_key. Used to decide whether to start a new chunk.
 	refs map[string]string
+	// carry is the leading text this unit repeats from the unit before it, and
+	// follows reports whether that predecessor is the immediately preceding
+	// unit. Together they let the packer drop the repetition when both land in
+	// one chunk, while leaving it intact across a real chunk boundary.
+	carry   string
+	follows bool
+	// budget is the content allowance for this unit's section — the chunk size
+	// less the citation header that will be prefixed to it.
+	budget int
 }
 
 // extractTableHeader returns the header rows (column names + separator) from
@@ -583,9 +691,15 @@ func (c *Chunker) SplitStructured(text, source string, matchers []refMatcher) ([
 		headerLen := utf8.RuneCountInString(contextHeader(map[string]string{
 			MetaBook: book, MetaBreadcrumb: breadcrumb,
 		}))
-		if maxLen := int(float64(c.opts.ChunkSize) * maxHeaderRatio); headerLen > maxLen {
-			headerLen = maxLen
-		}
+		// Deduct what the header will actually cost, so body plus header fits
+		// the chunk size. The estimate is a lower bound: reference labels
+		// ("Verse 51") are appended at flush time, once the chunk's full
+		// reference set is known. They are short and few.
+		//
+		// A chunk can still exceed ChunkSize in one case this cannot reach: a
+		// single source line longer than the budget. splitScored cuts on line
+		// boundaries, so a paragraph written as one unbroken line is
+		// indivisible and is emitted whole.
 		budget := c.opts.ChunkSize - headerLen - 2
 		if budget < 200 {
 			budget = 200
@@ -606,12 +720,15 @@ func (c *Chunker) SplitStructured(text, source string, matchers []refMatcher) ([
 			}
 		}
 
-		for _, piece := range splitScored(body, budget, c.opts.Overlap) {
+		for i, piece := range splitScored(body, budget, c.opts.Overlap) {
 			units = append(units, unit{
-				text:       piece,
+				text:       piece.text,
 				breadcrumb: breadcrumb,
 				heading:    sec.heading,
 				refs:       headRefs,
+				carry:      piece.carry,
+				follows:    i > 0,
+				budget:     budget,
 			})
 		}
 	}
@@ -628,9 +745,22 @@ func (c *Chunker) SplitStructured(text, source string, matchers []refMatcher) ([
 		if len(buf) == 0 {
 			return
 		}
-		texts := make([]string, len(buf))
+		texts := make([]string, 0, len(buf))
 		for i, u := range buf {
-			texts[i] = u.text
+			text := u.text
+			// Consecutive pieces of a section overlap by design, so a passage
+			// split across a chunk boundary reads whole in both. When both
+			// pieces land in this same chunk there is no boundary to bridge,
+			// and keeping the overlap would store the passage twice.
+			//
+			// buf is filled in order and never skips, so a unit at i > 0 whose
+			// predecessor exists has that predecessor at i-1.
+			if i > 0 && u.follows {
+				text = stripCarry(text, u.carry)
+			}
+			if text != "" {
+				texts = append(texts, text)
+			}
 		}
 		body := strings.Join(texts, "\n\n")
 
@@ -695,7 +825,13 @@ func (c *Chunker) SplitStructured(text, source string, matchers []refMatcher) ([
 		// remain individually addressable.
 		if bufLen > 0 && startsNewReference(buf, u) {
 			flush()
-		} else if bufLen > 0 && bufLen+n+2 > c.opts.ChunkSize {
+		} else if bufLen > 0 && bufLen+n+2 > buf[0].budget {
+			// Pack to the section's content budget, not the raw chunk size.
+			// The citation header is prefixed to the body at flush time, so
+			// filling the buffer to ChunkSize and then adding the header put
+			// the finished chunk over the embedder's limit — which is what the
+			// per-piece budget was already computed to prevent. buf[0] is the
+			// unit whose heading and breadcrumb become the header.
 			flush()
 		}
 
@@ -736,18 +872,20 @@ func CompileRefMatchers(patterns []config.RefPattern) []refMatcher {
 // unbounded one is a performance hazard as well as an unreadable one.
 const MaxRefPatternLen = 200
 
-// RulesVersion identifies the structural tagging rules a corpus was chunked
+// RulesVersion identifies the chunking and tagging rules a corpus was built
 // under. It is stored in the build manifest so an index built by an older
 // binary can be recognised as stale.
 //
-// Bump it whenever a change alters which references a given pattern extracts
-// from unchanged text. The domain signature cannot cover this: it hashes the
-// pattern strings from the config, so a change to how those strings are
-// *compiled* is invisible to it.
+// Bump it whenever a change alters the chunks produced from unchanged text —
+// either which references are extracted, or the chunk text itself. The domain
+// signature cannot cover either: it hashes the pattern strings from the config,
+// so changes to how chunks are cut, joined or annotated are invisible to it.
 //
 //	1 — original.
 //	2 — patterns compiled with (?m); see CompileRefPattern.
-const RulesVersion = 2
+//	3 — overlap no longer duplicated within a chunk; chunks packed to the
+//	    content budget rather than the raw chunk size; header segments capped.
+const RulesVersion = 3
 
 // multilineFlag makes a leading ^ mean start-of-line.
 //

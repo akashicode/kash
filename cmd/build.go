@@ -297,15 +297,16 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		m.PredicateSignature = profile.PredicateSignature(domainCfg)
 	}
 
-	// How reference patterns are applied is invisible to the domain signature,
-	// which hashes the pattern strings rather than the matching rules. An
-	// older corpus is under-tagged rather than mis-tagged — every reference it
-	// did record is still correct — so this is reported, not enforced.
+	// How chunks are cut, joined and tagged is invisible to the domain
+	// signature, which hashes the pattern strings rather than the rules applied
+	// to them. An older corpus is degraded rather than wrong — the references
+	// it did record are correct, and its chunks are readable — so this is
+	// reported, not enforced.
 	if len(m.Documents) > 0 && m.ChunkerRulesVersion < chunker.RulesVersion {
 		display.StepWarn(fmt.Sprintf(
-			"corpus was chunked under reference-tagging rules v%d (now v%d) — references away from the "+
-				"start of a chunk were missed; run 'kash build --rebuild' to re-tag the whole corpus",
-			m.ChunkerRulesVersion, chunker.RulesVersion))
+			"corpus was built under chunking rules v%d (now v%d) — references away from the start of a "+
+				"chunk were missed, and chunk text has changed; run 'kash build --rebuild' to re-chunk "+
+				"the whole corpus", m.ChunkerRulesVersion, chunker.RulesVersion))
 	}
 	m.ChunkerRulesVersion = chunker.RulesVersion
 

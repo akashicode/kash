@@ -41,6 +41,36 @@ those are called out under **Requires rebuild**.
   The body is still scanned for every key no heading answered, which is what
   keeps a run of numbered passages addressable by each of them.
 
+- **Chunks repeated their own overlap text.** Consecutive pieces of a section
+  share an overlap tail so a passage split across a chunk boundary reads whole
+  in both. When two such pieces were packed into the *same* chunk there was no
+  boundary to bridge, and they were joined verbatim — so a sentence appearing
+  once in the source appeared twice in the retrieved passage. A window that
+  consisted of nothing but the carried tail was also emitted as a piece of its
+  own, though the function had always claimed in a comment to drop it. Affected
+  chunks across the two books measured: 37 → 4.
+
+- **Chunks ran past the size they were budgeted against.** The body was packed
+  to the full chunk size and the citation header was prefixed to it afterwards,
+  so every chunk that filled its buffer overshot by the length of its header.
+  Packing now uses the same content budget the pieces were cut to.
+
+- **A citation header could be longer than the passage it located.** A heading
+  is whatever follows the hashes, so a document that numbers its passages by
+  putting the passage in the heading produced a breadcrumb segment hundreds of
+  characters long — unquotable, and prefixed to every chunk of that section.
+  Segments are now capped for display; chunk metadata keeps the full heading.
+  The ratio that was meant to bound this clamped the *deduction* rather than the
+  header, which inverted the guarantee it was written for.
+
+- **Entity summaries were shown however weakly they matched.** The entity query
+  is top-K with no cutoff, so it returned its full quota whenever the corpus held
+  that many entities. On a question the corpus could not answer, the context
+  block opened by orienting the reader around whatever was nearest in embedding
+  space. The relevance floor already applied to graph seeding and provenance now
+  applies to what is shown, and is a named constant rather than a literal
+  repeated at three call sites.
+
 ### Added
 
 - **`kash build` reports reference keys that tagged nothing.** Profiles outlive
@@ -49,15 +79,24 @@ those are called out under **Requires rebuild**.
   queries naming it silently fall back to similarity — and the build now says
   so instead of leaving it invisible.
 
+### Known limitation
+
+A chunk can still exceed the configured size when a single source line is longer
+than the budget: splitting cuts on line boundaries, so a paragraph written as one
+unbroken line is indivisible and is emitted whole. On the corpus measured this
+accounts for nearly all remaining oversized chunks — 422 of 434 — and is
+unchanged by this release.
+
 ### Requires rebuild
 
-Run `kash build --rebuild` to re-tag an existing corpus with the recovered
-references. This one is reported rather than enforced: the domain signature
-hashes the pattern strings, so a change to how those strings are *compiled*
-leaves it identical and cannot detect the drift. The manifest now records a
+Run `kash build --rebuild` to re-chunk an existing corpus: references away from
+the start of a chunk are recovered, and chunk text itself has changed. This is
+reported rather than enforced. The domain signature hashes the pattern strings,
+so neither a change to how those strings are *compiled* nor a change to how
+chunks are cut and joined can be detected by it. The manifest now records a
 `chunker_rules_version` instead, and the build warns when a corpus predates the
-current rules. An un-rebuilt corpus is under-tagged, not wrong — every
-reference it did record is still correct.
+current rules. An un-rebuilt corpus is degraded, not wrong — the references it
+recorded are correct and its chunks are readable.
 
 ## [2.0.0] - 2026-09-04
 

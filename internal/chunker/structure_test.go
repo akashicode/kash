@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -277,6 +278,180 @@ func TestCompileRefMatchersAcceptsValidPattern(t *testing.T) {
 	})
 	assert.Len(t, got, 1)
 	assert.Empty(t, warnings)
+}
+
+// Consecutive pieces of a section overlap so a passage split across a chunk
+// boundary reads whole in both. When two such pieces are packed into one chunk
+// there is no boundary to bridge, and joining them verbatim stored the shared
+// text twice — a sentence appearing once in the source appeared twice in what
+// the reader was shown. On the corpus this was found on, removing this strip
+// puts the duplication back: 0 affected chunks becomes 9 and 4 becomes 25.
+//
+// stripCarry is deliberately conservative. Text is removed only when the piece
+// demonstrably begins with what was carried into it, because a corpus repeats
+// lines for real reasons and those must survive.
+func TestStripCarry(t *testing.T) {
+	tests := []struct {
+		name  string
+		text  string
+		carry string
+		want  string
+	}{
+		{
+			name:  "removes the carried prefix",
+			text:  "9) Know that to be insubstantial.\n\n10) The world is a dream.",
+			carry: "9) Know that to be insubstantial.",
+			want:  "10) The world is a dream.",
+		},
+		{
+			name:  "a piece that is nothing but carry empties out",
+			text:  "9) Know that to be insubstantial.",
+			carry: "9) Know that to be insubstantial.",
+			want:  "",
+		},
+		{
+			name:  "tolerates blank lines on either side",
+			text:  "\nfirst carried line\n\n\nsecond carried line\n\nnew material here",
+			carry: "first carried line\n\nsecond carried line",
+			want:  "new material here",
+		},
+		{
+			// The rejected alternative — matching the seam by eye — would eat
+			// this. A repeated line that was not carried must be left alone.
+			name:  "leaves text that merely resembles the carry",
+			text:  "Digitised by the archive.\n\nA different opening line.",
+			carry: "A different opening line.",
+			want:  "Digitised by the archive.\n\nA different opening line.",
+		},
+		{
+			name:  "leaves text when the carry runs past the end of it",
+			text:  "only one line here",
+			carry: "only one line here\nand a second the piece never had",
+			want:  "only one line here",
+		},
+		{
+			name:  "no carry is a no-op",
+			text:  "unchanged text",
+			carry: "",
+			want:  "unchanged text",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, stripCarry(tt.text, tt.carry))
+		})
+	}
+}
+
+// A chunk should never show the same line twice when the source shows it once.
+// This is a broad invariant over the packer rather than a guard on one change:
+// it holds whether the repetition would have come from the overlap carry or
+// from a piece that was nothing but carry.
+func TestSplitStructuredDoesNotRepeatOverlapWithinAChunk(t *testing.T) {
+	// A section whose body splits into pieces that then pack back into one
+	// chunk — a wide overlap relative to the section is what makes the second
+	// piece little more than a repeat of the first one's tail.
+	var sb strings.Builder
+	sb.WriteString("# Operations Manual\n\n## Escalation Procedure\n\n")
+	for i := 1; i <= 12; i++ {
+		fmt.Fprintf(&sb, "Step %d: notify the duty officer and record the incident reference in the log.\n\n", i)
+	}
+
+	ck, err := NewChunker(Options{ChunkSize: 400, Overlap: 200})
+	require.NoError(t, err)
+	chunks, err := ck.SplitStructured(sb.String(), "manual.md", nil)
+	require.NoError(t, err)
+	require.Greater(t, len(chunks), 1, "fixture must split into several chunks")
+
+	for i, c := range chunks {
+		seen := map[string]bool{}
+		for _, line := range strings.Split(c.Content, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			assert.False(t, seen[line],
+				"chunk %d repeats a line that occurs once in the source: %q", i, line)
+			seen[line] = true
+		}
+	}
+}
+
+// Text that genuinely repeats must survive. Stripping the overlap by comparing
+// the seam would eat a refrain, a repeated table header, or the digitisation
+// footer that recurs on every page of a scanned book.
+func TestSplitStructuredKeepsGenuinelyRepeatedText(t *testing.T) {
+	doc := `# Field Notes
+
+## Observations
+
+Digitised by the archive. All rights reserved.
+
+The specimen was measured at first light and again at dusk.
+
+Digitised by the archive. All rights reserved.
+
+A second specimen was recovered from the eastern slope.
+`
+	ck, err := NewChunker(Options{ChunkSize: 2000, Overlap: 400})
+	require.NoError(t, err)
+	chunks, err := ck.SplitStructured(doc, "notes.md", nil)
+	require.NoError(t, err)
+	require.Len(t, chunks, 1, "fixture is small enough to be one chunk")
+
+	assert.Equal(t, 2, strings.Count(chunks[0].Content, "Digitised by the archive."),
+		"a line the source really does repeat must not be stripped as overlap")
+}
+
+// A heading is whatever follows the hashes, so a document that numbers its
+// passages by putting the passage in the heading produced a citation header
+// hundreds of characters long — unquotable, and prefixed to every chunk of that
+// section. The budget clamp meant to prevent that clamped the deduction rather
+// than the header, so an oversized header both rendered in full and pushed the
+// finished chunk past ChunkSize.
+func TestContextHeaderCapsLongSegments(t *testing.T) {
+	long := "4.2 The Provider shall ensure that all consignments accepted for carriage " +
+		"are handled in accordance with the schedule of charges set out in this agreement"
+
+	got := contextHeader(map[string]string{
+		MetaBook:       "Service Agreement",
+		MetaBreadcrumb: "Service Agreement > " + long,
+		"clause":       "22",
+	})
+
+	assert.LessOrEqual(t, utf8.RuneCountInString(got), 160,
+		"a citation header must stay short enough to quote; got %q", got)
+	assert.Contains(t, got, "…", "a truncated segment should show it was cut")
+	assert.Contains(t, got, "Clause 22", "the reference label must survive truncation")
+	assert.Contains(t, got, "The Provider shall", "the start of the heading must be kept")
+}
+
+func TestSplitStructuredKeepsChunksWithinChunkSize(t *testing.T) {
+	long := "The Provider shall ensure that all consignments accepted for carriage are " +
+		"handled in accordance with the schedule of charges set out in this agreement"
+
+	// Many short sections, each its own heading — the shape that packs several
+	// units into one chunk and so fills the buffer to the limit before the
+	// citation header is prefixed to it.
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "# Service Agreement\n\n## %s\n\n", long)
+	for i := 1; i <= 60; i++ {
+		fmt.Fprintf(&sb, "### Item %d\nCharges are reviewed annually and published in the schedule of fees.\n\n", i)
+	}
+
+	const size = 1000
+	ck, err := NewChunker(Options{ChunkSize: size, Overlap: 100})
+	require.NoError(t, err)
+	chunks, err := ck.SplitStructured(sb.String(), "agreement.md", nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, chunks)
+
+	for i, c := range chunks {
+		assert.LessOrEqual(t, utf8.RuneCountInString(c.Content), size,
+			"chunk %d is %d runes, over the %d-rune limit it was budgeted against",
+			i, utf8.RuneCountInString(c.Content), size)
+	}
 }
 
 // genericMatchers returns domain-neutral reference matchers — the shapes a

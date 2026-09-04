@@ -465,7 +465,7 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 	}
 	for _, e := range entityResults {
 		k := strings.ToLower(strings.TrimSpace(e.Name))
-		if e.Similarity > 0.4 && !seenSeed[k] {
+		if e.Similarity > denseRelevanceFloor && !seenSeed[k] {
 			seenSeed[k] = true
 			seedEntities = append(seedEntities, e.Name)
 		}
@@ -499,7 +499,7 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 
 	var seedTriples []graph.Triple
 	for _, r := range relResults {
-		if r.Similarity > 0.4 {
+		if r.Similarity > denseRelevanceFloor {
 			seedTriples = append(seedTriples, graph.Triple{
 				Subject:   r.Subject,
 				Predicate: r.Predicate,
@@ -513,7 +513,7 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 	// relationship, which names the fact itself — so entity provenance goes in
 	// behind it, and only for entities the dense search actually liked.
 	for _, e := range entityResults {
-		if e.Similarity <= 0.4 {
+		if e.Similarity <= denseRelevanceFloor {
 			continue
 		}
 		for i, id := range e.ChunkIDs {
@@ -644,10 +644,30 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 
 	return retrievalResult{
 		Chunks:        chunks,
-		Entities:      entityResults,
+		Entities:      relevantEntities(entityResults),
 		Relationships: relResults,
 		Facts:         graphResults,
 	}, nil
+}
+
+// relevantEntities drops entity hits too weak to be worth showing.
+//
+// The entity query is top-K with no cutoff, so it returns its full quota
+// whenever the store holds that many entities — however badly they score. Those
+// summaries are then prefixed to the context block, which spent the reader's
+// budget orienting them around whatever the corpus happened to contain rather
+// than what they asked about.
+//
+// This runs after seeding and provenance, which apply the same floor to the
+// unfiltered list themselves, so graph traversal is unaffected.
+func relevantEntities(entities []vector.EntitySearchResult) []vector.EntitySearchResult {
+	var out []vector.EntitySearchResult
+	for _, e := range entities {
+		if e.Similarity > denseRelevanceFloor {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // nearDuplicateThreshold is the shingle overlap above which two chunks are
@@ -683,6 +703,17 @@ const (
 	// pulls into the fusion. A well-connected entity appears everywhere, so
 	// taking all of its chunks would drown the route it shares with graph facts.
 	maxEntityProvenanceChunks = 3
+
+	// denseRelevanceFloor is the cosine similarity below which a dense hit is
+	// treated as noise rather than a weak match.
+	//
+	// Entity and relationship queries are top-K with no cutoff, so they return
+	// their full quota whenever the store holds that many rows — however badly
+	// the best of them scores. Everything that acts on a dense hit applies this
+	// floor: seeding graph traversal, contributing provenance, and the entity
+	// summaries shown to the reader. Both kinds of hit are cosine similarity
+	// from the same embedder, so they share one threshold.
+	denseRelevanceFloor = 0.4
 )
 
 // maxRerankCandidates bounds how many chunks go to the reranker in one request.

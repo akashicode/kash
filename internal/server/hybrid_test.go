@@ -228,3 +228,60 @@ func TestUIMaxTopKDoesNotClampConfiguredValue(t *testing.T) {
 	assert.LessOrEqual(t, s.topKOrDefault(0), uiMaxTopK,
 		"a configured top_k must survive the dashboard clamp")
 }
+
+// Entity search is top-K with no score cutoff, so it returns its full quota
+// whenever the store holds that many entities — however badly they score. Those
+// summaries head the context block, so on a query the corpus cannot answer the
+// reader was oriented around whatever happened to be nearest in embedding
+// space, at real cost in tokens.
+func TestRelevantEntitiesDropsWeakHits(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []vector.EntitySearchResult
+		want []string
+	}{
+		{
+			name: "keeps hits above the floor",
+			in: []vector.EntitySearchResult{
+				{Name: "central channel", Similarity: 0.71},
+				{Name: "Kundalini", Similarity: 0.55},
+			},
+			want: []string{"central channel", "Kundalini"},
+		},
+		{
+			name: "drops hits at or below the floor",
+			in: []vector.EntitySearchResult{
+				{Name: "central channel", Similarity: 0.71},
+				{Name: "rasalila", Similarity: 0.31},
+				{Name: "Prasada", Similarity: 0.12},
+			},
+			want: []string{"central channel"},
+		},
+		{
+			// The whole point: an off-corpus query should produce no block at
+			// all rather than five weak summaries.
+			name: "an all-weak result yields nothing",
+			in: []vector.EntitySearchResult{
+				{Name: "Prasada", Similarity: 0.22},
+				{Name: "rasalila", Similarity: 0.19},
+			},
+			want: nil,
+		},
+		{
+			name: "exactly at the floor is not relevant enough",
+			in:   []vector.EntitySearchResult{{Name: "borderline", Similarity: denseRelevanceFloor}},
+			want: nil,
+		},
+		{name: "empty input", in: nil, want: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []string
+			for _, e := range relevantEntities(tt.in) {
+				got = append(got, e.Name)
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
