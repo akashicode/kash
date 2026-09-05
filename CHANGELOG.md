@@ -11,7 +11,7 @@ release that changes chunk boundaries, chunk metadata or the extraction
 vocabulary needs `kash build --rebuild` to take effect on an existing corpus —
 those are called out under **Requires rebuild**.
 
-## [Unreleased]
+## [2.1.0] - 2026-09-05
 
 ### Fixed
 
