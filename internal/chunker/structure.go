@@ -208,7 +208,7 @@ func splitScored(text string, size, overlap int) []scoredPiece {
 		lastLen = curLen
 	}
 
-	for i, line := range lines {
+	for _, line := range lines {
 		lineLen := utf8.RuneCountInString(line) + 1
 		if curLen > 0 && curLen+lineLen > size {
 			// Look back over the tail of the window for a better cut.
@@ -224,7 +224,6 @@ func splitScored(text string, size, overlap int) []scoredPiece {
 		}
 		cur = append(cur, line)
 		curLen += lineLen
-		_ = i
 	}
 	emit()
 	return out
