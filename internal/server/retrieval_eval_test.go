@@ -461,3 +461,42 @@ func TestNegativeControlVectorOnly(t *testing.T) {
 	assert.Less(t, recall, 1.0,
 		"the baseline must fail some queries, otherwise TestRecallAtK proves nothing")
 }
+
+// The exact-reference route has two sides that name the key independently: the
+// chunker names it from the pattern that matched the document, the router from
+// the pattern that matched the query. Requiring the names to agree left a
+// reference indexed and still unreachable — on the real corpus, 51 of 112
+// numbered passages were filed under one key and asked for under another, and
+// every one of those queries fell through to pure similarity.
+//
+// Asserted on lexicalRoutes rather than on the retrieved slate: BM25 finds
+// these chunks either way, so only the exact route's own output shows whether
+// the reference resolved or the query merely got lucky.
+func TestExactRouteReachesAReferenceFiledUnderAnotherKey(t *testing.T) {
+	ix, _ := evalIndex(t)
+	fc := buildFusionConfig(evalDomainConfig())
+
+	// The agreement's "7)" is filed by the paren pattern; the reader asks for
+	// a clause. Same number, different key.
+	_, exact := lexicalRoutes(ix, fc.router, "service agreement clause 7", 50)
+	require.NotEmpty(t, exact,
+		"a reference filed under a different key must still resolve")
+
+	// The fallback must not fire when the named key has its own hits, or it
+	// could pull in unrelated chunks that merely share the number.
+	_, exact22 := lexicalRoutes(ix, fc.router, "service agreement clause 22", 50)
+	require.NotEmpty(t, exact22, "a same-key reference must still resolve")
+	for _, id := range exact22 {
+		assert.Contains(t, ix.Meta[indexOfID(ix, id)]["clause"], "22",
+			"chunk %s reached the exact route for clause 22 without carrying it", id)
+	}
+}
+
+func indexOfID(ix *lexical.Index, id string) int {
+	for i, v := range ix.IDs {
+		if v == id {
+			return i
+		}
+	}
+	return -1
+}

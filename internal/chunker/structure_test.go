@@ -563,3 +563,21 @@ func TestSplitStructuredSurvivesAllCompiledPatterns(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
+// A reference pattern ends in (\d[\d.]*) so it can capture a dotted number like
+// "4.2". That class also captures the full stop ending a sentence, so a clause
+// cited mid-prose was stored as "22." — indexed, and unreachable by every query
+// asking for 22.
+func TestNormalizeRefValueDropsAccidentalPunctuation(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"22.", "22"},
+		{" 22. ", "22"},
+		{"4.2", "4.2"},
+		{"4.2.", "4.2"},
+		{"7", "7"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, NormalizeRefValue(tt.in), "input %q", tt.in)
+	}
+}

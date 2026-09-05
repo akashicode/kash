@@ -159,8 +159,24 @@ func lexicalRoutes(ix *lexical.Index, router *refRouter, query string, depth int
 
 	seen := map[string]bool{}
 	for _, ref := range router.queryRefs(query) {
+		hits := ix.FindByRef(ref.Field, ref.Value)
+		if len(hits) == 0 {
+			// The key the query named holds nothing. That does not mean the
+			// reference is absent: the chunker names the key from whatever
+			// pattern matched the document, so a corpus writing "97)" in one
+			// place and "Verse 97" in another files the two under different
+			// keys, and a reader asking for a verse reaches only one of them.
+			//
+			// Falling back to the number alone can only add hits where there
+			// were none, so it never displaces a correct same-key match. What
+			// it displaces is the empty result — which sends the query to pure
+			// similarity, and that is what ranks a title-dense page above the
+			// passage actually asked for.
+			hits = ix.FindByAnyRef(ref.Value)
+		}
+
 		var ex []scored
-		for _, r := range ix.FindByRef(ref.Field, ref.Value) {
+		for _, r := range hits {
 			if seen[r.ID] {
 				continue
 			}

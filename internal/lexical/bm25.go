@@ -17,6 +17,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/akashicode/kash/internal/chunker"
 	"github.com/akashicode/kash/internal/config"
 	"github.com/akashicode/kash/internal/fsutil"
 )
@@ -270,16 +271,69 @@ func (ix *Index) FindByRef(field, value string) []Result {
 	if ix == nil || value == "" {
 		return nil
 	}
+	value = chunker.NormalizeRefValue(value)
 	var out []Result
 	for i, meta := range ix.Meta {
 		for _, v := range strings.Split(meta[field], ",") {
-			if strings.TrimSpace(v) == value {
+			if chunker.NormalizeRefValue(v) == value {
 				out = append(out, Result{ID: ix.IDs[i], Score: 1, Metadata: meta})
 				break
 			}
 		}
 	}
 	return out
+}
+
+// FindByAnyRef returns documents carrying the given value under any reference
+// key, whatever that key is called.
+//
+// It exists because the two sides of a reference lookup name the key
+// independently. The chunker names it from the pattern that matched the
+// *document*; the query router names it from the pattern that matched the
+// *query*. Those are different texts, so the names need not agree even when
+// they mean the same passage — a corpus that writes "97)" in one place and
+// "Verse 97" in another indexes the first as a section and the second as a
+// verse, and a reader asking for verse 97 matches only half of it.
+//
+// Infrastructure keys are excluded: they hold prose, not references, so a
+// heading containing the number would otherwise match.
+func (ix *Index) FindByAnyRef(value string) []Result {
+	if ix == nil || value == "" {
+		return nil
+	}
+	value = chunker.NormalizeRefValue(value)
+	var out []Result
+	for i, meta := range ix.Meta {
+		if matchesAnyRef(meta, value) {
+			out = append(out, Result{ID: ix.IDs[i], Score: 1, Metadata: meta})
+		}
+	}
+	return out
+}
+
+// refInfraKeys are the metadata keys the chunker owns. They describe the chunk
+// rather than number it, so they never carry a reference value.
+var refInfraKeys = map[string]bool{
+	chunker.MetaBook:        true,
+	chunker.MetaHeading:     true,
+	chunker.MetaBreadcrumb:  true,
+	chunker.MetaContentType: true,
+	chunker.MetaNoiseScore:  true,
+	"source":                true,
+}
+
+func matchesAnyRef(meta map[string]string, value string) bool {
+	for key, vals := range meta {
+		if refInfraKeys[key] {
+			continue
+		}
+		for _, v := range strings.Split(vals, ",") {
+			if chunker.NormalizeRefValue(v) == value {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Save writes the index to a file atomically.

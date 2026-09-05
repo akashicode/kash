@@ -463,7 +463,7 @@ func extractRefs(headings []string, body string, matchers []refMatcher) map[stri
 	for _, m := range matchers {
 		for _, h := range headings {
 			for _, hit := range m.re.FindAllStringSubmatch(h, -1) {
-				add(m.metaKey, hit[1])
+				add(m.metaKey, NormalizeRefValue(hit[1]))
 			}
 		}
 	}
@@ -859,6 +859,19 @@ func startsNewReference(buf []unit, u unit) bool {
 	return false
 }
 
+// NormalizeRefValue trims punctuation a numbering pattern captures by accident.
+//
+// Reference patterns end in `(\d[\d.]*)` so they can capture a dotted number
+// like "4.2". That same class captures the full stop that ends a sentence, so
+// "…in accordance with clause 22." yields "22." — a reference no query asking
+// for 22 can ever match, indexed and unreachable.
+//
+// Applied on both sides: when writing chunk metadata, and when comparing a
+// lookup against it, so an index built before this still resolves.
+func NormalizeRefValue(s string) string {
+	return strings.Trim(strings.TrimSpace(s), ".")
+}
+
 // MaxRefPatternLen bounds a reference pattern. Patterns run against every
 // heading and body at build time and against every query at serve time, so an
 // unbounded one is a performance hazard as well as an unreadable one.
@@ -877,7 +890,9 @@ const MaxRefPatternLen = 200
 //	2 — patterns compiled with (?m); see CompileRefPattern.
 //	3 — overlap no longer duplicated within a chunk; chunks packed to the
 //	    content budget rather than the raw chunk size; header segments capped.
-const RulesVersion = 3
+//	4 — reference values no longer keep punctuation the pattern captured by
+//	    accident; see NormalizeRefValue.
+const RulesVersion = 4
 
 // multilineFlag makes a leading ^ mean start-of-line.
 //
