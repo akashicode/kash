@@ -15,6 +15,24 @@ those are called out under **Requires rebuild**.
 
 ### Fixed
 
+- **A numbering scheme used by only one document was discarded.** Detection
+  required a scheme to appear in at least two documents before accepting it.
+  That was safe on the 61-document corpus it was calibrated against, where any
+  real scheme appeared in several, and wrong on a small mixed-genre one, where
+  each work brings its own convention. A scripture numbering 45 distinct
+  passages as `97)` — 51 occurrences, monotonicity 0.77, comfortably above the
+  acceptance score — was rejected because the two commentaries beside it did not
+  use that form, leaving 46 of its 112 numbered passages unreachable by number.
+  Document spread still counts as a term in the score; it no longer vetoes.
+
+- **One numbered heading suppressed every other section's numbering in the same
+  chunk.** A section whose heading already numbers it should not also take
+  numbers from its own body, or an ordinary list becomes verse numbering. That
+  rule was applied across the whole chunk rather than per section, so a listing
+  of `31)` and `32)` packed beside a `Verse 33` heading lost both of its
+  numbers. It was invisible while a bare listing wrote a different metadata key
+  from the heading, and became a real loss as soon as both named the same key.
+
 - **A reference could be indexed and still unreachable.** The exact-reference
   lookup has two sides that name the key independently: the chunker names it
   from the pattern that matched the document, the query router from the pattern

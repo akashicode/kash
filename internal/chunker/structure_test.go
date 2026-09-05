@@ -581,3 +581,45 @@ func TestNormalizeRefValueDropsAccidentalPunctuation(t *testing.T) {
 		assert.Equal(t, tt.want, NormalizeRefValue(tt.in), "input %q", tt.in)
 	}
 }
+
+// Heading precedence is per section, not per chunk. A section whose heading
+// already numbers it must not take numbers from its own body — but a different
+// section packed into the same chunk has to be judged on its own evidence.
+//
+// Reading the whole chunk at once let one numbered heading silence every other
+// section's numbering. It stayed invisible while a bare listing wrote a
+// different metadata key from the heading, and became a real loss as soon as
+// both named the same key: a listing of 31) and 32) beside a "Clause 33"
+// heading lost both of its numbers.
+func TestHeadingPrecedenceIsPerSectionNotPerChunk(t *testing.T) {
+	doc := `# Operations Manual
+
+### Clause 33
+The duty officer records each incident reference in the log.
+
+## Schedule of Charges
+
+31) Handling charge, applied per consignment accepted for carriage.
+
+32) Late payment charge, accruing daily on any sum outstanding.
+`
+	matchers, _ := CompileRefMatchersVerbose([]config.RefPattern{
+		{Pattern: `^\s*(\d{1,4})\)`, MetaKey: "clause"},
+		{Pattern: `(?i)\bclauses?\s*(\d[\d.]*)`, MetaKey: "clause"},
+	})
+	ck, err := NewChunker(Options{ChunkSize: 2000, Overlap: 200})
+	require.NoError(t, err)
+	chunks, err := ck.SplitStructured(doc, "manual.md", matchers)
+	require.NoError(t, err)
+	require.Len(t, chunks, 1, "fixture must pack both sections into one chunk")
+
+	got := map[string]bool{}
+	for _, v := range strings.Split(chunks[0].Metadata["clause"], ",") {
+		got[strings.TrimSpace(v)] = true
+	}
+	for _, want := range []string{"31", "32", "33"} {
+		assert.True(t, got[want],
+			"clause %s must be addressable; a neighbouring numbered heading must not "+
+				"suppress this section's own numbering. got %v", want, got)
+	}
+}

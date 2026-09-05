@@ -28,6 +28,14 @@ import (
 //
 // The rejects are prose commentaries with no verse numbering at all, so
 // rejecting them is the correct answer rather than a missed detection.
+//
+// A scheme is judged on its own evidence, not on how many documents share it.
+// Requiring two was safe on the 61-document corpus this was calibrated against,
+// where any real scheme appeared in several, and wrong on a small mixed-genre
+// one, where each work brings its own convention: a scripture numbering 45
+// distinct passages as "97)" was discarded because the two commentaries beside
+// it did not use that form. Document spread still counts — it is a term in the
+// score below — but it no longer vetoes.
 
 const (
 	// minLabelHits is how often a label must appear corpus-wide before it is
@@ -142,14 +150,9 @@ func DetectRefPatterns(docs []Doc) ([]RefCandidate, string) {
 		}
 	}
 
-	minDocs := 1
-	if len(docs) >= 2 {
-		minDocs = 2
-	}
-
 	var cands []RefCandidate
 	consider := func(label string, st *labelStat, pattern, metaKey string) {
-		if st.hits < minLabelHits || len(st.docs) < minDocs {
+		if st.hits < minLabelHits {
 			return
 		}
 		distinct := map[int]bool{}

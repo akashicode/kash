@@ -744,6 +744,9 @@ func (c *Chunker) SplitStructured(text, source string, matchers []refMatcher) ([
 		if len(buf) == 0 {
 			return
 		}
+		// kept[i] is buf[i]'s text as it will appear in this chunk, so that
+		// references are read from exactly the text the chunk ends up holding.
+		kept := make([]string, len(buf))
 		texts := make([]string, 0, len(buf))
 		for i, u := range buf {
 			text := u.text
@@ -757,6 +760,7 @@ func (c *Chunker) SplitStructured(text, source string, matchers []refMatcher) ([
 			if i > 0 && u.follows {
 				text = stripCarry(text, u.carry)
 			}
+			kept[i] = text
 			if text != "" {
 				texts = append(texts, text)
 			}
@@ -788,12 +792,31 @@ func (c *Chunker) SplitStructured(text, source string, matchers []refMatcher) ([
 
 		// Collect every reference number in the chunk, deduplicated.
 		// One chunk can span multiple sections (e.g. Section 4.1 and 4.2).
-		headings := make([]string, len(buf))
+		//
+		// Each unit is read with its own heading, and the results merged. That
+		// keeps heading precedence within the section it belongs to: a section
+		// its heading already numbered does not take numbers from its own body,
+		// while a neighbouring section packed into the same chunk is judged on
+		// its own. Reading the whole chunk at once let one numbered heading
+		// silence every other section's numbering — invisible while a listing
+		// wrote a different key from the heading, and a real loss once both
+		// named the same one.
+		merged := map[string][]string{}
+		seenRef := map[string]map[string]bool{}
 		for i, u := range buf {
-			headings[i] = u.heading
+			for key, vals := range extractRefs([]string{u.heading}, kept[i], matchers) {
+				if seenRef[key] == nil {
+					seenRef[key] = map[string]bool{}
+				}
+				for _, v := range vals {
+					if !seenRef[key][v] {
+						seenRef[key][v] = true
+						merged[key] = append(merged[key], v)
+					}
+				}
+			}
 		}
-		allRefs := extractRefs(headings, body, matchers)
-		for key, vals := range allRefs {
+		for key, vals := range merged {
 			meta[key] = strings.Join(vals, ",")
 		}
 
@@ -891,7 +914,10 @@ const MaxRefPatternLen = 200
 //	    content budget rather than the raw chunk size; header segments capped.
 //	4 — reference values no longer keep punctuation the pattern captured by
 //	    accident; see NormalizeRefValue.
-const RulesVersion = 4
+//	5 — heading precedence applies per section rather than per chunk, so one
+//	    numbered heading no longer suppresses a neighbouring section's own
+//	    numbering.
+const RulesVersion = 5
 
 // multilineFlag makes a leading ^ mean start-of-line.
 //
