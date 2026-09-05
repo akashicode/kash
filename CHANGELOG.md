@@ -165,25 +165,36 @@ unchanged by this release.
 
 ### Requires rebuild
 
-Reference lookup is repaired **without** a rebuild — the fallback matches an
-index you already have. Two things do need one, and one of them needs the
-profile re-derived as well:
+Run both flags on an existing corpus:
 
-- `kash build --rebuild` clears reference values of the punctuation they used to
-  keep.
-- `kash build --rebuild --refresh-profile` is what renames the wordless
-  numbering scheme. `--rebuild` alone leaves `data/domain.profile.json` in
-  place, so the old key survives it. Until that runs, citations keep reading
-  `Section 96` for what the corpus calls verse 96.
+```bash
+kash build --rebuild --refresh-profile
+```
 
-Run `kash build --rebuild` to re-chunk an existing corpus: references away from
-the start of a chunk are recovered, and chunk text itself has changed. This is
-reported rather than enforced. The domain signature hashes the pattern strings,
-so neither a change to how those strings are *compiled* nor a change to how
-chunks are cut and joined can be detected by it. The manifest now records a
-`chunker_rules_version` instead, and the build warns when a corpus predates the
-current rules. An un-rebuilt corpus is degraded, not wrong — the references it
-recorded are correct and its chunks are readable.
+Both are needed, and the build enforces it. Detection now proposes different
+reference patterns, which changes the domain signature, so `kash build` refuses
+an already-indexed corpus until it is re-chunked. `--rebuild` alone is not
+enough: it leaves `data/domain.profile.json` in place, and the profile is where
+detection's output lives, so without `--refresh-profile` the old patterns
+survive and nothing this release fixes in detection takes effect.
+
+What each flag recovers:
+
+- `--refresh-profile` re-runs detection, which is what finds a numbering scheme
+  only one document uses, stops a passing citation outvoting the work that owns
+  the scheme, and lets the model name a wordless scheme in the corpus's own
+  word. It costs one model call.
+- `--rebuild` re-chunks, which is what applies per-section heading precedence,
+  removes duplicated overlap text, keeps chunks inside their size, and clears
+  the punctuation reference values used to keep. It re-embeds and re-extracts,
+  so it costs provider calls in proportion to the corpus.
+
+Serving an un-rebuilt corpus still works — there is no signature check at serve
+time — and one repair lands there without any rebuild at all: the exact-
+reference route's fallback to any key matches an index you already have.
+
+The manifest records a `chunker_rules_version` (now 5) alongside the domain
+signature, so a corpus built by an older binary is recognised and reported.
 
 ## [2.0.0] - 2026-09-04
 
