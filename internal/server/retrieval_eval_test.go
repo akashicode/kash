@@ -181,7 +181,7 @@ func evalIndex(t *testing.T) (*lexical.Index, map[string]vector.SearchResult) {
 
 	// Use Sanskrit domain config for this corpus (VBT-based eval fixtures).
 	dc := evalDomainConfig()
-	refMatchers := chunker.CompileRefMatchers(dc.Chunker.RefPatterns)
+	refMatchers, _ := chunker.CompileRefMatchersVerbose(dc.Chunker.RefPatterns)
 
 	ck, err := chunker.NewChunker(chunker.Options{ChunkSize: 2000, Overlap: 400})
 	require.NoError(t, err)
@@ -345,7 +345,7 @@ func TestRetrievalRecallOnReportedFailures(t *testing.T) {
 			var winner *vector.SearchResult
 			for i, r := range got {
 				sources = append(sources, r.Source)
-				if winner == nil && r.Source == tt.wantSource && contains(r.Content, tt.wantIn) {
+				if winner == nil && r.Source == tt.wantSource && strings.Contains(r.Content, tt.wantIn) {
 					winner = &got[i]
 				}
 			}
@@ -423,18 +423,7 @@ func splitRefs(meta string) []string {
 	return out
 }
 
-func contains(haystack, needle string) bool {
-	return needle == "" || len(haystack) >= len(needle) && indexOf(haystack, needle) >= 0
-}
 
-func indexOf(h, n string) int {
-	for i := 0; i+len(n) <= len(h); i++ {
-		if h[i:i+len(n)] == n {
-			return i
-		}
-	}
-	return -1
-}
 
 // TestNegativeControlVectorOnly measures the pipeline as it behaved before this
 // work: dense retrieval alone, with no lexical or exact-reference route. It is

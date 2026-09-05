@@ -859,14 +859,6 @@ func startsNewReference(buf []unit, u unit) bool {
 	return false
 }
 
-// CompileRefMatchers compiles the RefPatterns from the domain config into
-// refMatcher instances. Patterns that fail to compile are skipped with a
-// warning to avoid a fatal crash from a user typo in agent.yaml.
-func CompileRefMatchers(patterns []config.RefPattern) []refMatcher {
-	matchers, _ := CompileRefMatchersVerbose(patterns)
-	return matchers
-}
-
 // MaxRefPatternLen bounds a reference pattern. Patterns run against every
 // heading and body at build time and against every query at serve time, so an
 // unbounded one is a performance hazard as well as an unreadable one.

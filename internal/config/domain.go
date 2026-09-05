@@ -190,14 +190,6 @@ func DefaultDomainConfig() DomainConfig {
 	}
 }
 
-// LoadDomainConfig reads the extraction, resolution, and chunker sections from
-// an agent.yaml. Missing sections fall back to the generic defaults, so an old
-// agent.yaml keeps working unchanged.
-func LoadDomainConfig(path string) DomainConfig {
-	cfg, _ := ResolveDomainConfig(nil, path)
-	return cfg
-}
-
 // ResolveDomainConfig layers configuration: built-in defaults, then the
 // generated corpus profile, then agent.yaml. Later layers win per field, and
 // any layer may be absent.

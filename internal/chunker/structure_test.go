@@ -32,12 +32,13 @@ yoginastanmayatvena manorūḍhestadātmatā ..72..
 // sanskritMatchers returns the ref matchers for the Sanskrit preset, matching
 // verse/shloka/sutra/dharana/vidhi numbering patterns.
 func sanskritMatchers() []refMatcher {
-	return CompileRefMatchers([]config.RefPattern{
+	m, _ := CompileRefMatchersVerbose([]config.RefPattern{
 		{Pattern: `(?i)(?:^|[^a-z])(?:verse|śloka|shloka|sloka)\s*[-–—]?\s*(\d+)`, MetaKey: MetaVerse},
 		{Pattern: `(?i)(?:dh[aā]ra[nṇ][aā]|vidhi)\s*[-–—]?\s*(\d+)`, MetaKey: MetaDharana},
 		// Bare "32)" numbering used by some English VBT editions
 		{Pattern: `^\s*(\d{1,3})\)`, MetaKey: MetaVerse},
 	})
+	return m
 }
 
 func newTestChunker(t *testing.T) *Chunker {
@@ -459,12 +460,13 @@ func TestSplitStructuredKeepsChunksWithinChunkSize(t *testing.T) {
 // sanskritMatchers so the tagging rules can be tested without any assumption
 // about what the corpus is about.
 func genericMatchers() []refMatcher {
-	return CompileRefMatchers([]config.RefPattern{
+	m, _ := CompileRefMatchersVerbose([]config.RefPattern{
 		{Pattern: `(?i)\b(?:section|article|part)\s*(\d[\d.]*)`, MetaKey: MetaSection},
 		{Pattern: `(?i)\bclause\s+(\d[\d.]*)`, MetaKey: "clause"},
 		// Bare "12)" numbering, anchored to the start of a line.
 		{Pattern: `^\s*(\d{1,4})\)`, MetaKey: "item"},
 	})
+	return m
 }
 
 // Reference patterns are matched against a whole multi-line chunk body, so a

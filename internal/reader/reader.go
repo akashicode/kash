@@ -119,19 +119,6 @@ func LoadDirectory(dir string) ([]Document, []Rejection, error) {
 	return docs, rejected, nil
 }
 
-// LoadFile reads a single document from the given path.
-func LoadFile(path string) (Document, error) {
-	ext := strings.ToLower(filepath.Ext(path))
-	switch ext {
-	case ".md", ".txt", ".markdown":
-		return loadTextFile(path)
-	case ".pdf":
-		return loadPDF(path)
-	default:
-		return Document{}, fmt.Errorf("%w: %s", ErrUnsupportedFormat, ext)
-	}
-}
-
 func loadTextFile(path string) (Document, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -145,8 +132,6 @@ func loadTextFile(path string) (Document, error) {
 }
 
 func loadPDF(path string) (Document, error) {
-	// PDF extraction requires ledongthuc/pdfcpu or similar.
-	// We use a lightweight approach with pdfcpu's text extraction.
 	content, err := extractPDFText(path)
 	if err != nil {
 		return Document{}, fmt.Errorf("extract PDF text from %q: %w", path, err)
