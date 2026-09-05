@@ -165,7 +165,7 @@ func DetectRefPatterns(docs []Doc) ([]RefCandidate, string) {
 			return
 		}
 
-		seq := meanSequenceScore(st.nums)
+		seq := bestSequenceScore(st.nums)
 		coverage := 0.0
 		if totalHeadings > 0 {
 			coverage = float64(st.hits) / float64(totalHeadings)
@@ -232,23 +232,27 @@ func DetectRefPatterns(docs []Doc) ([]RefCandidate, string) {
 		totalHeadings, len(docs), strings.Join(parts, "; "))
 }
 
-// meanSequenceScore averages the per-document sequence score. Scoring per
-// document matters: numbering restarts at each volume, so pooling the numbers
-// from sixty documents would look like noise even for a perfect scheme.
-func meanSequenceScore(perDoc map[string][]int) float64 {
-	var total float64
-	var n int
+// bestSequenceScore takes the strongest per-document sequence score. Scoring
+// per document matters: numbering restarts at each volume, so pooling the
+// numbers from sixty documents would look like noise even for a perfect scheme.
+//
+// The best document decides, not the average. A scheme is a property of the
+// work that uses it, and one work quoting another's numbering in passing is not
+// evidence against that numbering. Averaging let the passing mention outvote
+// the real one: a scripture numbering 101 of its own verses scored 0.84, a
+// commentary citing nine of them scored 0.49, and the mean of 0.66 described
+// neither.
+func bestSequenceScore(perDoc map[string][]int) float64 {
+	best := 0.0
 	for _, nums := range perDoc {
 		if len(nums) < 3 {
 			continue
 		}
-		total += sequenceScore(nums)
-		n++
+		if s := sequenceScore(nums); s > best {
+			best = s
+		}
 	}
-	if n == 0 {
-		return 0
-	}
-	return total / float64(n)
+	return best
 }
 
 // sequenceScore blends how consistently values ascend, how densely they cover
@@ -285,8 +289,17 @@ func sequenceScore(nums []int) float64 {
 		}
 	}
 
+	// Numbering that begins near the start of its own range, rather than at an
+	// arbitrary high number the way page numbers and quantities do.
+	//
+	// Requiring the first value to be 1, 2 or 3 assumed every work is quoted
+	// whole. An anthology quoting ślokas 7 to 102 begins at the beginning of
+	// what it quotes, and was scored as though it began nowhere — enough on its
+	// own to sink a scheme carrying 41 headings and 40 distinct numbers. The
+	// test is now relative to the range, so a run starting a short way in still
+	// counts while one starting at 200 of 400 does not.
 	startsLow := 0.0
-	if minVal <= 3 {
+	if minVal <= 3 || (maxVal > 0 && minVal <= maxVal/10) {
 		startsLow = 1
 	}
 

@@ -15,6 +15,22 @@ those are called out under **Requires rebuild**.
 
 ### Fixed
 
+- **A scheme strongly used by one work was outvoted by a passing mention in
+  another.** Sequence scoring averaged across documents, so a scripture
+  numbering 101 of its own verses (0.84) and a commentary citing nine of them
+  (0.49) produced 0.66, describing neither. The strongest document now decides:
+  a numbering scheme belongs to the work that uses it, and another work quoting
+  it in passing is not evidence against it.
+
+- **Numbering that did not start at 1 was scored as though it started
+  nowhere.** A scheme was rewarded only when its lowest value was 1, 2 or 3,
+  which assumes every work is quoted whole. An anthology quoting ślokas 7 to 102
+  begins at the beginning of what it quotes; that penalty alone sank a scheme
+  carrying 41 headings and 40 distinct numbers, leaving its book with 8% of its
+  chunks addressable against a companion volume's 50%. The test is now relative
+  to the scheme's own range, so a run starting a short way in still counts while
+  page numbers starting halfway through do not.
+
 - **A numbering scheme used by only one document was discarded.** Detection
   required a scheme to appear in at least two documents before accepting it.
   That was safe on the 61-document corpus it was calibrated against, where any

@@ -183,3 +183,33 @@ func TestSanitizeMetaKeyFoldsTransliteration(t *testing.T) {
 	assert.Equal(t, "sloka", sanitizeMetaKey("śloka"))
 	assert.Equal(t, "verse", sanitizeMetaKey("Verses"))
 }
+
+// A numbering scheme is a property of the work that uses it. One work citing
+// another's numbering in passing is not evidence against that numbering, but
+// averaging the per-document scores let the passing mention outvote the real
+// one: a scripture numbering its own verses scored 0.84, a commentary citing
+// nine of them scored 0.49, and the mean of 0.66 described neither.
+func TestBestSequenceScoreIgnoresAPassingMention(t *testing.T) {
+	strong := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+	passing := []int{46, 47, 48}
+
+	both := map[string][]int{"scripture.md": strong, "commentary.md": passing}
+	only := map[string][]int{"scripture.md": strong}
+
+	assert.InDelta(t, bestSequenceScore(only), bestSequenceScore(both), 0.001,
+		"a commentary citing three numbers must not lower the scripture's own score")
+}
+
+// Requiring the first value to be 1, 2 or 3 assumed every work is quoted whole.
+// An anthology quoting ślokas 7 to 102 begins at the beginning of what it
+// quotes; scoring it as though it began nowhere was enough on its own to sink a
+// real scheme carrying 41 headings and 40 distinct numbers.
+func TestSequenceScoreAcceptsNumberingThatStartsPartWayIn(t *testing.T) {
+	extract := []int{7, 9, 10, 11, 13, 14, 15, 34, 35, 36, 60, 61, 63, 100, 102}
+	pages := []int{200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 400}
+
+	assert.Greater(t, sequenceScore(extract), sequenceScore(pages),
+		"an extract starting a short way into its range must outscore numbering that starts halfway in")
+	assert.Greater(t, sequenceScore(extract), 0.7,
+		"a monotonic extract is numbering, not noise")
+}
