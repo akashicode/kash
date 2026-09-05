@@ -15,6 +15,16 @@ those are called out under **Requires rebuild**.
 
 ### Fixed
 
+- **The generic reference words missed the commonest division of all.** The
+  built-in list covered section, clause, article and part, so a query naming a
+  chapter took no reference route at all — nor did paragraph, rule, schedule,
+  annex or appendix, which any policy, statute or standard uses. Added, along
+  with the section symbol, which never worked: a word boundary before a symbol
+  needs a word character in front of it, so `§ 9` at the start of a query could
+  not match. Deliberately still excluded are "item" and "step", which occur
+  constantly in ordinary prose. Measured on a corpus that uses none of these
+  words, the wider list added one tag across 895 chunks.
+
 - **A scheme strongly used by one work was outvoted by a passing mention in
   another.** Sequence scoring averaged across documents, so a scripture
   numbering 101 of its own verses (0.84) and a commentary citing nine of them

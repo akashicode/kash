@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -156,4 +157,44 @@ extraction:
 `)
 	d2, _ := ResolveDomainConfig(nil, path2)
 	assert.Equal(t, 3, d2.Extraction.GleanRounds)
+}
+
+// The generic reference words are the structural divisions any document may
+// carry, whatever it is about. A word naming the subject rather than the
+// structure is detected per corpus instead, so this list stays domain-neutral.
+func TestDefaultRefPatternsCoverGenericStructuralWords(t *testing.T) {
+	re := regexp.MustCompile(defaultRefPatterns[0].Pattern)
+
+	matches := map[string]string{
+		"chapter 7":         "7",
+		"Chapter 12 opens":  "12",
+		"paragraph 4.2":     "4.2",
+		"rule 11":           "11",
+		"schedule 2":        "2",
+		"annex 3":           "3",
+		"appendix 5":        "5",
+		"section 4.2":       "4.2",
+		"clause 22":         "22",
+		"article 5":         "5",
+		"part 3":            "3",
+		// A word boundary before a symbol needs a word character before it, so
+		// the one non-letter marker in the list used to be unreadable.
+		"§ 9":               "9",
+		"§9":                "9",
+		"see § 12.3":        "12.3",
+	}
+	for in, want := range matches {
+		m := re.FindStringSubmatch(in)
+		require.NotNil(t, m, "%q must yield a reference", in)
+		assert.Equal(t, want, m[1], "input %q", in)
+	}
+
+	// Words that appear constantly in ordinary prose must not become
+	// references, or every passage acquires a number that means nothing.
+	for _, in := range []string{
+		"the third step of the process", "item on the agenda",
+		"page 45", "figure 3", "table 2", "note 7", "line 4",
+	} {
+		assert.Nil(t, re.FindStringSubmatch(in), "%q must not yield a reference", in)
+	}
 }
