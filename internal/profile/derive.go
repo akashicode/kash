@@ -245,8 +245,7 @@ func applyMetaKeyNames(p *Profile, names map[string]string) int {
 		}
 		for i := range patterns {
 			// Only rename a key detection could not name itself.
-			if patterns[i].MetaKey == chunker.MetaSection &&
-				strings.Contains(strings.ToLower(patterns[i].Pattern), strings.ToLower(label)) {
+			if patterns[i].MetaKey == chunker.MetaSection && patternFor(patterns[i].Pattern, label) {
 				patterns[i].MetaKey = key
 				renamed++
 			}
@@ -256,6 +255,21 @@ func applyMetaKeyNames(p *Profile, names map[string]string) int {
 		p.Config.Chunker.RefPatterns = &patterns
 	}
 	return renamed
+}
+
+// patternFor reports whether pattern is the one detection built for label.
+//
+// A label-derived pattern embeds its own word — "verse" sits inside the regex
+// that matches it — so a substring test identifies it. The bare-number scheme
+// is the exception: its pattern is punctuation and a digit class, containing
+// none of its label's letters, so the substring test could never match it. That
+// silently excluded the only scheme with no word of its own, which is to say
+// the only scheme that needed naming at all.
+func patternFor(pattern, label string) bool {
+	if strings.EqualFold(label, ParenLabel) {
+		return pattern == ParenPattern
+	}
+	return strings.Contains(strings.ToLower(pattern), strings.ToLower(label))
 }
 
 func foldModeOf(p *Profile) string {

@@ -59,6 +59,19 @@ var labelRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])(\p{L}{3,15})\s*[-–—.]?\
 // parenHeadingRe finds bare "32)" numbering used by some editions.
 var parenHeadingRe = regexp.MustCompile(`^\s*(\d{1,4})\)`)
 
+// ParenLabel and ParenPattern name the bare "48)" numbering scheme.
+//
+// Every other scheme is named by the word next to its number, so detection can
+// call it what the corpus calls it. This one has no word — the number and a
+// bracket are the whole marker — so detection has nothing to name it with and
+// falls back to the generic section key. It is therefore the one scheme that
+// depends on the model to name it, and the label is a protocol token between
+// detection and that request rather than anything a reader sees.
+const (
+	ParenLabel   = "paren"
+	ParenPattern = `^\s*(\d{1,4})\)`
+)
+
 // RefCandidate is a proposed numbering scheme with the evidence for it.
 type RefCandidate struct {
 	Label      string
@@ -178,7 +191,7 @@ func DetectRefPatterns(docs []Doc) ([]RefCandidate, string) {
 		pattern := `(?i)(?:^|[^\p{L}])` + regexp.QuoteMeta(label) + `s?\s*[-–—.]?\s*(\d[\d.]*)`
 		consider(label, st, pattern, sanitizeMetaKey(label))
 	}
-	consider("paren", parenStat, `^\s*(\d{1,4})\)`, chunker.MetaSection)
+	consider(ParenLabel, parenStat, ParenPattern, chunker.MetaSection)
 
 	sort.Slice(cands, func(i, j int) bool {
 		if cands[i].Score != cands[j].Score {

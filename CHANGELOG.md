@@ -15,6 +15,38 @@ those are called out under **Requires rebuild**.
 
 ### Fixed
 
+- **A reference could be indexed and still unreachable.** The exact-reference
+  lookup has two sides that name the key independently: the chunker names it
+  from the pattern that matched the document, the query router from the pattern
+  that matched the query. Those are different texts, so the names need not agree
+  even when they mean the same passage — and nothing enforced that they would.
+  A work numbering its passages both as `Verse 51` in headings and `97)` in a
+  listing files the first under `verse` and the second under `section`; on the
+  corpus this was found on, 51 of 112 numbered passages were reachable only as
+  a section, and asking for the verse fell through to pure similarity, which
+  returned a back cover ahead of the passage. The route now falls back to
+  matching the number under any reference key when the named key holds nothing.
+  It can only add hits where there were none, so it never displaces a correct
+  match. Measured against an already-built index, with no rebuild: 61 of 112
+  reachable becomes 112 of 112.
+
+- **Reference patterns kept punctuation they captured by accident.** They end in
+  `(\d[\d.]*)` so they can capture `4.2`, which means they also capture the full
+  stop ending *"…in accordance with clause 22."* Stored as `22.`, that reference
+  matched no query for 22. Values are normalised when written and when compared,
+  so an index built before this resolves too.
+
+- **The one numbering scheme that needed naming was the one that could not be
+  named.** Every scheme is named by the word beside its number, and the model is
+  asked to supply a metadata key for each. The bare `48)` form has no word — its
+  pattern is punctuation and a digit class — so the match that assigns the
+  model's answer, a substring test against the pattern, could never fire for it,
+  and it stayed under the generic `section` key. That is why a verse could be
+  cited as `Section 96` and why the graph named `Section N` entities. The match
+  is now by scheme identity, and the model is told what the wordless label
+  means so it can answer with the corpus's own word — `clause` in a contract,
+  `verse` here.
+
 - **Structural references away from the start of a chunk were never indexed.**
   Reference patterns are matched against whole multi-line chunk bodies, but were
   compiled without `(?m)`, so a leading `^` meant start-of-*body* rather than
@@ -88,6 +120,17 @@ accounts for nearly all remaining oversized chunks — 422 of 434 — and is
 unchanged by this release.
 
 ### Requires rebuild
+
+Reference lookup is repaired **without** a rebuild — the fallback matches an
+index you already have. Two things do need one, and one of them needs the
+profile re-derived as well:
+
+- `kash build --rebuild` clears reference values of the punctuation they used to
+  keep.
+- `kash build --rebuild --refresh-profile` is what renames the wordless
+  numbering scheme. `--rebuild` alone leaves `data/domain.profile.json` in
+  place, so the old key survives it. Until that runs, citations keep reading
+  `Section 96` for what the corpus calls verse 96.
 
 Run `kash build --rebuild` to re-chunk an existing corpus: references away from
 the start of a chunk are recovered, and chunk text itself has changed. This is

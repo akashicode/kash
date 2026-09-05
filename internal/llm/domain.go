@@ -86,7 +86,12 @@ RULES:
 - proper_noun_predicates: the subset of predicates whose object is a person,
   work or product.
 - meta_keys: for each numbering label above, a short lowercase ASCII key a
-  reader would type — "dhāraṇā" becomes "dharana".
+  reader would type — "dhāraṇā" becomes "dharana". The label "paren" is not a
+  word from the corpus: it marks passages numbered as a bare "48)", with no
+  unit named beside the number. Give it the word this corpus uses for those
+  numbered passages elsewhere — the same key as that label — so one reference
+  is not filed under two names. If the corpus names no such unit, answer
+  "section".
 - Never invent a regular expression, a number, or a true/false value.`
 
 	raw, err := c.Complete(ctx, system, b.String())
