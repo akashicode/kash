@@ -65,6 +65,12 @@ type Manifest struct {
 	// existing triples on the old vocabulary: degraded, not corrupt, so it is
 	// reported rather than enforced.
 	PredicateSignature string `json:"predicate_signature,omitempty"`
+	// ChunkerRulesVersion pins how reference patterns were applied, which the
+	// domain signature cannot cover: that hashes the pattern strings, so a
+	// change to the way those strings are compiled leaves it identical. An
+	// older value means references were tagged under superseded rules — fewer
+	// of them found, not wrong ones — so it is reported rather than enforced.
+	ChunkerRulesVersion int `json:"chunker_rules_version,omitempty"`
 	// Documents maps source document name to its build state.
 	Documents map[string]*DocState `json:"documents"`
 }

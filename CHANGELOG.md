@@ -11,7 +11,190 @@ release that changes chunk boundaries, chunk metadata or the extraction
 vocabulary needs `kash build --rebuild` to take effect on an existing corpus —
 those are called out under **Requires rebuild**.
 
-## [Unreleased]
+## [2.1.0] - 2026-09-05
+
+### Fixed
+
+- **The generic reference words missed the commonest division of all.** The
+  built-in list covered section, clause, article and part, so a query naming a
+  chapter took no reference route at all — nor did paragraph, rule, schedule,
+  annex or appendix, which any policy, statute or standard uses. Added, along
+  with the section symbol, which never worked: a word boundary before a symbol
+  needs a word character in front of it, so `§ 9` at the start of a query could
+  not match. Deliberately still excluded are "item" and "step", which occur
+  constantly in ordinary prose. Measured on a corpus that uses none of these
+  words, the wider list added one tag across 895 chunks.
+
+- **A scheme strongly used by one work was outvoted by a passing mention in
+  another.** Sequence scoring averaged across documents, so a scripture
+  numbering 101 of its own verses (0.84) and a commentary citing nine of them
+  (0.49) produced 0.66, describing neither. The strongest document now decides:
+  a numbering scheme belongs to the work that uses it, and another work quoting
+  it in passing is not evidence against it.
+
+- **Numbering that did not start at 1 was scored as though it started
+  nowhere.** A scheme was rewarded only when its lowest value was 1, 2 or 3,
+  which assumes every work is quoted whole. An anthology quoting ślokas 7 to 102
+  begins at the beginning of what it quotes; that penalty alone sank a scheme
+  carrying 41 headings and 40 distinct numbers, leaving its book with 8% of its
+  chunks addressable against a companion volume's 50%. The test is now relative
+  to the scheme's own range, so a run starting a short way in still counts while
+  page numbers starting halfway through do not.
+
+- **A numbering scheme used by only one document was discarded.** Detection
+  required a scheme to appear in at least two documents before accepting it.
+  That was safe on the 61-document corpus it was calibrated against, where any
+  real scheme appeared in several, and wrong on a small mixed-genre one, where
+  each work brings its own convention. A scripture numbering 45 distinct
+  passages as `97)` — 51 occurrences, monotonicity 0.77, comfortably above the
+  acceptance score — was rejected because the two commentaries beside it did not
+  use that form, leaving 46 of its 112 numbered passages unreachable by number.
+  Document spread still counts as a term in the score; it no longer vetoes.
+
+- **One numbered heading suppressed every other section's numbering in the same
+  chunk.** A section whose heading already numbers it should not also take
+  numbers from its own body, or an ordinary list becomes verse numbering. That
+  rule was applied across the whole chunk rather than per section, so a listing
+  of `31)` and `32)` packed beside a `Verse 33` heading lost both of its
+  numbers. It was invisible while a bare listing wrote a different metadata key
+  from the heading, and became a real loss as soon as both named the same key.
+
+- **A reference could be indexed and still unreachable.** The exact-reference
+  lookup has two sides that name the key independently: the chunker names it
+  from the pattern that matched the document, the query router from the pattern
+  that matched the query. Those are different texts, so the names need not agree
+  even when they mean the same passage — and nothing enforced that they would.
+  A work numbering its passages both as `Verse 51` in headings and `97)` in a
+  listing files the first under `verse` and the second under `section`; on the
+  corpus this was found on, 51 of 112 numbered passages were reachable only as
+  a section, and asking for the verse fell through to pure similarity, which
+  returned a back cover ahead of the passage. The route now falls back to
+  matching the number under any reference key when the named key holds nothing.
+  It can only add hits where there were none, so it never displaces a correct
+  match. Measured against an already-built index, with no rebuild: 61 of 112
+  reachable becomes 112 of 112.
+
+- **Reference patterns kept punctuation they captured by accident.** They end in
+  `(\d[\d.]*)` so they can capture `4.2`, which means they also capture the full
+  stop ending *"…in accordance with clause 22."* Stored as `22.`, that reference
+  matched no query for 22. Values are normalised when written and when compared,
+  so an index built before this resolves too.
+
+- **The one numbering scheme that needed naming was the one that could not be
+  named.** Every scheme is named by the word beside its number, and the model is
+  asked to supply a metadata key for each. The bare `48)` form has no word — its
+  pattern is punctuation and a digit class — so the match that assigns the
+  model's answer, a substring test against the pattern, could never fire for it,
+  and it stayed under the generic `section` key. That is why a verse could be
+  cited as `Section 96` and why the graph named `Section N` entities. The match
+  is now by scheme identity, and the model is told what the wordless label
+  means so it can answer with the corpus's own word — `clause` in a contract,
+  `verse` here.
+
+- **Structural references away from the start of a chunk were never indexed.**
+  Reference patterns are matched against whole multi-line chunk bodies, but were
+  compiled without `(?m)`, so a leading `^` meant start-of-*body* rather than
+  start-of-line. A pattern like `^\s*(\d{1,4})\)` therefore tagged a marker only
+  when the chunk happened to begin with it, and every later marker in the same
+  chunk was dropped — present in the text, and unaddressable by number. On the
+  corpus this was found on, 22 of 112 numbered passages were missing their
+  reference; queries naming them took the exact-reference route to an empty
+  result and fell back to similarity, returning the book's introduction instead
+  of the passage asked for. Coverage on that corpus goes from 90/112 to 112/112.
+
+  This affected any corpus whose markers sit mid-chunk — `Section 4.2` in a
+  spec, `Clause 7` in a contract, `48)` in a numbered list — not only verse
+  numbering.
+
+- **The chunker and the retrieval layer compiled the same patterns
+  differently.** Queries are single-line, so the missing flag was harmless
+  there and destructive at build time; the two sides could disagree about what
+  a pattern matches. Both now compile through `chunker.CompileRefPattern`.
+
+- **Headings now take precedence over the body, per reference key.** A heading
+  names what a chunk *is*, so an ordinary numbered list in the body no longer
+  contributes bogus reference numbers to a chunk a heading already numbered.
+  The body is still scanned for every key no heading answered, which is what
+  keeps a run of numbered passages addressable by each of them.
+
+- **Chunks repeated their own overlap text.** Consecutive pieces of a section
+  share an overlap tail so a passage split across a chunk boundary reads whole
+  in both. When two such pieces were packed into the *same* chunk there was no
+  boundary to bridge, and they were joined verbatim — so a sentence appearing
+  once in the source appeared twice in the retrieved passage. A window that
+  consisted of nothing but the carried tail was also emitted as a piece of its
+  own, though the function had always claimed in a comment to drop it. Affected
+  chunks across the two books measured: 37 → 4.
+
+- **Chunks ran past the size they were budgeted against.** The body was packed
+  to the full chunk size and the citation header was prefixed to it afterwards,
+  so every chunk that filled its buffer overshot by the length of its header.
+  Packing now uses the same content budget the pieces were cut to.
+
+- **A citation header could be longer than the passage it located.** A heading
+  is whatever follows the hashes, so a document that numbers its passages by
+  putting the passage in the heading produced a breadcrumb segment hundreds of
+  characters long — unquotable, and prefixed to every chunk of that section.
+  Segments are now capped for display; chunk metadata keeps the full heading.
+  The ratio that was meant to bound this clamped the *deduction* rather than the
+  header, which inverted the guarantee it was written for.
+
+- **Entity summaries were shown however weakly they matched.** The entity query
+  is top-K with no cutoff, so it returned its full quota whenever the corpus held
+  that many entities. On a question the corpus could not answer, the context
+  block opened by orienting the reader around whatever was nearest in embedding
+  space. The relevance floor already applied to graph seeding and provenance now
+  applies to what is shown, and is a named constant rather than a literal
+  repeated at three call sites.
+
+### Added
+
+- **`kash build` reports reference keys that tagged nothing.** Profiles outlive
+  the corpus they were derived from, so a profile carries patterns for
+  structures the current documents may not contain. Such a key is dead weight —
+  queries naming it silently fall back to similarity — and the build now says
+  so instead of leaving it invisible.
+
+### Known limitation
+
+A chunk can still exceed the configured size when a single source line is longer
+than the budget: splitting cuts on line boundaries, so a paragraph written as one
+unbroken line is indivisible and is emitted whole. On the corpus measured this
+accounts for nearly all remaining oversized chunks — 422 of 434 — and is
+unchanged by this release.
+
+### Requires rebuild
+
+Run both flags on an existing corpus:
+
+```bash
+kash build --rebuild --refresh-profile
+```
+
+Both are needed, and the build enforces it. Detection now proposes different
+reference patterns, which changes the domain signature, so `kash build` refuses
+an already-indexed corpus until it is re-chunked. `--rebuild` alone is not
+enough: it leaves `data/domain.profile.json` in place, and the profile is where
+detection's output lives, so without `--refresh-profile` the old patterns
+survive and nothing this release fixes in detection takes effect.
+
+What each flag recovers:
+
+- `--refresh-profile` re-runs detection, which is what finds a numbering scheme
+  only one document uses, stops a passing citation outvoting the work that owns
+  the scheme, and lets the model name a wordless scheme in the corpus's own
+  word. It costs one model call.
+- `--rebuild` re-chunks, which is what applies per-section heading precedence,
+  removes duplicated overlap text, keeps chunks inside their size, and clears
+  the punctuation reference values used to keep. It re-embeds and re-extracts,
+  so it costs provider calls in proportion to the corpus.
+
+Serving an un-rebuilt corpus still works — there is no signature check at serve
+time — and one repair lands there without any rebuild at all: the exact-
+reference route's fallback to any key matches an index you already have.
+
+The manifest records a `chunker_rules_version` (now 5) alongside the domain
+signature, so a corpus built by an older binary is recognised and reported.
 
 ## [2.0.0] - 2026-09-04
 

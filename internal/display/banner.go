@@ -9,8 +9,8 @@ import (
 // ANSI color codes
 const (
 	reset  = "\033[0m"
-	bold   = "\033[1m"
-	dim    = "\033[2m"
+	Bold   = "\033[1m"
+	Dim    = "\033[2m"
 	italic = "\033[3m"
 
 	red     = "\033[31m"
@@ -19,19 +19,16 @@ const (
 	blue    = "\033[34m"
 	magenta = "\033[35m"
 	cyan    = "\033[36m"
-	white   = "\033[37m"
+	White   = "\033[37m"
 
 	brightRed     = "\033[91m"
-	brightGreen   = "\033[92m"
-	brightYellow  = "\033[93m"
+	BrightGreen   = "\033[92m"
+	BrightYellow  = "\033[93m"
 	brightBlue    = "\033[94m"
-	brightMagenta = "\033[95m"
-	brightCyan    = "\033[96m"
+	BrightMagenta = "\033[95m"
+	BrightCyan    = "\033[96m"
 	brightWhite   = "\033[97m"
 
-	bgBlue    = "\033[44m"
-	bgMagenta = "\033[45m"
-	bgCyan    = "\033[46m"
 )
 
 // ServerInfo holds all the information to display in the startup banner.
@@ -77,8 +74,8 @@ func PrintBanner(info ServerInfo) {
 
 	// Header
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "  %s%s⚡ Kash Runtime Server%s\n", bold, brightCyan, reset)
-	fmt.Fprintf(w, "  %s%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", dim, cyan, reset)
+	fmt.Fprintf(w, "  %s%s⚡ Kash Runtime Server%s\n", Bold, BrightCyan, reset)
+	fmt.Fprintf(w, "  %s%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", Dim, cyan, reset)
 	fmt.Fprintln(w)
 
 	// Agent Info section
@@ -89,89 +86,89 @@ func PrintBanner(info ServerInfo) {
 		if len(desc) > 60 {
 			desc = desc[:57] + "..."
 		}
-		printKV(w, "Description", desc, white)
+		printKV(w, "Description", desc, White)
 	}
 	if info.AgentVersion != "" {
-		printKV(w, "Version", info.AgentVersion, white)
+		printKV(w, "Version", info.AgentVersion, White)
 	}
 	fmt.Fprintln(w)
 
 	// Knowledge Base section
 	printSectionHeader(w, "📚 Knowledge Base")
-	printKVColored(w, "Vectors", formatCount(info.VectorCount), brightGreen)
+	printKVColored(w, "Vectors", formatCount(info.VectorCount), BrightGreen)
 	if info.EntityCount > 0 {
-		printKVColored(w, "Entities", formatCount(info.EntityCount), brightGreen)
+		printKVColored(w, "Entities", formatCount(info.EntityCount), BrightGreen)
 	}
 	if info.RelationshipCount > 0 {
-		printKVColored(w, "Relationships", formatCount(info.RelationshipCount), brightGreen)
+		printKVColored(w, "Relationships", formatCount(info.RelationshipCount), BrightGreen)
 	}
-	printKVColored(w, "Graph Triples", formatCount64(info.TripleCount), brightGreen)
+	printKVColored(w, "Graph Triples", formatCount64(info.TripleCount), BrightGreen)
 	if info.MCPTools > 0 {
-		printKVColored(w, "MCP Tools", fmt.Sprintf("%d", info.MCPTools), brightGreen)
+		printKVColored(w, "MCP Tools", fmt.Sprintf("%d", info.MCPTools), BrightGreen)
 	}
-	printKVColored(w, "Embed Dimensions", fmt.Sprintf("%d", info.EmbedDimensions), brightYellow)
+	printKVColored(w, "Embed Dimensions", fmt.Sprintf("%d", info.EmbedDimensions), BrightYellow)
 	fmt.Fprintln(w)
 
 	// Runtime Config section
 	printSectionHeader(w, "⚙️  Runtime Configuration")
-	printKV(w, "LLM Model", info.LLMModel, brightMagenta)
-	printKV(w, "LLM Endpoint", maskURL(info.LLMBaseURL), dim+white)
+	printKV(w, "LLM Model", info.LLMModel, BrightMagenta)
+	printKV(w, "LLM Endpoint", maskURL(info.LLMBaseURL), Dim+White)
 	if info.EmbedModel != "" {
-		printKV(w, "Embed Model", info.EmbedModel, brightMagenta)
+		printKV(w, "Embed Model", info.EmbedModel, BrightMagenta)
 	} else {
-		printKV(w, "Embed Model", "(router — no model specified)", dim+yellow)
+		printKV(w, "Embed Model", "(router — no model specified)", Dim+yellow)
 	}
-	printKV(w, "Embed Endpoint", maskURL(info.EmbedBaseURL), dim+white)
+	printKV(w, "Embed Endpoint", maskURL(info.EmbedBaseURL), Dim+White)
 	if info.RerankBaseURL != "" {
-		printKVColored(w, "Reranker", "✓ enabled", brightGreen)
+		printKVColored(w, "Reranker", "✓ enabled", BrightGreen)
 		if info.RerankModel != "" {
-			printKV(w, "Rerank Model", info.RerankModel, brightMagenta)
+			printKV(w, "Rerank Model", info.RerankModel, BrightMagenta)
 		}
-		printKV(w, "Rerank Endpoint", maskURL(info.RerankBaseURL), dim+white)
+		printKV(w, "Rerank Endpoint", maskURL(info.RerankBaseURL), Dim+White)
 	} else {
-		printKVColored(w, "Reranker", "✗ disabled", dim+white)
+		printKVColored(w, "Reranker", "✗ disabled", Dim+White)
 	}
 	if info.AuthEnabled {
-		printKVColored(w, "Auth", "✓ API key required", brightGreen)
+		printKVColored(w, "Auth", "✓ API key required", BrightGreen)
 	} else {
-		printKVColored(w, "Auth", "✗ open (set AGENT_API_KEY to enable)", brightYellow)
+		printKVColored(w, "Auth", "✗ open (set AGENT_API_KEY to enable)", BrightYellow)
 	}
 	fmt.Fprintln(w)
 
 	// Endpoints section
 	printSectionHeader(w, "🌐 Endpoints")
 	printEndpoint(w, "REST ", "POST", host+"/v1/chat/completions", brightBlue)
-	printEndpoint(w, "MCP  ", "GET ", host+"/mcp", brightCyan)
-	printEndpoint(w, "A2A  ", "POST", host+"/rpc/agent", brightMagenta)
+	printEndpoint(w, "MCP  ", "GET ", host+"/mcp", BrightCyan)
+	printEndpoint(w, "A2A  ", "POST", host+"/rpc/agent", BrightMagenta)
 	printEndpoint(w, "Health", "GET ", host+"/health", green)
 	fmt.Fprintln(w)
 
 	// Footer
-	fmt.Fprintf(w, "  %s%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", dim, cyan, reset)
-	fmt.Fprintf(w, "  %s%s🚀 Server listening on %s%s%s%s\n", dim, white, reset, bold+brightGreen, host, reset)
-	fmt.Fprintf(w, "  %s%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", dim, cyan, reset)
+	fmt.Fprintf(w, "  %s%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", Dim, cyan, reset)
+	fmt.Fprintf(w, "  %s%s🚀 Server listening on %s%s%s%s\n", Dim, White, reset, Bold+BrightGreen, host, reset)
+	fmt.Fprintf(w, "  %s%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", Dim, cyan, reset)
 	fmt.Fprintln(w)
 }
 
 func printSectionHeader(w *os.File, title string) {
-	fmt.Fprintf(w, "  %s%s%s%s\n", bold, brightYellow, title, reset)
+	fmt.Fprintf(w, "  %s%s%s%s\n", Bold, BrightYellow, title, reset)
 }
 
 func printKV(w *os.File, key, value, valueColor string) {
 	paddedKey := padRight(key, 18)
-	fmt.Fprintf(w, "    %s%s%s  %s%s%s\n", dim, paddedKey, reset, valueColor, value, reset)
+	fmt.Fprintf(w, "    %s%s%s  %s%s%s\n", Dim, paddedKey, reset, valueColor, value, reset)
 }
 
 func printKVColored(w *os.File, key, value, valueColor string) {
 	paddedKey := padRight(key, 18)
-	fmt.Fprintf(w, "    %s%s%s  %s%s%s%s\n", dim, paddedKey, reset, bold, valueColor, value, reset)
+	fmt.Fprintf(w, "    %s%s%s  %s%s%s%s\n", Dim, paddedKey, reset, Bold, valueColor, value, reset)
 }
 
 func printEndpoint(w *os.File, label, method, url, color string) {
 	paddedLabel := padRight(label, 8)
 	fmt.Fprintf(w, "    %s%s%s %s%s%-5s%s %s%s%s\n",
-		dim, paddedLabel, reset,
-		bold, brightWhite, method, reset,
+		Dim, paddedLabel, reset,
+		Bold, brightWhite, method, reset,
 		color, url, reset,
 	)
 }

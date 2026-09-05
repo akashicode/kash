@@ -297,6 +297,19 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		m.PredicateSignature = profile.PredicateSignature(domainCfg)
 	}
 
+	// How chunks are cut, joined and tagged is invisible to the domain
+	// signature, which hashes the pattern strings rather than the rules applied
+	// to them. An older corpus is degraded rather than wrong — the references
+	// it did record are correct, and its chunks are readable — so this is
+	// reported, not enforced.
+	if len(m.Documents) > 0 && m.ChunkerRulesVersion < chunker.RulesVersion {
+		display.StepWarn(fmt.Sprintf(
+			"corpus was built under chunking rules v%d (now v%d) — references away from the start of a "+
+				"chunk were missed, and chunk text has changed; run 'kash build --rebuild' to re-chunk "+
+				"the whole corpus", m.ChunkerRulesVersion, chunker.RulesVersion))
+	}
+	m.ChunkerRulesVersion = chunker.RulesVersion
+
 	// Step 3: Plan — decide per document whether to skip, add, replace, or resume
 	display.Step(3, 7, "Planning incremental build...")
 	var pending []docPlan
@@ -630,6 +643,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	if corpusChanged || !fileExists(lexicalPath) {
 		display.Step(5, 7, "Building lexical index...")
 		lx := lexical.NewWithFold(domainCfg.Resolution.FoldDiacritics)
+		// Tally reference coverage while every document is already in hand.
+		// This loop is the only one that sees the whole corpus — the indexing
+		// loop above walks pending documents only, so a tally there would
+		// report every key as unused on an incremental build.
+		refCoverage := map[string]int{}
 		for _, doc := range docs {
 			chunks, err := ck.SplitStructured(doc.Content, doc.Name, refMatchers)
 			if err != nil {
@@ -637,6 +655,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 			}
 			for _, c := range chunks {
 				lx.Add(c.ID, c.Content, chunkLexicalMeta(c))
+				for _, p := range domainCfg.Chunker.RefPatterns {
+					if c.Metadata[p.MetaKey] != "" {
+						refCoverage[p.MetaKey]++
+					}
+				}
 			}
 		}
 		lx.Finalize()
@@ -644,6 +667,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("save lexical index: %w", err)
 		}
 		display.StepResult("Indexed", fmt.Sprintf("%d chunks for keyword search", lx.Len()))
+		for _, key := range unusedRefKeys(domainCfg.Chunker.RefPatterns, refCoverage) {
+			display.StepWarn(fmt.Sprintf(
+				"chunker: no chunk carries reference %q — its pattern(s) matched nothing in this corpus, "+
+					"so queries naming it cannot take the exact-reference route", key))
+		}
 	}
 
 	// Step 5: Generate and embed entity descriptions
@@ -829,6 +857,35 @@ func chunkLexicalMeta(c chunker.Chunk) map[string]string {
 	}
 	meta["source"] = c.Source
 	return meta
+}
+
+// unusedRefKeys returns the reference keys that tagged no chunk at all, in the
+// order their patterns are configured.
+//
+// Reference patterns are derived from the corpus, but the corpus can change
+// underneath them — profiles are reused across builds, and a profile derived
+// from a large collection keeps patterns for structures the current documents
+// do not contain. A key that matches nothing is dead weight: queries naming it
+// take the exact-reference route to an empty result and fall back to
+// similarity, silently.
+//
+// Coverage is counted per meta key rather than per pattern because several
+// patterns may write the same key, and chunk metadata records only the value
+// that won — which pattern produced it is not recoverable after the fact. A key
+// is therefore unused only when every pattern writing it matched nothing.
+func unusedRefKeys(patterns []agentconfig.RefPattern, coverage map[string]int) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, p := range patterns {
+		if p.MetaKey == "" || p.Pattern == "" || seen[p.MetaKey] {
+			continue
+		}
+		seen[p.MetaKey] = true
+		if coverage[p.MetaKey] == 0 {
+			out = append(out, p.MetaKey)
+		}
+	}
+	return out
 }
 
 // mcpSampleBudget caps the corpus excerpt handed to the description generator.

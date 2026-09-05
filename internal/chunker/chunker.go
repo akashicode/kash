@@ -3,6 +3,7 @@ package chunker
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -307,24 +308,13 @@ func splitSentences(text string) []string {
 
 func buildChunkID(source string, idx int) string {
 	if source == "" {
-		return "chunk_" + itoa(idx)
+		return "chunk_" + strconv.Itoa(idx)
 	}
 	// Sanitize source for use as an ID prefix
 	sanitized := strings.ReplaceAll(source, "/", "_")
 	sanitized = strings.ReplaceAll(sanitized, "\\", "_")
 	sanitized = strings.ReplaceAll(sanitized, ".", "_")
 	sanitized = strings.ReplaceAll(sanitized, " ", "_")
-	return sanitized + "_" + itoa(idx)
+	return sanitized + "_" + strconv.Itoa(idx)
 }
 
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	digits := []byte{}
-	for i > 0 {
-		digits = append([]byte{byte('0' + i%10)}, digits...)
-		i /= 10
-	}
-	return string(digits)
-}

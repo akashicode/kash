@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,12 +32,13 @@ yoginastanmayatvena manorūḍhestadātmatā ..72..
 // sanskritMatchers returns the ref matchers for the Sanskrit preset, matching
 // verse/shloka/sutra/dharana/vidhi numbering patterns.
 func sanskritMatchers() []refMatcher {
-	return CompileRefMatchers([]config.RefPattern{
+	m, _ := CompileRefMatchersVerbose([]config.RefPattern{
 		{Pattern: `(?i)(?:^|[^a-z])(?:verse|śloka|shloka|sloka)\s*[-–—]?\s*(\d+)`, MetaKey: MetaVerse},
 		{Pattern: `(?i)(?:dh[aā]ra[nṇ][aā]|vidhi)\s*[-–—]?\s*(\d+)`, MetaKey: MetaDharana},
 		// Bare "32)" numbering used by some English VBT editions
 		{Pattern: `^\s*(\d{1,3})\)`, MetaKey: MetaVerse},
 	})
+	return m
 }
 
 func newTestChunker(t *testing.T) *Chunker {
@@ -279,6 +281,274 @@ func TestCompileRefMatchersAcceptsValidPattern(t *testing.T) {
 	assert.Empty(t, warnings)
 }
 
+// Consecutive pieces of a section overlap so a passage split across a chunk
+// boundary reads whole in both. When two such pieces are packed into one chunk
+// there is no boundary to bridge, and joining them verbatim stored the shared
+// text twice — a sentence appearing once in the source appeared twice in what
+// the reader was shown. On the corpus this was found on, removing this strip
+// puts the duplication back: 0 affected chunks becomes 9 and 4 becomes 25.
+//
+// stripCarry is deliberately conservative. Text is removed only when the piece
+// demonstrably begins with what was carried into it, because a corpus repeats
+// lines for real reasons and those must survive.
+func TestStripCarry(t *testing.T) {
+	tests := []struct {
+		name  string
+		text  string
+		carry string
+		want  string
+	}{
+		{
+			name:  "removes the carried prefix",
+			text:  "9) Know that to be insubstantial.\n\n10) The world is a dream.",
+			carry: "9) Know that to be insubstantial.",
+			want:  "10) The world is a dream.",
+		},
+		{
+			name:  "a piece that is nothing but carry empties out",
+			text:  "9) Know that to be insubstantial.",
+			carry: "9) Know that to be insubstantial.",
+			want:  "",
+		},
+		{
+			name:  "tolerates blank lines on either side",
+			text:  "\nfirst carried line\n\n\nsecond carried line\n\nnew material here",
+			carry: "first carried line\n\nsecond carried line",
+			want:  "new material here",
+		},
+		{
+			// The rejected alternative — matching the seam by eye — would eat
+			// this. A repeated line that was not carried must be left alone.
+			name:  "leaves text that merely resembles the carry",
+			text:  "Digitised by the archive.\n\nA different opening line.",
+			carry: "A different opening line.",
+			want:  "Digitised by the archive.\n\nA different opening line.",
+		},
+		{
+			name:  "leaves text when the carry runs past the end of it",
+			text:  "only one line here",
+			carry: "only one line here\nand a second the piece never had",
+			want:  "only one line here",
+		},
+		{
+			name:  "no carry is a no-op",
+			text:  "unchanged text",
+			carry: "",
+			want:  "unchanged text",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, stripCarry(tt.text, tt.carry))
+		})
+	}
+}
+
+// A chunk should never show the same line twice when the source shows it once.
+// This is a broad invariant over the packer rather than a guard on one change:
+// it holds whether the repetition would have come from the overlap carry or
+// from a piece that was nothing but carry.
+func TestSplitStructuredDoesNotRepeatOverlapWithinAChunk(t *testing.T) {
+	// A section whose body splits into pieces that then pack back into one
+	// chunk — a wide overlap relative to the section is what makes the second
+	// piece little more than a repeat of the first one's tail.
+	var sb strings.Builder
+	sb.WriteString("# Operations Manual\n\n## Escalation Procedure\n\n")
+	for i := 1; i <= 12; i++ {
+		fmt.Fprintf(&sb, "Step %d: notify the duty officer and record the incident reference in the log.\n\n", i)
+	}
+
+	ck, err := NewChunker(Options{ChunkSize: 400, Overlap: 200})
+	require.NoError(t, err)
+	chunks, err := ck.SplitStructured(sb.String(), "manual.md", nil)
+	require.NoError(t, err)
+	require.Greater(t, len(chunks), 1, "fixture must split into several chunks")
+
+	for i, c := range chunks {
+		seen := map[string]bool{}
+		for _, line := range strings.Split(c.Content, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			assert.False(t, seen[line],
+				"chunk %d repeats a line that occurs once in the source: %q", i, line)
+			seen[line] = true
+		}
+	}
+}
+
+// Text that genuinely repeats must survive. Stripping the overlap by comparing
+// the seam would eat a refrain, a repeated table header, or the digitisation
+// footer that recurs on every page of a scanned book.
+func TestSplitStructuredKeepsGenuinelyRepeatedText(t *testing.T) {
+	doc := `# Field Notes
+
+## Observations
+
+Digitised by the archive. All rights reserved.
+
+The specimen was measured at first light and again at dusk.
+
+Digitised by the archive. All rights reserved.
+
+A second specimen was recovered from the eastern slope.
+`
+	ck, err := NewChunker(Options{ChunkSize: 2000, Overlap: 400})
+	require.NoError(t, err)
+	chunks, err := ck.SplitStructured(doc, "notes.md", nil)
+	require.NoError(t, err)
+	require.Len(t, chunks, 1, "fixture is small enough to be one chunk")
+
+	assert.Equal(t, 2, strings.Count(chunks[0].Content, "Digitised by the archive."),
+		"a line the source really does repeat must not be stripped as overlap")
+}
+
+// A heading is whatever follows the hashes, so a document that numbers its
+// passages by putting the passage in the heading produced a citation header
+// hundreds of characters long — unquotable, and prefixed to every chunk of that
+// section. The budget clamp meant to prevent that clamped the deduction rather
+// than the header, so an oversized header both rendered in full and pushed the
+// finished chunk past ChunkSize.
+func TestContextHeaderCapsLongSegments(t *testing.T) {
+	long := "4.2 The Provider shall ensure that all consignments accepted for carriage " +
+		"are handled in accordance with the schedule of charges set out in this agreement"
+
+	got := contextHeader(map[string]string{
+		MetaBook:       "Service Agreement",
+		MetaBreadcrumb: "Service Agreement > " + long,
+		"clause":       "22",
+	})
+
+	assert.LessOrEqual(t, utf8.RuneCountInString(got), 160,
+		"a citation header must stay short enough to quote; got %q", got)
+	assert.Contains(t, got, "…", "a truncated segment should show it was cut")
+	assert.Contains(t, got, "Clause 22", "the reference label must survive truncation")
+	assert.Contains(t, got, "The Provider shall", "the start of the heading must be kept")
+}
+
+func TestSplitStructuredKeepsChunksWithinChunkSize(t *testing.T) {
+	long := "The Provider shall ensure that all consignments accepted for carriage are " +
+		"handled in accordance with the schedule of charges set out in this agreement"
+
+	// Many short sections, each its own heading — the shape that packs several
+	// units into one chunk and so fills the buffer to the limit before the
+	// citation header is prefixed to it.
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "# Service Agreement\n\n## %s\n\n", long)
+	for i := 1; i <= 60; i++ {
+		fmt.Fprintf(&sb, "### Item %d\nCharges are reviewed annually and published in the schedule of fees.\n\n", i)
+	}
+
+	const size = 1000
+	ck, err := NewChunker(Options{ChunkSize: size, Overlap: 100})
+	require.NoError(t, err)
+	chunks, err := ck.SplitStructured(sb.String(), "agreement.md", nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, chunks)
+
+	for i, c := range chunks {
+		assert.LessOrEqual(t, utf8.RuneCountInString(c.Content), size,
+			"chunk %d is %d runes, over the %d-rune limit it was budgeted against",
+			i, utf8.RuneCountInString(c.Content), size)
+	}
+}
+
+// genericMatchers returns domain-neutral reference matchers — the shapes a
+// contract, statute or specification uses. Kept separate from
+// sanskritMatchers so the tagging rules can be tested without any assumption
+// about what the corpus is about.
+func genericMatchers() []refMatcher {
+	m, _ := CompileRefMatchersVerbose([]config.RefPattern{
+		{Pattern: `(?i)\b(?:section|article|part)\s*(\d[\d.]*)`, MetaKey: MetaSection},
+		{Pattern: `(?i)\bclause\s+(\d[\d.]*)`, MetaKey: "clause"},
+		// Bare "12)" numbering, anchored to the start of a line.
+		{Pattern: `^\s*(\d{1,4})\)`, MetaKey: "item"},
+	})
+	return m
+}
+
+// Reference patterns are matched against a whole multi-line chunk body, so a
+// leading ^ has to mean start-of-line. Compiled without (?m) it meant
+// start-of-body instead, and every marker but the first in a chunk went
+// untagged — on the corpus this was found on, 22 of 112 references were
+// silently unaddressable while sitting in plain text.
+//
+// This is deliberately written with generic references: the rule is about
+// where a marker sits in a chunk, not about what kind of document it is.
+func TestSplitStructuredTagsReferencesAwayFromChunkStart(t *testing.T) {
+	tests := []struct {
+		name    string
+		doc     string
+		metaKey string
+		want    []string
+	}{
+		{
+			// The regression: markers on their own lines, none of them first.
+			name: "anchored pattern mid-body",
+			doc: "# Schedule of Fees\n\n## Listing\n\n" +
+				"7) handling charge\n\n8) late payment charge\n\n9) reissue charge\n",
+			metaKey: "item",
+			want:    []string{"7", "8", "9"},
+		},
+		{
+			// The control: an unanchored pattern always worked.
+			name:    "unanchored pattern mid-body",
+			doc:     "# Agreement\n\n## Terms\n\nThe parties agree.\n\nSee clause 14 and clause 15 below.\n",
+			metaKey: "clause",
+			want:    []string{"14", "15"},
+		},
+		{
+			// A heading answers the key, so the body is not consulted for it.
+			// An ordinary numbered list must not become reference numbering.
+			name: "heading wins over body list",
+			doc: "# Policy\n\n### Section 4\nThe applicant must supply the following.\n\n" +
+				"1) proof of address\n2) proof of income\n",
+			metaKey: MetaSection,
+			want:    []string{"4"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ck := newTestChunker(t)
+			chunks, err := ck.SplitStructured(tt.doc, "doc.md", genericMatchers())
+			require.NoError(t, err)
+			require.NotEmpty(t, chunks)
+
+			got := map[string]bool{}
+			for _, c := range chunks {
+				for _, v := range strings.Split(c.Metadata[tt.metaKey], ",") {
+					if v = strings.TrimSpace(v); v != "" {
+						got[v] = true
+					}
+				}
+			}
+			for _, w := range tt.want {
+				assert.True(t, got[w],
+					"reference %q must be addressable under key %q, got %v", w, tt.metaKey, got)
+			}
+		})
+	}
+}
+
+// The chunker and the retrieval layer compile the same configured patterns for
+// different inputs — chunk bodies and queries. When they compiled them
+// differently, a query could name a reference the index had never recorded.
+// Both now go through CompileRefPattern; this pins the flag it applies.
+func TestCompileRefPatternIsLineAnchored(t *testing.T) {
+	re, err := CompileRefPattern(config.RefPattern{
+		Pattern: `^\s*(\d{1,4})\)`, MetaKey: "item",
+	})
+	require.NoError(t, err)
+
+	hits := re.FindAllStringSubmatch("intro line\n7) first\n8) second\n", -1)
+	require.Len(t, hits, 2, "^ must match at each line start, not only at the start of the string")
+	assert.Equal(t, "7", hits[0][1])
+	assert.Equal(t, "8", hits[1][1])
+}
+
 // A pattern that survives compilation must be safe to run — this is the
 // regression guard for the hit[1] panic.
 func TestSplitStructuredSurvivesAllCompiledPatterns(t *testing.T) {
@@ -292,4 +562,64 @@ func TestSplitStructuredSurvivesAllCompiledPatterns(t *testing.T) {
 		_, err := ck.SplitStructured("# Doc\n\n### Verse 12\nBody text here.\n", "d.md", matchers)
 		require.NoError(t, err)
 	})
+}
+
+// A reference pattern ends in (\d[\d.]*) so it can capture a dotted number like
+// "4.2". That class also captures the full stop ending a sentence, so a clause
+// cited mid-prose was stored as "22." — indexed, and unreachable by every query
+// asking for 22.
+func TestNormalizeRefValueDropsAccidentalPunctuation(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"22.", "22"},
+		{" 22. ", "22"},
+		{"4.2", "4.2"},
+		{"4.2.", "4.2"},
+		{"7", "7"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, NormalizeRefValue(tt.in), "input %q", tt.in)
+	}
+}
+
+// Heading precedence is per section, not per chunk. A section whose heading
+// already numbers it must not take numbers from its own body — but a different
+// section packed into the same chunk has to be judged on its own evidence.
+//
+// Reading the whole chunk at once let one numbered heading silence every other
+// section's numbering. It stayed invisible while a bare listing wrote a
+// different metadata key from the heading, and became a real loss as soon as
+// both named the same key: a listing of 31) and 32) beside a "Clause 33"
+// heading lost both of its numbers.
+func TestHeadingPrecedenceIsPerSectionNotPerChunk(t *testing.T) {
+	doc := `# Operations Manual
+
+### Clause 33
+The duty officer records each incident reference in the log.
+
+## Schedule of Charges
+
+31) Handling charge, applied per consignment accepted for carriage.
+
+32) Late payment charge, accruing daily on any sum outstanding.
+`
+	matchers, _ := CompileRefMatchersVerbose([]config.RefPattern{
+		{Pattern: `^\s*(\d{1,4})\)`, MetaKey: "clause"},
+		{Pattern: `(?i)\bclauses?\s*(\d[\d.]*)`, MetaKey: "clause"},
+	})
+	ck, err := NewChunker(Options{ChunkSize: 2000, Overlap: 200})
+	require.NoError(t, err)
+	chunks, err := ck.SplitStructured(doc, "manual.md", matchers)
+	require.NoError(t, err)
+	require.Len(t, chunks, 1, "fixture must pack both sections into one chunk")
+
+	got := map[string]bool{}
+	for _, v := range strings.Split(chunks[0].Metadata["clause"], ",") {
+		got[strings.TrimSpace(v)] = true
+	}
+	for _, want := range []string{"31", "32", "33"} {
+		assert.True(t, got[want],
+			"clause %s must be addressable; a neighbouring numbered heading must not "+
+				"suppress this section's own numbering. got %v", want, got)
+	}
 }

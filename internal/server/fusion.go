@@ -94,16 +94,15 @@ type routerMatcher struct {
 // buildRefRouter compiles the RefPatterns from the domain config into a
 // refRouter. Patterns that fail to compile are skipped (not fatal).
 //
-// The capture-group check is not cosmetic: queryRefs below indexes hit[1], so a
-// pattern with no capture group would panic on the first query that matched it.
+// Compilation goes through chunker.CompileRefPattern, the same helper the
+// chunker uses to tag chunks. That shared call is the point: a query is matched
+// against the patterns that tagged the corpus, so if the two sides compiled
+// them differently, a query could name a reference the index never recorded.
 func buildRefRouter(patterns []agentconfig.RefPattern) *refRouter {
 	r := &refRouter{}
 	for _, p := range patterns {
-		if p.Pattern == "" || p.MetaKey == "" || len(p.Pattern) > chunker.MaxRefPatternLen {
-			continue
-		}
-		re, err := regexp.Compile(p.Pattern)
-		if err != nil || re.NumSubexp() != 1 {
+		re, err := chunker.CompileRefPattern(p)
+		if err != nil {
 			continue
 		}
 		r.matchers = append(r.matchers, routerMatcher{re: re, metaKey: p.MetaKey})
@@ -160,8 +159,24 @@ func lexicalRoutes(ix *lexical.Index, router *refRouter, query string, depth int
 
 	seen := map[string]bool{}
 	for _, ref := range router.queryRefs(query) {
+		hits := ix.FindByRef(ref.Field, ref.Value)
+		if len(hits) == 0 {
+			// The key the query named holds nothing. That does not mean the
+			// reference is absent: the chunker names the key from whatever
+			// pattern matched the document, so a corpus writing "97)" in one
+			// place and "Verse 97" in another files the two under different
+			// keys, and a reader asking for a verse reaches only one of them.
+			//
+			// Falling back to the number alone can only add hits where there
+			// were none, so it never displaces a correct same-key match. What
+			// it displaces is the empty result — which sends the query to pure
+			// similarity, and that is what ranks a title-dense page above the
+			// passage actually asked for.
+			hits = ix.FindByAnyRef(ref.Value)
+		}
+
 		var ex []scored
-		for _, r := range ix.FindByRef(ref.Field, ref.Value) {
+		for _, r := range hits {
 			if seen[r.ID] {
 				continue
 			}

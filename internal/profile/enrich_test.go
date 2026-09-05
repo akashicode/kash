@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/akashicode/kash/internal/chunker"
+	"github.com/akashicode/kash/internal/config"
 	"github.com/akashicode/kash/internal/llm"
 )
 
@@ -115,4 +117,70 @@ func strings_Repeat(s string, n int) string {
 		out = append(out, s...)
 	}
 	return string(out)
+}
+
+// Every numbering scheme but one is named by the word beside its number, so the
+// pattern detection builds contains that word and a substring test finds it.
+// The bare "48)" form has no word at all — its pattern is punctuation and a
+// digit class — so the substring test excluded the one scheme that could not
+// name itself, and it stayed filed under the generic section key. A corpus
+// writing both "Verse 51" and "97)" then filed one reference under two names.
+func TestMetaKeyRenamingReachesTheWordlessScheme(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		label   string
+		key     string
+		want    string
+	}{
+		{
+			name:    "bare-number scheme is renamed",
+			pattern: ParenPattern,
+			label:   ParenLabel,
+			key:     "verse",
+			want:    "verse",
+		},
+		{
+			// A contract would answer differently; the key comes from the
+			// corpus, not from this package.
+			name:    "the name comes from the model, not from us",
+			pattern: ParenPattern,
+			label:   ParenLabel,
+			key:     "clause",
+			want:    "clause",
+		},
+		{
+			name:    "a label-derived pattern is still matched by its word",
+			pattern: `(?i)(?:^|[^\p{L}])articles?\s*[-–—.]?\s*(\d[\d.]*)`,
+			label:   "article",
+			key:     "article",
+			want:    "article",
+		},
+		{
+			name:    "an unrelated label renames nothing",
+			pattern: ParenPattern,
+			label:   "sloka",
+			key:     "sloka",
+			want:    chunker.MetaSection,
+		},
+		{
+			name:    "a key that is not a usable metadata name is refused",
+			pattern: ParenPattern,
+			label:   ParenLabel,
+			key:     "Verse Number!",
+			want:    chunker.MetaSection,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			patterns := []config.RefPattern{{Pattern: tt.pattern, MetaKey: chunker.MetaSection}}
+			p := &Profile{}
+			p.Config.Chunker.RefPatterns = &patterns
+
+			applyMetaKeyNames(p, map[string]string{tt.label: tt.key})
+
+			assert.Equal(t, tt.want, (*p.Config.Chunker.RefPatterns)[0].MetaKey)
+		})
+	}
 }

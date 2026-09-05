@@ -28,6 +28,14 @@ import (
 //
 // The rejects are prose commentaries with no verse numbering at all, so
 // rejecting them is the correct answer rather than a missed detection.
+//
+// A scheme is judged on its own evidence, not on how many documents share it.
+// Requiring two was safe on the 61-document corpus this was calibrated against,
+// where any real scheme appeared in several, and wrong on a small mixed-genre
+// one, where each work brings its own convention: a scripture numbering 45
+// distinct passages as "97)" was discarded because the two commentaries beside
+// it did not use that form. Document spread still counts — it is a term in the
+// score below — but it no longer vetoes.
 
 const (
 	// minLabelHits is how often a label must appear corpus-wide before it is
@@ -58,6 +66,19 @@ var labelRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])(\p{L}{3,15})\s*[-–—.]?\
 
 // parenHeadingRe finds bare "32)" numbering used by some editions.
 var parenHeadingRe = regexp.MustCompile(`^\s*(\d{1,4})\)`)
+
+// ParenLabel and ParenPattern name the bare "48)" numbering scheme.
+//
+// Every other scheme is named by the word next to its number, so detection can
+// call it what the corpus calls it. This one has no word — the number and a
+// bracket are the whole marker — so detection has nothing to name it with and
+// falls back to the generic section key. It is therefore the one scheme that
+// depends on the model to name it, and the label is a protocol token between
+// detection and that request rather than anything a reader sees.
+const (
+	ParenLabel   = "paren"
+	ParenPattern = `^\s*(\d{1,4})\)`
+)
 
 // RefCandidate is a proposed numbering scheme with the evidence for it.
 type RefCandidate struct {
@@ -129,14 +150,9 @@ func DetectRefPatterns(docs []Doc) ([]RefCandidate, string) {
 		}
 	}
 
-	minDocs := 1
-	if len(docs) >= 2 {
-		minDocs = 2
-	}
-
 	var cands []RefCandidate
 	consider := func(label string, st *labelStat, pattern, metaKey string) {
-		if st.hits < minLabelHits || len(st.docs) < minDocs {
+		if st.hits < minLabelHits {
 			return
 		}
 		distinct := map[int]bool{}
@@ -149,7 +165,7 @@ func DetectRefPatterns(docs []Doc) ([]RefCandidate, string) {
 			return
 		}
 
-		seq := meanSequenceScore(st.nums)
+		seq := bestSequenceScore(st.nums)
 		coverage := 0.0
 		if totalHeadings > 0 {
 			coverage = float64(st.hits) / float64(totalHeadings)
@@ -178,7 +194,7 @@ func DetectRefPatterns(docs []Doc) ([]RefCandidate, string) {
 		pattern := `(?i)(?:^|[^\p{L}])` + regexp.QuoteMeta(label) + `s?\s*[-–—.]?\s*(\d[\d.]*)`
 		consider(label, st, pattern, sanitizeMetaKey(label))
 	}
-	consider("paren", parenStat, `^\s*(\d{1,4})\)`, chunker.MetaSection)
+	consider(ParenLabel, parenStat, ParenPattern, chunker.MetaSection)
 
 	sort.Slice(cands, func(i, j int) bool {
 		if cands[i].Score != cands[j].Score {
@@ -216,23 +232,27 @@ func DetectRefPatterns(docs []Doc) ([]RefCandidate, string) {
 		totalHeadings, len(docs), strings.Join(parts, "; "))
 }
 
-// meanSequenceScore averages the per-document sequence score. Scoring per
-// document matters: numbering restarts at each volume, so pooling the numbers
-// from sixty documents would look like noise even for a perfect scheme.
-func meanSequenceScore(perDoc map[string][]int) float64 {
-	var total float64
-	var n int
+// bestSequenceScore takes the strongest per-document sequence score. Scoring
+// per document matters: numbering restarts at each volume, so pooling the
+// numbers from sixty documents would look like noise even for a perfect scheme.
+//
+// The best document decides, not the average. A scheme is a property of the
+// work that uses it, and one work quoting another's numbering in passing is not
+// evidence against that numbering. Averaging let the passing mention outvote
+// the real one: a scripture numbering 101 of its own verses scored 0.84, a
+// commentary citing nine of them scored 0.49, and the mean of 0.66 described
+// neither.
+func bestSequenceScore(perDoc map[string][]int) float64 {
+	best := 0.0
 	for _, nums := range perDoc {
 		if len(nums) < 3 {
 			continue
 		}
-		total += sequenceScore(nums)
-		n++
+		if s := sequenceScore(nums); s > best {
+			best = s
+		}
 	}
-	if n == 0 {
-		return 0
-	}
-	return total / float64(n)
+	return best
 }
 
 // sequenceScore blends how consistently values ascend, how densely they cover
@@ -269,8 +289,17 @@ func sequenceScore(nums []int) float64 {
 		}
 	}
 
+	// Numbering that begins near the start of its own range, rather than at an
+	// arbitrary high number the way page numbers and quantities do.
+	//
+	// Requiring the first value to be 1, 2 or 3 assumed every work is quoted
+	// whole. An anthology quoting ślokas 7 to 102 begins at the beginning of
+	// what it quotes, and was scored as though it began nowhere — enough on its
+	// own to sink a scheme carrying 41 headings and 40 distinct numbers. The
+	// test is now relative to the range, so a run starting a short way in still
+	// counts while one starting at 200 of 400 does not.
 	startsLow := 0.0
-	if minVal <= 3 {
+	if minVal <= 3 || (maxVal > 0 && minVal <= maxVal/10) {
 		startsLow = 1
 	}
 
@@ -369,9 +398,3 @@ func ToRefPatterns(cands []RefCandidate) []config.RefPattern {
 	return out
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}

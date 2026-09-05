@@ -142,9 +142,27 @@ var defaultTitleStopwords = []string{
 // patterns (verse/dharana for Sanskrit, CFR § for US regulations) should
 // be set in agent.yaml.
 var defaultRefPatterns = []RefPattern{
-	// Named structural units: "Section 4.2", "Clause 7", "Article 12", "§ 3"
+	// Named structural units: "Section 4.2", "Clause 7", "Chapter 9", "§ 3".
+	//
+	// These are divisions any document may carry, whatever it is about, which
+	// is what earns them a place in the defaults — a word naming the subject
+	// rather than the structure ("theorem", "verse", "equation") is detected
+	// per corpus instead, so this list stays domain-neutral.
+	//
+	// "chapter" mattered most in practice: it is the commonest way a book
+	// divides itself and the one word a reader is most likely to type, and
+	// without it a query naming a chapter took no reference route at all.
+	//
+	// Deliberately excluded: "item" and "step", which occur constantly in
+	// ordinary prose and would number passages that are not references. They
+	// belong in agent.yaml for a corpus that really is organised by them.
+	//
+	// § sits outside the \b group on purpose. A word boundary before a symbol
+	// requires a word character immediately before it, so "§ 9" at the start of
+	// a query never matched — the one non-letter marker in the list was the one
+	// it could not read.
 	{
-		Pattern: `(?i)\b(?:section|clause|article|part|§)\s*(\d[\d.]*)`,
+		Pattern: `(?i)(?:\b(?:section|clause|article|chapter|paragraph|rule|schedule|annex|appendix|part)|§)\s*(\d[\d.]*)`,
 		MetaKey: "section",
 	},
 	// Bare decimal heading numbers: "4.2", "3.1.4" — requires at least X.Y
@@ -188,14 +206,6 @@ func DefaultDomainConfig() DomainConfig {
 			MaxEntities: 500,
 		},
 	}
-}
-
-// LoadDomainConfig reads the extraction, resolution, and chunker sections from
-// an agent.yaml. Missing sections fall back to the generic defaults, so an old
-// agent.yaml keeps working unchanged.
-func LoadDomainConfig(path string) DomainConfig {
-	cfg, _ := ResolveDomainConfig(nil, path)
-	return cfg
 }
 
 // ResolveDomainConfig layers configuration: built-in defaults, then the

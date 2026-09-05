@@ -111,3 +111,32 @@ func TestLoadDefaultsFoldModeForLegacyIndex(t *testing.T) {
 	assert.Equal(t, config.DiacriticLatin, ix.FoldMode)
 	assert.Equal(t, "resume", ix.Fold("résumé"), "the default fold must still apply")
 }
+
+// A reference lookup has two sides that name the key independently: the chunker
+// names it from the pattern that matched the document, the query router from
+// the pattern that matched the query. When they disagree, the number is indexed
+// and still unreachable. FindByAnyRef is the fallback for that case.
+func TestFindByAnyRefIgnoresTheKeyName(t *testing.T) {
+	ix := New()
+	ix.Add("a", "Handling charge, applied per consignment.", map[string]string{
+		"source": "agreement.md", "section": "7",
+	})
+	ix.Add("b", "Concentrate on the gap between two breaths.", map[string]string{
+		"source": "vbt.md", "verse": "24,25,26",
+	})
+	// Infrastructure metadata holds prose, not references. A heading that
+	// happens to contain the number must not match.
+	ix.Add("c", "Unrelated passage.", map[string]string{
+		"source": "other.md", "heading": "Chapter 7 of the manual", "breadcrumb": "Book > 7",
+	})
+	ix.Finalize()
+
+	assert.Empty(t, ix.FindByRef("clause", "7"), "the named key genuinely holds nothing")
+
+	got := ix.FindByAnyRef("7")
+	require.Len(t, got, 1, "the value must be found under whatever key holds it")
+	assert.Equal(t, "a", got[0].ID)
+
+	assert.Len(t, ix.FindByAnyRef("25"), 1, "a comma-joined list must still match")
+	assert.Empty(t, ix.FindByAnyRef("999"), "a value nothing carries must not match")
+}

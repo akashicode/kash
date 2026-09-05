@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -36,7 +37,7 @@ func TestDefaultsAreDomainNeutral(t *testing.T) {
 }
 
 func TestLoadDomainConfigMissingFileFallsBack(t *testing.T) {
-	d := LoadDomainConfig(filepath.Join(t.TempDir(), "nope.yaml"))
+	d, _ := ResolveDomainConfig(nil, filepath.Join(t.TempDir(), "nope.yaml"))
 	assert.Equal(t, DefaultDomainConfig(), d)
 }
 
@@ -57,7 +58,7 @@ resolution:
   strip_final_vowel: false
   proper_noun_predicates: ["manufactured by", "designed by"]
 `)
-	d := LoadDomainConfig(path)
+	d, _ := ResolveDomainConfig(nil, path)
 	assert.Equal(t, []string{"manufactured by", "launched on", "powered by"}, d.Extraction.Predicates)
 	assert.Equal(t, []string{"Engineering relations"}, d.Extraction.Priorities)
 	assert.Equal(t, DiacriticLatin, d.Resolution.FoldDiacritics)
@@ -75,7 +76,7 @@ resolution:
   fold_diacritics: iast
   strip_final_vowel: true
 `)
-	d := LoadDomainConfig(path)
+	d, _ := ResolveDomainConfig(nil, path)
 	assert.Equal(t, DiacriticIAST, d.Resolution.FoldDiacritics)
 	assert.True(t, d.Resolution.StripFinalVowel)
 	assert.Equal(t, []string{"śrī ", "ācārya "}, d.Resolution.Honorifics)
@@ -88,20 +89,20 @@ resolution:
 // these sections existed must keep working.
 func TestLoadDomainConfigPartialKeepsDefaults(t *testing.T) {
 	path := writeYAML(t, "agent:\n  name: legacy\n")
-	d := LoadDomainConfig(path)
+	d, _ := ResolveDomainConfig(nil, path)
 	assert.Equal(t, DefaultDomainConfig(), d)
 }
 
 func TestLoadDomainConfigRejectsBadDiacriticMode(t *testing.T) {
 	path := writeYAML(t, "resolution:\n  fold_diacritics: klingon\n")
-	d := LoadDomainConfig(path)
+	d, _ := ResolveDomainConfig(nil, path)
 	assert.Equal(t, DiacriticLatin, d.Resolution.FoldDiacritics,
 		"an unrecognised mode must fall back to the default")
 }
 
 func TestLoadDomainConfigEmptyHonorificsIsMeaningful(t *testing.T) {
 	path := writeYAML(t, "resolution:\n  honorifics: []\n")
-	d := LoadDomainConfig(path)
+	d, _ := ResolveDomainConfig(nil, path)
 	assert.Empty(t, d.Resolution.Honorifics,
 		"an explicitly empty list must disable honorific stripping")
 }
@@ -117,7 +118,7 @@ chunker:
     - "restated"
   strip_title_stem_vowel: true
 `)
-	d := LoadDomainConfig(path)
+	d, _ := ResolveDomainConfig(nil, path)
 	require.Len(t, d.Chunker.RefPatterns, 1)
 	assert.Equal(t, `(?i)article\s+(\d+)`, d.Chunker.RefPatterns[0].Pattern)
 	assert.Equal(t, "article", d.Chunker.RefPatterns[0].MetaKey)
@@ -137,7 +138,7 @@ entity_description:
   min_degree: 5
   max_entities: 100
 `)
-	loaded := LoadDomainConfig(path)
+	loaded, _ := ResolveDomainConfig(nil, path)
 	assert.Equal(t, 5, loaded.EntityDescription.MinDegree)
 	assert.Equal(t, 100, loaded.EntityDescription.MaxEntities)
 }
@@ -147,13 +148,53 @@ func TestLoadDomainConfigGleanRounds(t *testing.T) {
 extraction:
   glean_rounds: 0
 `)
-	d := LoadDomainConfig(path)
+	d, _ := ResolveDomainConfig(nil, path)
 	assert.Equal(t, 0, d.Extraction.GleanRounds, "glean_rounds: 0 must disable gleaning")
 
 	path2 := writeYAML(t, `
 extraction:
   glean_rounds: 3
 `)
-	d2 := LoadDomainConfig(path2)
+	d2, _ := ResolveDomainConfig(nil, path2)
 	assert.Equal(t, 3, d2.Extraction.GleanRounds)
+}
+
+// The generic reference words are the structural divisions any document may
+// carry, whatever it is about. A word naming the subject rather than the
+// structure is detected per corpus instead, so this list stays domain-neutral.
+func TestDefaultRefPatternsCoverGenericStructuralWords(t *testing.T) {
+	re := regexp.MustCompile(defaultRefPatterns[0].Pattern)
+
+	matches := map[string]string{
+		"chapter 7":         "7",
+		"Chapter 12 opens":  "12",
+		"paragraph 4.2":     "4.2",
+		"rule 11":           "11",
+		"schedule 2":        "2",
+		"annex 3":           "3",
+		"appendix 5":        "5",
+		"section 4.2":       "4.2",
+		"clause 22":         "22",
+		"article 5":         "5",
+		"part 3":            "3",
+		// A word boundary before a symbol needs a word character before it, so
+		// the one non-letter marker in the list used to be unreadable.
+		"§ 9":               "9",
+		"§9":                "9",
+		"see § 12.3":        "12.3",
+	}
+	for in, want := range matches {
+		m := re.FindStringSubmatch(in)
+		require.NotNil(t, m, "%q must yield a reference", in)
+		assert.Equal(t, want, m[1], "input %q", in)
+	}
+
+	// Words that appear constantly in ordinary prose must not become
+	// references, or every passage acquires a number that means nothing.
+	for _, in := range []string{
+		"the third step of the process", "item on the agenda",
+		"page 45", "figure 3", "table 2", "note 7", "line 4",
+	} {
+		assert.Nil(t, re.FindStringSubmatch(in), "%q must not yield a reference", in)
+	}
 }

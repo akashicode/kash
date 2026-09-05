@@ -174,17 +174,18 @@ func breakScore(prev, cur string) int {
 // splitScored cuts text into windows of at most size runes, preferring the
 // highest-scoring break point found in the last 30% of each window. This keeps
 // a heading with the text it introduces instead of severing them.
-func splitScored(text string, size, overlap int) []string {
+func splitScored(text string, size, overlap int) []scoredPiece {
 	lines := strings.Split(text, "\n")
 	if size <= 0 {
-		return []string{text}
+		return []scoredPiece{{text: text}}
 	}
 
 	var (
-		out     []string
+		out     []scoredPiece
 		cur     []string
 		curLen  int
 		lastLen int
+		carry   string // leading text of cur repeated from the previous window
 	)
 
 	emit := func() {
@@ -192,15 +193,22 @@ func splitScored(text string, size, overlap int) []string {
 			return
 		}
 		chunk := strings.TrimSpace(strings.Join(cur, "\n"))
-		if chunk != "" {
-			out = append(out, chunk)
+		// A window holding nothing but the carried tail repeats the previous
+		// piece and adds no text of its own. Emitting it stores the same
+		// passage twice — this is the guard this function has always claimed
+		// to have.
+		if chunk != "" && hasTextBeyond(cur, carry) {
+			out = append(out, scoredPiece{text: chunk, carry: carry})
 		}
 		// Carry an overlap tail of whole lines.
-		cur, curLen = carryTail(cur, overlap)
+		var tail []string
+		tail, curLen = carryTail(cur, overlap)
+		cur = tail
+		carry = strings.TrimSpace(strings.Join(tail, "\n"))
 		lastLen = curLen
 	}
 
-	for i, line := range lines {
+	for _, line := range lines {
 		lineLen := utf8.RuneCountInString(line) + 1
 		if curLen > 0 && curLen+lineLen > size {
 			// Look back over the tail of the window for a better cut.
@@ -216,12 +224,71 @@ func splitScored(text string, size, overlap int) []string {
 		}
 		cur = append(cur, line)
 		curLen += lineLen
-		_ = i
 	}
 	emit()
-
-	// emit() seeds cur with an overlap tail; drop a trailing carry-only window.
 	return out
+}
+
+// scoredPiece is one window of a section body, plus the leading text it repeats
+// from the window before it.
+//
+// The repetition is deliberate — consecutive chunks share an overlap tail so a
+// passage split across a boundary stays readable in both. It becomes a defect
+// only when two consecutive pieces are packed into the *same* chunk, where the
+// carried text would be stored twice. Recording what was carried, at the point
+// it is carried, is what lets the packer strip it there and only there.
+type scoredPiece struct {
+	text string
+	// carry is the leading portion of text repeated from the previous piece,
+	// trimmed. Empty for the first piece of a section.
+	carry string
+}
+
+// hasTextBeyond reports whether lines hold any non-blank content beyond the
+// carried prefix.
+func hasTextBeyond(lines []string, carry string) bool {
+	if carry == "" {
+		return true
+	}
+	return stripCarry(strings.TrimSpace(strings.Join(lines, "\n")), carry) != ""
+}
+
+// stripCarry removes the carried prefix from a piece, comparing line by line
+// and ignoring blank lines on either side.
+//
+// It returns text unchanged unless the piece genuinely begins with the carry.
+// That conservatism is the point: a corpus repeats lines for real reasons — a
+// refrain, a table header, a digitisation footer on every page — and those must
+// survive. Only text known to have been carried is removed.
+func stripCarry(text, carry string) string {
+	if carry == "" {
+		return text
+	}
+	textLines := strings.Split(text, "\n")
+	carryLines := strings.Split(carry, "\n")
+
+	i, j := 0, 0
+	for i < len(textLines) && j < len(carryLines) {
+		if strings.TrimSpace(textLines[i]) == "" {
+			i++
+			continue
+		}
+		if strings.TrimSpace(carryLines[j]) == "" {
+			j++
+			continue
+		}
+		if strings.TrimSpace(textLines[i]) != strings.TrimSpace(carryLines[j]) {
+			return text
+		}
+		i++
+		j++
+	}
+	for ; j < len(carryLines); j++ {
+		if strings.TrimSpace(carryLines[j]) != "" {
+			return text // the piece ended before the carry did
+		}
+	}
+	return strings.TrimSpace(strings.Join(textLines[i:], "\n"))
 }
 
 // bestBreak returns the index in lines of the best cut point within the last
@@ -365,6 +432,16 @@ func bookTitle(source string) string {
 
 // extractRefs runs every refMatcher against each heading and the body, returning a
 // map from meta_key to comma-separated list of matched numbers.
+//
+// Headings take precedence per meta key: if a heading already answered a key,
+// the body is not scanned for that key. A heading names what the chunk *is*,
+// whereas the body may merely mention other references — most commonly an
+// ordinary numbered list, which must not become verse or clause numbering just
+// because it shares the paren form.
+//
+// The body is still scanned for every key no heading answered. That is what
+// makes a chunk holding a run of references — a verse listing, a schedule of
+// clauses — addressable by each of them rather than only by its heading.
 func extractRefs(headings []string, body string, matchers []refMatcher) map[string][]string {
 	out := map[string][]string{}
 	seen := map[string]map[string]bool{}
@@ -385,8 +462,19 @@ func extractRefs(headings []string, body string, matchers []refMatcher) map[stri
 	for _, m := range matchers {
 		for _, h := range headings {
 			for _, hit := range m.re.FindAllStringSubmatch(h, -1) {
-				add(m.metaKey, hit[1])
+				add(m.metaKey, NormalizeRefValue(hit[1]))
 			}
+		}
+	}
+
+	answeredByHeading := make(map[string]bool, len(out))
+	for key := range out {
+		answeredByHeading[key] = true
+	}
+
+	for _, m := range matchers {
+		if answeredByHeading[m.metaKey] {
+			continue
 		}
 		for _, hit := range m.re.FindAllStringSubmatch(body, -1) {
 			add(m.metaKey, hit[1])
@@ -416,7 +504,7 @@ func contextHeader(meta map[string]string) string {
 		if crumb == "" || containsFold(parts, crumb) {
 			continue
 		}
-		parts = append(parts, crumb)
+		parts = append(parts, truncateSegment(crumb))
 	}
 	// Render every user-defined reference key that isn't already in the breadcrumb.
 	// Keys are sorted so the header string is deterministic across runs.
@@ -444,6 +532,36 @@ func contextHeader(meta map[string]string) string {
 	return "[" + strings.Join(parts, " > ") + "]"
 }
 
+// maxHeaderSegment bounds one breadcrumb segment in a citation header.
+//
+// A heading is whatever follows the hashes on a line, so a document that
+// numbers its passages by putting the whole passage in the heading yields a
+// breadcrumb segment hundreds of characters long. That header is prefixed to
+// the chunk text, embedded with it, and shown as the citation — so an uncapped
+// one is unquotable and crowds out the passage it is meant to locate.
+//
+// The cap is on display only. Chunk metadata keeps the full heading, so
+// nothing that reads MetaHeading or MetaBreadcrumb loses fidelity.
+const maxHeaderSegment = 60
+
+// truncateSegment shortens one breadcrumb segment at a word boundary where it
+// can, marking the cut so a reader can see the heading was longer.
+func truncateSegment(s string) string {
+	if utf8.RuneCountInString(s) <= maxHeaderSegment {
+		return s
+	}
+	runes := []rune(s)
+	cut := maxHeaderSegment
+	// Prefer the last space in the final quarter, so the label ends on a word.
+	for i := cut - 1; i > maxHeaderSegment*3/4; i-- {
+		if runes[i] == ' ' {
+			cut = i
+			break
+		}
+	}
+	return strings.TrimRight(string(runes[:cut]), " ,;:-") + "…"
+}
+
 func containsFold(list []string, s string) bool {
 	for _, v := range list {
 		if strings.EqualFold(v, s) {
@@ -466,11 +584,12 @@ func anyHasNumber(parts []string, num string) bool {
 	return false
 }
 
-// maxHeaderRatio caps the share of a chunk's budget the context header may take,
-// following zvec-grep's MAX_METADATA_BUDGET_RATIO. The header is deducted from
-// the content budget before splitting, so annotated chunks cannot silently
-// exceed the embedder's limit.
-const maxHeaderRatio = 0.25
+// The context header used to be bounded by a ratio of the chunk size, applied
+// as a clamp on the *deduction* rather than on the header. That inverted the
+// guarantee it was written for: an oversized header was under-counted, so it
+// rendered in full and the finished chunk ran past the size it was budgeted
+// against. The header is now bounded at the source instead, one breadcrumb
+// segment at a time — see maxHeaderSegment — and its real length is deducted.
 
 // unit is one indivisible piece of text plus the section context it came from.
 // Sections are turned into units first and packed into chunks second: emitting
@@ -484,6 +603,15 @@ type unit struct {
 	// refs holds the reference numbers extracted from this unit's heading,
 	// keyed by meta_key. Used to decide whether to start a new chunk.
 	refs map[string]string
+	// carry is the leading text this unit repeats from the unit before it, and
+	// follows reports whether that predecessor is the immediately preceding
+	// unit. Together they let the packer drop the repetition when both land in
+	// one chunk, while leaving it intact across a real chunk boundary.
+	carry   string
+	follows bool
+	// budget is the content allowance for this unit's section — the chunk size
+	// less the citation header that will be prefixed to it.
+	budget int
 }
 
 // extractTableHeader returns the header rows (column names + separator) from
@@ -562,9 +690,15 @@ func (c *Chunker) SplitStructured(text, source string, matchers []refMatcher) ([
 		headerLen := utf8.RuneCountInString(contextHeader(map[string]string{
 			MetaBook: book, MetaBreadcrumb: breadcrumb,
 		}))
-		if maxLen := int(float64(c.opts.ChunkSize) * maxHeaderRatio); headerLen > maxLen {
-			headerLen = maxLen
-		}
+		// Deduct what the header will actually cost, so body plus header fits
+		// the chunk size. The estimate is a lower bound: reference labels
+		// ("Verse 51") are appended at flush time, once the chunk's full
+		// reference set is known. They are short and few.
+		//
+		// A chunk can still exceed ChunkSize in one case this cannot reach: a
+		// single source line longer than the budget. splitScored cuts on line
+		// boundaries, so a paragraph written as one unbroken line is
+		// indivisible and is emitted whole.
 		budget := c.opts.ChunkSize - headerLen - 2
 		if budget < 200 {
 			budget = 200
@@ -585,12 +719,15 @@ func (c *Chunker) SplitStructured(text, source string, matchers []refMatcher) ([
 			}
 		}
 
-		for _, piece := range splitScored(body, budget, c.opts.Overlap) {
+		for i, piece := range splitScored(body, budget, c.opts.Overlap) {
 			units = append(units, unit{
-				text:       piece,
+				text:       piece.text,
 				breadcrumb: breadcrumb,
 				heading:    sec.heading,
 				refs:       headRefs,
+				carry:      piece.carry,
+				follows:    i > 0,
+				budget:     budget,
 			})
 		}
 	}
@@ -607,9 +744,26 @@ func (c *Chunker) SplitStructured(text, source string, matchers []refMatcher) ([
 		if len(buf) == 0 {
 			return
 		}
-		texts := make([]string, len(buf))
+		// kept[i] is buf[i]'s text as it will appear in this chunk, so that
+		// references are read from exactly the text the chunk ends up holding.
+		kept := make([]string, len(buf))
+		texts := make([]string, 0, len(buf))
 		for i, u := range buf {
-			texts[i] = u.text
+			text := u.text
+			// Consecutive pieces of a section overlap by design, so a passage
+			// split across a chunk boundary reads whole in both. When both
+			// pieces land in this same chunk there is no boundary to bridge,
+			// and keeping the overlap would store the passage twice.
+			//
+			// buf is filled in order and never skips, so a unit at i > 0 whose
+			// predecessor exists has that predecessor at i-1.
+			if i > 0 && u.follows {
+				text = stripCarry(text, u.carry)
+			}
+			kept[i] = text
+			if text != "" {
+				texts = append(texts, text)
+			}
 		}
 		body := strings.Join(texts, "\n\n")
 
@@ -638,12 +792,31 @@ func (c *Chunker) SplitStructured(text, source string, matchers []refMatcher) ([
 
 		// Collect every reference number in the chunk, deduplicated.
 		// One chunk can span multiple sections (e.g. Section 4.1 and 4.2).
-		headings := make([]string, len(buf))
+		//
+		// Each unit is read with its own heading, and the results merged. That
+		// keeps heading precedence within the section it belongs to: a section
+		// its heading already numbered does not take numbers from its own body,
+		// while a neighbouring section packed into the same chunk is judged on
+		// its own. Reading the whole chunk at once let one numbered heading
+		// silence every other section's numbering — invisible while a listing
+		// wrote a different key from the heading, and a real loss once both
+		// named the same one.
+		merged := map[string][]string{}
+		seenRef := map[string]map[string]bool{}
 		for i, u := range buf {
-			headings[i] = u.heading
+			for key, vals := range extractRefs([]string{u.heading}, kept[i], matchers) {
+				if seenRef[key] == nil {
+					seenRef[key] = map[string]bool{}
+				}
+				for _, v := range vals {
+					if !seenRef[key][v] {
+						seenRef[key][v] = true
+						merged[key] = append(merged[key], v)
+					}
+				}
+			}
 		}
-		allRefs := extractRefs(headings, body, matchers)
-		for key, vals := range allRefs {
+		for key, vals := range merged {
 			meta[key] = strings.Join(vals, ",")
 		}
 
@@ -674,7 +847,13 @@ func (c *Chunker) SplitStructured(text, source string, matchers []refMatcher) ([
 		// remain individually addressable.
 		if bufLen > 0 && startsNewReference(buf, u) {
 			flush()
-		} else if bufLen > 0 && bufLen+n+2 > c.opts.ChunkSize {
+		} else if bufLen > 0 && bufLen+n+2 > buf[0].budget {
+			// Pack to the section's content budget, not the raw chunk size.
+			// The citation header is prefixed to the body at flush time, so
+			// filling the buffer to ChunkSize and then adding the header put
+			// the finished chunk over the embedder's limit — which is what the
+			// per-piece budget was already computed to prevent. buf[0] is the
+			// unit whose heading and breadcrumb become the header.
 			flush()
 		}
 
@@ -702,18 +881,90 @@ func startsNewReference(buf []unit, u unit) bool {
 	return false
 }
 
-// CompileRefMatchers compiles the RefPatterns from the domain config into
-// refMatcher instances. Patterns that fail to compile are skipped with a
-// warning to avoid a fatal crash from a user typo in agent.yaml.
-func CompileRefMatchers(patterns []config.RefPattern) []refMatcher {
-	matchers, _ := CompileRefMatchersVerbose(patterns)
-	return matchers
+// NormalizeRefValue trims punctuation a numbering pattern captures by accident.
+//
+// Reference patterns end in `(\d[\d.]*)` so they can capture a dotted number
+// like "4.2". That same class captures the full stop that ends a sentence, so
+// "…in accordance with clause 22." yields "22." — a reference no query asking
+// for 22 can ever match, indexed and unreachable.
+//
+// Applied on both sides: when writing chunk metadata, and when comparing a
+// lookup against it, so an index built before this still resolves.
+func NormalizeRefValue(s string) string {
+	return strings.Trim(strings.TrimSpace(s), ".")
 }
 
 // MaxRefPatternLen bounds a reference pattern. Patterns run against every
 // heading and body at build time and against every query at serve time, so an
 // unbounded one is a performance hazard as well as an unreadable one.
 const MaxRefPatternLen = 200
+
+// RulesVersion identifies the chunking and tagging rules a corpus was built
+// under. It is stored in the build manifest so an index built by an older
+// binary can be recognised as stale.
+//
+// Bump it whenever a change alters the chunks produced from unchanged text —
+// either which references are extracted, or the chunk text itself. The domain
+// signature cannot cover either: it hashes the pattern strings from the config,
+// so changes to how chunks are cut, joined or annotated are invisible to it.
+//
+//	1 — original.
+//	2 — patterns compiled with (?m); see CompileRefPattern.
+//	3 — overlap no longer duplicated within a chunk; chunks packed to the
+//	    content budget rather than the raw chunk size; header segments capped.
+//	4 — reference values no longer keep punctuation the pattern captured by
+//	    accident; see NormalizeRefValue.
+//	5 — heading precedence applies per section rather than per chunk, so one
+//	    numbered heading no longer suppresses a neighbouring section's own
+//	    numbering.
+const RulesVersion = 5
+
+// multilineFlag makes a leading ^ mean start-of-line.
+//
+// This is load-bearing, not cosmetic. Reference patterns are matched against
+// whole chunk bodies (see extractRefs), which are multi-line strings. Without
+// this flag a pattern like `^\s*(\d{1,4})\)` matches only when the body itself
+// begins with the marker, so every later occurrence in the same chunk is
+// dropped — the marker is present in the text, and simply never tagged.
+//
+// Go's regexp accepts stacked flag groups, so prefixing a pattern that already
+// carries its own — `(?i)…` becoming `(?m)(?i)…` — is well defined.
+const multilineFlag = "(?m)"
+
+// CompileRefPattern compiles one reference pattern for matching against
+// multi-line text, applying the validation every caller needs.
+//
+// Both call sites must go through this. The chunker compiles patterns for
+// chunk bodies and the retrieval layer compiles the same patterns for queries;
+// queries are single-line, so a missing (?m) is harmless there and silently
+// destructive here. Compiling in one place is what keeps the two consistent.
+//
+// The capture-group check is not cosmetic: a pattern with no capture group
+// makes FindAllStringSubmatch return rows of length one, and both extractRefs
+// and queryRefs then index hit[1] — an index-out-of-range panic.
+//
+// Note that (?m) also makes $ line-anchored.
+func CompileRefPattern(p config.RefPattern) (*regexp.Regexp, error) {
+	if p.Pattern == "" || p.MetaKey == "" {
+		return nil, fmt.Errorf("ref_pattern needs both a pattern and a meta_key")
+	}
+	if len(p.Pattern) > MaxRefPatternLen {
+		return nil, fmt.Errorf(
+			"ref_pattern for %q: %d characters exceeds the %d-character limit",
+			p.MetaKey, len(p.Pattern), MaxRefPatternLen)
+	}
+	re, err := regexp.Compile(multilineFlag + p.Pattern)
+	if err != nil {
+		// Report the pattern as the user wrote it, not as we compiled it.
+		return nil, fmt.Errorf("invalid ref_pattern %q: %w", p.Pattern, err)
+	}
+	if n := re.NumSubexp(); n != 1 {
+		return nil, fmt.Errorf(
+			"ref_pattern %q: needs exactly one capture group for the number, found %d",
+			p.Pattern, n)
+	}
+	return re, nil
+}
 
 // CompileRefMatchersVerbose compiles reference patterns and reports why any
 // were rejected, so a bad pattern is visible rather than silently inert.
@@ -728,29 +979,16 @@ func CompileRefMatchersVerbose(patterns []config.RefPattern) ([]refMatcher, []st
 	var warnings []string
 
 	for _, p := range patterns {
-		switch {
-		case p.Pattern == "" || p.MetaKey == "":
-			continue
-		case len(p.Pattern) > MaxRefPatternLen:
-			warnings = append(warnings, fmt.Sprintf(
-				"skipping ref_pattern for %q: %d characters exceeds the %d-character limit",
-				p.MetaKey, len(p.Pattern), MaxRefPatternLen))
+		// A wholly empty entry is an unfilled template line, not a mistake
+		// worth reporting.
+		if p.Pattern == "" || p.MetaKey == "" {
 			continue
 		}
-
-		re, err := regexp.Compile(p.Pattern)
+		re, err := CompileRefPattern(p)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf(
-				"skipping invalid ref_pattern %q: %v", p.Pattern, err))
+			warnings = append(warnings, "skipping "+err.Error())
 			continue
 		}
-		if n := re.NumSubexp(); n != 1 {
-			warnings = append(warnings, fmt.Sprintf(
-				"skipping ref_pattern %q: needs exactly one capture group for the number, found %d",
-				p.Pattern, n))
-			continue
-		}
-
 		out = append(out, refMatcher{re: re, metaKey: p.MetaKey})
 	}
 	return out, warnings
