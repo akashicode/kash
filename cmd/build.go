@@ -356,10 +356,21 @@ func runBuild(cmd *cobra.Command, args []string) error {
 			len(removed), strings.Join(removed, ", ")))
 	}
 
-	if len(pending) == 0 && (len(removed) == 0 || !buildPrune) {
+	unfinished := m.NeedsFinalize()
+	lexicalMissing := len(m.Documents) > 0 && !fileExists(lexicalPath)
+	if upToDate(len(pending), len(removed), buildPrune, unfinished || lexicalMissing) {
 		fmt.Println()
 		display.Success(fmt.Sprintf("Corpus up to date (version %d) — nothing to build", m.Version))
 		return nil
+	}
+	if len(pending) == 0 {
+		switch {
+		case unfinished:
+			display.StepWarn("the previous build stopped before its final steps — completing the lexical index, " +
+				"entity descriptions and MCP tool description now")
+		case lexicalMissing:
+			display.StepWarn("lexical index is missing — building it now")
+		}
 	}
 
 	// Step 3: Process documents (embed + extract triples per document)
@@ -381,7 +392,16 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create LLM client: %w", err)
 	}
 
-	corpusChanged := false
+	// Mark the corpus unfinished before touching any data, so a build stopped
+	// anywhere from here on is completed by the next run.
+	m.PendingFinalize = true
+	if err := m.Save(manifestPath); err != nil {
+		return fmt.Errorf("save manifest: %w", err)
+	}
+
+	// Completing an unfinished build is a change: the data it wrote was never
+	// indexed as a whole, and the version was never bumped for it.
+	corpusChanged := unfinished
 
 	// Prune removed documents first
 	if buildPrune {
@@ -810,12 +830,14 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		display.StepResult("Skipped", "no new content to describe")
 	}
 
-	// Bump the corpus version on any successful change
+	// Bump the corpus version on any successful change, and record that the
+	// whole-corpus steps have run — only now may a later build call it up to date.
 	if corpusChanged {
 		m.Version++
-		if err := m.Save(manifestPath); err != nil {
-			return fmt.Errorf("save manifest: %w", err)
-		}
+	}
+	m.PendingFinalize = false
+	if err := m.Save(manifestPath); err != nil {
+		return fmt.Errorf("save manifest: %w", err)
 	}
 
 	fmt.Println()

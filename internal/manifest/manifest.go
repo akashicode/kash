@@ -44,6 +44,13 @@ func (d *DocState) Done() bool {
 type Manifest struct {
 	// Version is the corpus version, bumped on every build that changes data.
 	Version int `json:"version"`
+	// PendingFinalize marks a build that changed corpus data but has not yet
+	// run the whole-corpus steps that follow the per-document loop: the lexical
+	// index, entity descriptions and the MCP tool description. It is set before
+	// any data is touched and cleared only when those steps finish, so a build
+	// stopped anywhere in between is completed by the next run rather than
+	// reported up to date with all three missing.
+	PendingFinalize bool `json:"pending_finalize,omitempty"`
 	// UpdatedAt is when the manifest was last written.
 	UpdatedAt time.Time `json:"updated_at,omitzero"`
 	// EmbedModel and EmbedDimensions pin the embedder the corpus was built
@@ -80,6 +87,16 @@ func New() *Manifest {
 	return &Manifest{
 		Documents: map[string]*DocState{},
 	}
+}
+
+// NeedsFinalize reports whether a previous build changed the corpus without
+// completing the whole-corpus steps that follow the per-document loop.
+//
+// Manifests written before PendingFinalize existed carry no flag, but every
+// build that reaches its end bumps Version — so documents recorded at version
+// 0 can only mean a build that never finished.
+func (m *Manifest) NeedsFinalize() bool {
+	return m.PendingFinalize || (m.Version == 0 && len(m.Documents) > 0)
 }
 
 // LoadOrNew reads a manifest from path, returning a fresh manifest when the

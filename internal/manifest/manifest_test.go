@@ -58,6 +58,59 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	assert.Equal(t, 2, partial.GraphBatchesDone)
 }
 
+func TestNeedsFinalize(t *testing.T) {
+	doc := func() map[string]*DocState {
+		return map[string]*DocState{"book.md": {SHA256: "abc", VectorDone: true, GraphDone: true}}
+	}
+	tests := []struct {
+		name string
+		m    *Manifest
+		want bool
+	}{
+		{
+			name: "fresh manifest",
+			m:    New(),
+			want: false,
+		},
+		{
+			name: "finished build",
+			m:    &Manifest{Version: 3, Documents: doc()},
+			want: false,
+		},
+		{
+			name: "flag set by an interrupted build",
+			m:    &Manifest{Version: 3, PendingFinalize: true, Documents: doc()},
+			want: true,
+		},
+		{
+			// Written before the flag existed: every document is done, yet the
+			// build that did them never reached the version bump at its end.
+			name: "legacy manifest with documents at version 0",
+			m:    &Manifest{Version: 0, Documents: doc()},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.m.NeedsFinalize())
+		})
+	}
+}
+
+func TestPendingFinalizeRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), FileName)
+
+	m := New()
+	m.Version = 1
+	m.PendingFinalize = true
+	require.NoError(t, m.Save(path))
+
+	loaded, err := LoadOrNew(path)
+	require.NoError(t, err)
+	assert.True(t, loaded.PendingFinalize)
+}
+
 func TestHashContent(t *testing.T) {
 	h1 := HashContent("some book text")
 	h2 := HashContent("some book text")

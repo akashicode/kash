@@ -162,6 +162,11 @@ func New(cfg Config) (*Server, error) {
 	domainCfg, layers := agentconfig.ResolveDomainConfig(prof.Overlay(), cfg.AgentYAMLPath)
 	lexIndex := lexical.NewWithFold(domainCfg.Resolution.FoldDiacritics)
 	if cfg.LexicalIndexPath != "" {
+		if lexicalIndexMissing(cfg.LexicalIndexPath, vs.Count()) {
+			slog.Warn("lexical index is missing — keyword and exact-reference search are disabled",
+				"path", cfg.LexicalIndexPath, "vectors", vs.Count(),
+				"hint", "run 'kash build' in the agent directory to finish the build")
+		}
 		if ix, lexErr := lexical.Load(cfg.LexicalIndexPath); lexErr != nil {
 			slog.Warn("ignoring lexical index", "error", lexErr, "path", cfg.LexicalIndexPath)
 		} else {
