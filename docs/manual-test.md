@@ -21,7 +21,8 @@ docker version
 ```powershell
 cd C:\Users\admin\Desktop\projects\Kash
 
-go build -o bin\kash.exe .\cmd\Kash
+# Stamps the release tag, commit and build time into `kash version`
+powershell -File scripts\build.ps1
 
 # Add to PATH for this session
 $env:PATH += ";C:\Users\admin\Desktop\projects\Kash\bin"

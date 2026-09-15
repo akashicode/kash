@@ -14,8 +14,16 @@ RUN go mod download
 # Copy source code
 COPY . .
 
+# Version stamping, passed by the release workflow. Without these the published
+# image reports "kash dev": the builder image has no git, so the binary carries
+# no VCS stamp to fall back on either.
+ARG VERSION=dev
+ARG COMMIT=none
+ARG BUILD_DATE=unknown
+
 # Build the binary (CGO disabled for static linking)
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w -X github.com/akashicode/kash/cmd.version=${VERSION} -X github.com/akashicode/kash/cmd.commit=${COMMIT} -X github.com/akashicode/kash/cmd.buildDate=${BUILD_DATE}" \
     -o /kash ./cmd/kash
 
 # --- Minimal runtime stage ---

@@ -6,13 +6,16 @@
 
 ### Build
 ```bash
-# Build the CLI binary
-go build -o bin/kash ./cmd/Kash
+# Build the CLI binary, stamped with the release tag, commit and build time
+make build                       # Linux/macOS, or Windows with make
+powershell -File scripts/build.ps1   # Windows without make
+
+# Plain go build works too, but `kash version` then reports dev-<commit>:
+# the release tag is only passed through -ldflags
+go build -o bin/kash ./cmd/kash
 
 # Build for multiple platforms
-GOOS=linux GOARCH=amd64 go build -o bin/kash-linux ./cmd/Kash
-GOOS=darwin GOARCH=amd64 go build -o bin/kash-darwin ./cmd/Kash
-GOOS=windows GOARCH=amd64 go build -o bin/kash.exe ./cmd/Kash
+make build-all
 ```
 
 ### Lint
