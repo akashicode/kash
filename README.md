@@ -224,7 +224,7 @@ kash build              # v2 — only the new documents are processed
 
 - ⏭️ **Unchanged documents are skipped** — no embedding calls, no LLM calls
 - ♻️ **Changed documents are replaced** — old vectors and triples removed first
-- 🔌 **Interrupted builds resume** at the exact batch they stopped on
+- 🔌 **Interrupted builds resume** at the exact batch they stopped on — including a build stopped after its last document, whose lexical index, entity descriptions and MCP description are completed by the next run
 - 🏷️ **Each change bumps the corpus version**, exposed at `GET /health`
 
 | Flag | Purpose |
@@ -372,6 +372,7 @@ retrieval:
 git clone https://github.com/akashicode/kash.git
 cd kash
 make build          # or: make build-all for every platform
+                    # Windows without make: powershell -File scripts\build.ps1
 go test ./...       # full suite
 ```
 

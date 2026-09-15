@@ -11,6 +11,38 @@ release that changes chunk boundaries, chunk metadata or the extraction
 vocabulary needs `kash build --rebuild` to take effect on an existing corpus —
 those are called out under **Requires rebuild**.
 
+## [2.2.0] - 2026-09-15
+
+### Fixed
+
+- **A build stopped after its last document never finished, and no later build
+  noticed.** The lexical index, entity descriptions and MCP tool description
+  are produced after the per-document loop, but the "corpus up to date" check
+  looked only at documents. A build interrupted between the two left all three
+  missing, and every later `kash build` returned before reaching them — while
+  `kash serve` ran on vector search alone. The manifest now carries
+  `pending_finalize`, set before any data is touched and cleared only when the
+  final steps finish; a manifest written before the flag existed is recognised
+  by documents recorded at version 0. The next `kash build` completes such a
+  corpus without re-embedding anything, and also builds a missing lexical index
+  for a corpus that predates it.
+
+- **`kash serve` said nothing when the lexical index was missing.** A missing
+  index loads as an empty one, so keyword and exact-reference search were off
+  with no sign at startup. It now warns whenever a corpus holds chunks but has
+  no `lexical.idx`.
+
+- **`kash version` said "dev / none / unknown" for any binary not built by
+  `make` or the release workflow.** Only those two pass the version through
+  `-ldflags`, so a plain `go build` produced a binary that could not be placed —
+  and wrote `dev` as the `kash_version` of every manifest and profile it built.
+  The version and commit now fall back to the git revision Go embeds in every
+  binary built inside a checkout (`dev-1a984b7-dirty`), alongside the commit
+  time and the binary's file time. The published base image reported `dev` too:
+  its Dockerfile passed no version at all, and now takes `VERSION`, `COMMIT` and
+  `BUILD_DATE` build arguments from the release workflow. On Windows without
+  make, `scripts/build.ps1` builds a binary stamped with the release tag.
+
 ## [2.1.0] - 2026-09-05
 
 ### Fixed
