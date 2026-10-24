@@ -11,6 +11,24 @@ release that changes chunk boundaries, chunk metadata or the extraction
 vocabulary needs `kash build --rebuild` to take effect on an existing corpus —
 those are called out under **Requires rebuild**.
 
+## [2.2.2] - 2026-10-24
+
+### Fixed
+
+- **Comparative questions dropped one of the books they named.** Asked what
+  Sun Tzu and Machiavelli say about deception, an agent built from both books
+  answered that The Prince says nothing on it. The names in the question pick
+  the books, but every retrieval route counted them as relevance, and in a
+  book the author is named only on the title page and in footnotes. Those
+  chunks took The Prince's slots, and its chapter on deceit and keeping faith
+  never reached the context. When a question's named entities point to two or
+  more works, each work is now guaranteed a share of the top-k. Chunks that
+  match only through an author's name are demoted. A name counts as the
+  author's when it is on the work's title page and in at most a tenth of the
+  work. A chunk that also matches the question's topic keeps its score, so a
+  contract party or a biography's subject is never demoted. Single-work
+  questions are unchanged. No rebuild needed.
+
 ## [2.2.1] - 2026-10-24
 
 ### Fixed
@@ -447,7 +465,8 @@ as unknown rather than failing.
   into chromem-go, LLM triple extraction into cayley, and the REST, MCP and A2A
   interfaces.
 
-[Unreleased]: https://github.com/akashicode/kash/compare/v2.2.1...HEAD
+[Unreleased]: https://github.com/akashicode/kash/compare/v2.2.2...HEAD
+[2.2.2]: https://github.com/akashicode/kash/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/akashicode/kash/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/akashicode/kash/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/akashicode/kash/compare/v2.0.0...v2.1.0
