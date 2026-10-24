@@ -11,6 +11,19 @@ release that changes chunk boundaries, chunk metadata or the extraction
 vocabulary needs `kash build --rebuild` to take effect on an existing corpus —
 those are called out under **Requires rebuild**.
 
+## [2.2.1] - 2026-10-24
+
+### Fixed
+
+- **Chat answers ignored the corpus behind a Gemini gateway.**
+  `/v1/chat/completions` sent the agent prompt and the retrieved context as two
+  separate system messages, and Gemini behind an OpenAI-compatible gateway
+  keeps only the first. The context was dropped without an error, so answers
+  came from the model's own priors even when retrieval had found the right
+  passage: asked what the Trishul represents, an agent built from a book that
+  answers it in one sentence returned generic lore and no citation. The prompt
+  and the context now travel in a single system message. No rebuild needed.
+
 ## [2.2.0] - 2026-09-15
 
 ### Fixed
@@ -434,7 +447,10 @@ as unknown rather than failing.
   into chromem-go, LLM triple extraction into cayley, and the REST, MCP and A2A
   interfaces.
 
-[Unreleased]: https://github.com/akashicode/kash/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/akashicode/kash/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/akashicode/kash/compare/v2.2.0...v2.2.1
+[2.2.0]: https://github.com/akashicode/kash/compare/v2.1.0...v2.2.0
+[2.1.0]: https://github.com/akashicode/kash/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/akashicode/kash/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/akashicode/kash/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/akashicode/kash/releases/tag/v0.1.0
