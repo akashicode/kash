@@ -9,6 +9,7 @@ import (
 	"github.com/akashicode/kash/internal/chunker"
 	agentconfig "github.com/akashicode/kash/internal/config"
 	"github.com/akashicode/kash/internal/lexical"
+	"github.com/akashicode/kash/internal/llm"
 	"github.com/akashicode/kash/internal/vector"
 )
 
@@ -564,9 +565,19 @@ const (
 	minNamingShare = 0.8
 
 	// maxBylineShare bounds how much of a work may mention a name for the
-	// name to be a byline rather than the work's own vocabulary. Every chunk
-	// carries its book title in its context header, so a title is never one.
-	maxBylineShare = 0.5
+	// name to be a byline rather than the work's own subject. An author is
+	// named on the title page and in the odd footnote: Machiavelli occurs in
+	// 4% of The Prince, Sun Tzu in 1% of The Art of War. A biography's subject,
+	// a contract's party or a company in its own annual report is named far
+	// more often than that, and demoting those chunks would demote the answer.
+	// Every chunk carries its book title in its context header, so a title is
+	// never a byline either.
+	maxBylineShare = 0.1
+
+	// maxTopicShare is the share of the corpus above which a word is grammar
+	// rather than topic. Words the decomposition files as concepts but that
+	// occur in most chunks ("of", "the") would otherwise spare every byline.
+	maxTopicShare = 0.5
 
 	// bylinePenalty is how much a chunk loses for matching a comparative
 	// query only through a byline. It is demoted, not dropped: a title page
@@ -577,7 +588,7 @@ const (
 // namedWorks is what nameWorks learns from the query's named entities.
 type namedWorks struct {
 	works   map[string]bool // work keys the query names
-	bylines map[string]bool // chunk IDs carrying a byline of a named work
+	bylines map[string]bool // chunk IDs matching the query only through a byline
 }
 
 // nameWorks resolves the query's specific entities to the works they name.
@@ -585,10 +596,14 @@ type namedWorks struct {
 // A name names a work when its chunks are concentrated there. It is a byline —
 // the author or translator rather than a subject of the book — when it also
 // appears on the work's title page, which is the first chunk built from each
-// of its documents, and in no more than half of the work. A person the book is
-// about appears throughout it but not on its title page; the title itself
-// appears on every chunk.
-func nameWorks(ix *lexical.Index, g *workGrouper, entities []string) namedWorks {
+// of its documents, and in no more than a tenth of the work. A person the book
+// is about appears throughout it; the title itself appears on every chunk.
+//
+// A chunk carrying a byline is still spared when it also holds one of the
+// query's concepts. "Acme shall provide an indemnity" names the party and
+// answers the question; only a chunk that matches by the name alone is the
+// title page or footnote this exists to push down.
+func nameWorks(ix *lexical.Index, g *workGrouper, dq llm.DecomposedQuery) namedWorks {
 	nw := namedWorks{works: map[string]bool{}, bylines: map[string]bool{}}
 	if ix == nil {
 		return nw
@@ -603,7 +618,8 @@ func nameWorks(ix *lexical.Index, g *workGrouper, entities []string) namedWorks 
 		docs []lexical.Result
 	}
 	var names []naming
-	for _, e := range entities {
+	nameTerms := map[string]bool{}
+	for _, e := range dq.SpecificEntities {
 		hits := ix.ContainingAll(e)
 		if len(hits) == 0 {
 			continue
@@ -622,6 +638,9 @@ func nameWorks(ix *lexical.Index, g *workGrouper, entities []string) namedWorks 
 		}
 		nw.works[best] = true
 		names = append(names, naming{work: best, docs: perWork[best]})
+		for _, term := range ix.Tokenize(e) {
+			nameTerms[term] = true
+		}
 	}
 
 	// Bylines only matter to a comparative query, and finding them reads the
@@ -641,6 +660,25 @@ func nameWorks(ix *lexical.Index, g *workGrouper, entities []string) namedWorks 
 		}
 	}
 
+	// Any one concept word is enough to spare a chunk. Erring towards sparing
+	// leaves a chunk where it ranked before; erring the other way demotes a
+	// passage the reader asked for.
+	onTopic := map[string]bool{}
+	for _, concept := range dq.BroadConcepts {
+		for _, term := range ix.Tokenize(concept) {
+			if nameTerms[term] {
+				continue
+			}
+			hits := ix.ContainingAll(term)
+			if float64(len(hits)) > maxTopicShare*float64(len(ix.IDs)) {
+				continue
+			}
+			for _, h := range hits {
+				onTopic[h.ID] = true
+			}
+		}
+	}
+
 	for _, n := range names {
 		if float64(len(n.docs)) > maxBylineShare*float64(size[n.work]) {
 			continue
@@ -653,7 +691,9 @@ func nameWorks(ix *lexical.Index, g *workGrouper, entities []string) namedWorks 
 			continue
 		}
 		for _, d := range n.docs {
-			nw.bylines[d.ID] = true
+			if !onTopic[d.ID] {
+				nw.bylines[d.ID] = true
+			}
 		}
 	}
 	return nw
@@ -661,12 +701,12 @@ func nameWorks(ix *lexical.Index, g *workGrouper, entities []string) namedWorks 
 
 // selectSlate ranks fused candidates and fills topK slots from them.
 //
-// entities are the specific entities from query decomposition. When they name
-// two or more works, chunks that match only through a byline are demoted and
-// each named work is reserved a share of the slate.
-func selectSlate(cands map[string]*candidate, topK int, fc *fusionConfig, ix *lexical.Index, entities []string) []*candidate {
+// dq is the query decomposition. When its specific entities name two or more
+// works, chunks that match only through a byline are demoted and each named
+// work is reserved a share of the slate.
+func selectSlate(cands map[string]*candidate, topK int, fc *fusionConfig, ix *lexical.Index, dq llm.DecomposedQuery) []*candidate {
 	g := fc.grouper()
-	nw := nameWorks(ix, g, entities)
+	nw := nameWorks(ix, g, dq)
 
 	var named map[string]bool
 	if len(nw.works) >= 2 {

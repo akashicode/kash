@@ -12,6 +12,7 @@ import (
 	"github.com/akashicode/kash/internal/chunker"
 	agentconfig "github.com/akashicode/kash/internal/config"
 	"github.com/akashicode/kash/internal/lexical"
+	"github.com/akashicode/kash/internal/llm"
 	"github.com/akashicode/kash/internal/vector"
 )
 
@@ -270,7 +271,7 @@ func evalRetrieve(ix *lexical.Index, byID map[string]vector.SearchResult, query 
 	}
 
 	out := make([]vector.SearchResult, 0, topK)
-	for _, c := range selectSlate(cands, topK, fc, ix, nil) {
+	for _, c := range selectSlate(cands, topK, fc, ix, llm.DecomposedQuery{}) {
 		out = append(out, c.result)
 	}
 	return out

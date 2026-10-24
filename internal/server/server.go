@@ -603,7 +603,7 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 		applyNoisePenalty(c)
 	}
 
-	selected := selectSlate(cands, topK, s.fusionCfg, s.lexicalIndex, dq.SpecificEntities)
+	selected := selectSlate(cands, topK, s.fusionCfg, s.lexicalIndex, dq)
 
 	chunks := make([]vector.SearchResult, 0, len(selected))
 	for _, c := range selected {
