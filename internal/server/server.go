@@ -603,9 +603,7 @@ func (s *Server) retrieve(ctx context.Context, query string, topK int) (retrieva
 		applyNoisePenalty(c)
 	}
 
-	ranked := rankCandidates(cands)
-	ranked = dedupeNearDuplicates(ranked, nearDuplicateThreshold)
-	selected := selectDiverse(ranked, topK, s.fusionCfg)
+	selected := selectSlate(cands, topK, s.fusionCfg, s.lexicalIndex, dq.SpecificEntities)
 
 	chunks := make([]vector.SearchResult, 0, len(selected))
 	for _, c := range selected {

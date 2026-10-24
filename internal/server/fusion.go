@@ -396,12 +396,16 @@ func makeTitleFoldFn(mode agentconfig.DiacriticMode) func(string) string {
 // The previous rule capped every source at (topK+1)/2 unconditionally, which
 // for a focused question about a single text — the normal case — discarded the
 // best-ranked chunks in favour of lower-ranked ones from other books.
-func selectDiverse(ranked []*candidate, topK int, fc *fusionConfig) []*candidate {
+//
+// named holds the works a comparative query names (see nameWorks). Each is
+// reserved an equal share of the slate before anything else is placed: the
+// question asked about every one of them, and a book that ranks second on
+// every passage would otherwise lose all of its slots to the one that ranks
+// first. Keys must come from g.
+func selectDiverse(ranked []*candidate, topK int, g *workGrouper, named map[string]bool) []*candidate {
 	if len(ranked) <= topK {
 		return ranked
 	}
-
-	g := fc.grouper()
 
 	maxPerWork := (topK + 1) / 2
 	if maxPerWork < 1 {
@@ -410,19 +414,39 @@ func selectDiverse(ranked []*candidate, topK int, fc *fusionConfig) []*candidate
 
 	// When the top results overwhelmingly agree on one work, the question is
 	// about that work; spreading the slate across other books would answer a
-	// question nobody asked.
-	if dominantWork(g, ranked, topK) {
+	// question nobody asked. A query naming several works has said otherwise.
+	if len(named) < 2 && dominantWork(g, ranked, topK) {
 		maxPerWork = topK
 	}
 
 	var (
-		selected []*candidate
-		skipped  []*candidate
-		perWork  = map[string]int{}
+		picked  = map[*candidate]bool{}
+		perWork = map[string]int{}
 	)
+	if len(named) >= 2 {
+		reserve := topK / len(named)
+		if reserve < 1 {
+			reserve = 1
+		}
+		for _, c := range ranked {
+			if len(picked) >= topK {
+				break
+			}
+			key := g.Key(c.result)
+			if named[key] && perWork[key] < reserve {
+				perWork[key]++
+				picked[c] = true
+			}
+		}
+	}
+
+	var skipped []*candidate
 	for _, c := range ranked {
-		if len(selected) >= topK {
+		if len(picked) >= topK {
 			break
+		}
+		if picked[c] {
+			continue
 		}
 		key := g.Key(c.result)
 		if perWork[key] >= maxPerWork {
@@ -430,13 +454,21 @@ func selectDiverse(ranked []*candidate, topK int, fc *fusionConfig) []*candidate
 			continue
 		}
 		perWork[key]++
-		selected = append(selected, c)
+		picked[c] = true
 	}
 	for _, c := range skipped {
-		if len(selected) >= topK {
+		if len(picked) >= topK {
 			break
 		}
-		selected = append(selected, c)
+		picked[c] = true
+	}
+
+	// Reserved picks can sit deep in the ranking; the slate keeps rank order.
+	selected := make([]*candidate, 0, len(picked))
+	for _, c := range ranked {
+		if picked[c] {
+			selected = append(selected, c)
+		}
 	}
 	return selected
 }
@@ -515,4 +547,137 @@ func jaccard(a, b map[string]bool) float64 {
 		smaller = len(b)
 	}
 	return float64(inter) / float64(smaller)
+}
+
+// A comparative question names its works — "what do Sun Tzu and Machiavelli
+// say about deception" — and the names do a different job from the rest of
+// the query. They select which books to read; the topic decides which passages
+// in them answer. Retrieval cannot tell the two apart: BM25 matches the name,
+// graph provenance follows the author entity to the chunks that mention him,
+// and a reranker reads the name as relevance. In a book, the author's name
+// occurs on the title page and in the translator's footnotes, so those are the
+// chunks every route lifts, and they take the slots meant for what he wrote.
+const (
+	// minNamingShare is the share of a name's chunks that must sit in one
+	// work for the name to identify that work. A name spread across the
+	// corpus selects nothing.
+	minNamingShare = 0.8
+
+	// maxBylineShare bounds how much of a work may mention a name for the
+	// name to be a byline rather than the work's own vocabulary. Every chunk
+	// carries its book title in its context header, so a title is never one.
+	maxBylineShare = 0.5
+
+	// bylinePenalty is how much a chunk loses for matching a comparative
+	// query only through a byline. It is demoted, not dropped: a title page
+	// can still be the best passage left once the topic is exhausted.
+	bylinePenalty = 0.5
+)
+
+// namedWorks is what nameWorks learns from the query's named entities.
+type namedWorks struct {
+	works   map[string]bool // work keys the query names
+	bylines map[string]bool // chunk IDs carrying a byline of a named work
+}
+
+// nameWorks resolves the query's specific entities to the works they name.
+//
+// A name names a work when its chunks are concentrated there. It is a byline —
+// the author or translator rather than a subject of the book — when it also
+// appears on the work's title page, which is the first chunk built from each
+// of its documents, and in no more than half of the work. A person the book is
+// about appears throughout it but not on its title page; the title itself
+// appears on every chunk.
+func nameWorks(ix *lexical.Index, g *workGrouper, entities []string) namedWorks {
+	nw := namedWorks{works: map[string]bool{}, bylines: map[string]bool{}}
+	if ix == nil {
+		return nw
+	}
+
+	workOf := func(meta map[string]string) string {
+		return g.Key(vector.SearchResult{Source: meta["source"], Metadata: meta})
+	}
+
+	type naming struct {
+		work string
+		docs []lexical.Result
+	}
+	var names []naming
+	for _, e := range entities {
+		hits := ix.ContainingAll(e)
+		if len(hits) == 0 {
+			continue
+		}
+		perWork := map[string][]lexical.Result{}
+		best := ""
+		for _, h := range hits {
+			w := workOf(h.Metadata)
+			perWork[w] = append(perWork[w], h)
+			if best == "" || len(perWork[w]) > len(perWork[best]) {
+				best = w
+			}
+		}
+		if float64(len(perWork[best])) < minNamingShare*float64(len(hits)) {
+			continue
+		}
+		nw.works[best] = true
+		names = append(names, naming{work: best, docs: perWork[best]})
+	}
+
+	// Bylines only matter to a comparative query, and finding them reads the
+	// whole index once.
+	if len(nw.works) < 2 {
+		return nw
+	}
+
+	size := map[string]int{}
+	opening := map[string]bool{}
+	seenSource := map[string]bool{}
+	for i, meta := range ix.Meta {
+		size[workOf(meta)]++
+		if src := meta["source"]; !seenSource[src] {
+			seenSource[src] = true
+			opening[ix.IDs[i]] = true
+		}
+	}
+
+	for _, n := range names {
+		if float64(len(n.docs)) > maxBylineShare*float64(size[n.work]) {
+			continue
+		}
+		onTitlePage := false
+		for _, d := range n.docs {
+			onTitlePage = onTitlePage || opening[d.ID]
+		}
+		if !onTitlePage {
+			continue
+		}
+		for _, d := range n.docs {
+			nw.bylines[d.ID] = true
+		}
+	}
+	return nw
+}
+
+// selectSlate ranks fused candidates and fills topK slots from them.
+//
+// entities are the specific entities from query decomposition. When they name
+// two or more works, chunks that match only through a byline are demoted and
+// each named work is reserved a share of the slate.
+func selectSlate(cands map[string]*candidate, topK int, fc *fusionConfig, ix *lexical.Index, entities []string) []*candidate {
+	g := fc.grouper()
+	nw := nameWorks(ix, g, entities)
+
+	var named map[string]bool
+	if len(nw.works) >= 2 {
+		named = nw.works
+		for id := range nw.bylines {
+			if c, ok := cands[id]; ok {
+				c.score *= 1 - bylinePenalty
+			}
+		}
+	}
+
+	ranked := dedupeNearDuplicates(rankCandidates(cands), nearDuplicateThreshold)
+	return selectDiverse(ranked, topK, g, named)
 }

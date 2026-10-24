@@ -264,6 +264,47 @@ func (ix *Index) Search(query string, k int) []Result {
 	return out
 }
 
+// ContainingAll returns the documents that contain every term of text, in
+// index order. Unlike Search it does not rank: it answers where a name occurs,
+// not how well a passage matches it.
+func (ix *Index) ContainingAll(text string) []Result {
+	if ix == nil {
+		return nil
+	}
+	terms := ix.Tokenize(text)
+	if len(terms) == 0 {
+		return nil
+	}
+
+	hits := map[uint32]int{}
+	seen := map[string]bool{}
+	want := 0
+	for _, term := range terms {
+		if seen[term] {
+			continue
+		}
+		seen[term] = true
+		want++
+		for _, p := range ix.Postings[term] {
+			hits[p.Doc]++
+		}
+	}
+
+	docs := make([]uint32, 0, len(hits))
+	for doc, n := range hits {
+		if n == want {
+			docs = append(docs, doc)
+		}
+	}
+	sort.Slice(docs, func(i, j int) bool { return docs[i] < docs[j] })
+
+	out := make([]Result, 0, len(docs))
+	for _, doc := range docs {
+		out = append(out, Result{ID: ix.IDs[doc], Metadata: ix.Meta[doc]})
+	}
+	return out
+}
+
 // FindByRef returns documents whose metadata lists the given value under field.
 // Metadata values may be comma-separated lists, because one chunk can cover
 // several sections or verses.

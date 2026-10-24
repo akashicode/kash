@@ -125,7 +125,7 @@ func TestSelectDiverseSpreadsAcrossWorks(t *testing.T) {
 	)
 
 	fc := defaultTestFusionCfg()
-	selected := selectDiverse(cands(specs...), 5, fc)
+	selected := selectDiverse(cands(specs...), 5, fc.grouper(), nil)
 
 	assert.Len(t, selected, 5)
 	g := fc.grouper()
@@ -148,12 +148,74 @@ func TestSelectDiverseAllowsDominantWork(t *testing.T) {
 	specs = append(specs, [2]string{"x0", "Merutantra.txt"})
 
 	fc := defaultTestFusionCfg()
-	selected := selectDiverse(cands(specs...), 5, fc)
+	selected := selectDiverse(cands(specs...), 5, fc.grouper(), nil)
 
 	require.Len(t, selected, 5)
 	for _, c := range selected {
 		assert.Equal(t, "vigyan-bhairava-tantra.md", c.result.Source,
 			"a question concentrated in one text must be answered from that text")
+	}
+}
+
+// TestSelectDiverseReservesNamedWorks covers comparative questions: when the
+// query names several works, each keeps a share of the slate even if another
+// outranks it on every passage — the case the dominance rule would otherwise
+// hand to the leader outright.
+func TestSelectDiverseReservesNamedWorks(t *testing.T) {
+	var specs [][2]string
+	for i := 0; i < 8; i++ {
+		specs = append(specs, [2]string{fmt.Sprintf("w%d", i), "the-art-of-war.md"})
+	}
+	specs = append(specs,
+		[2]string{"x0", "Merutantra.txt"},
+		[2]string{"p0", "the-prince.md"}, [2]string{"p1", "the-prince.md"}, [2]string{"p2", "the-prince.md"},
+	)
+	ranked := cands(specs...)
+
+	fc := defaultTestFusionCfg()
+	g := fc.grouper()
+	key := func(source string) string { return g.Key(vector.SearchResult{Source: source}) }
+
+	tests := []struct {
+		name  string
+		named []string
+		topK  int
+		want  []string
+	}{
+		{
+			name: "no named works: the dominant work takes the slate",
+			topK: 5,
+			want: []string{"w0", "w1", "w2", "w3", "w4"},
+		},
+		{
+			name:  "two named works split the slate, in rank order",
+			named: []string{"the-art-of-war.md", "the-prince.md"},
+			topK:  5,
+			want:  []string{"w0", "w1", "w2", "p0", "p1"},
+		},
+		{
+			name:  "small slate still holds one of each",
+			named: []string{"the-art-of-war.md", "the-prince.md"},
+			topK:  2,
+			want:  []string{"w0", "p0"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var named map[string]bool
+			if len(tt.named) > 0 {
+				named = map[string]bool{}
+				for _, src := range tt.named {
+					named[key(src)] = true
+				}
+			}
+			var got []string
+			for _, c := range selectDiverse(ranked, tt.topK, g, named) {
+				got = append(got, c.id)
+			}
+			assert.Equal(t, tt.want, got)
+		})
 	}
 }
 
@@ -178,7 +240,7 @@ func TestWorkKeyGroupsEditions(t *testing.T) {
 func TestSelectDiverseFewerThanTopK(t *testing.T) {
 	in := cands([2]string{"a0", "bookA.pdf"}, [2]string{"b0", "bookB.pdf"})
 	fc := defaultTestFusionCfg()
-	assert.Equal(t, in, selectDiverse(in, 5, fc))
+	assert.Equal(t, in, selectDiverse(in, 5, fc.grouper(), nil))
 }
 
 func TestGraphRRFPromotion(t *testing.T) {

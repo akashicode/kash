@@ -269,9 +269,8 @@ func evalRetrieve(ix *lexical.Index, byID map[string]vector.SearchResult, query 
 		applyNoisePenalty(c)
 	}
 
-	ranked := dedupeNearDuplicates(rankCandidates(cands), nearDuplicateThreshold)
 	out := make([]vector.SearchResult, 0, topK)
-	for _, c := range selectDiverse(ranked, topK, fc) {
+	for _, c := range selectSlate(cands, topK, fc, ix, nil) {
 		out = append(out, c.result)
 	}
 	return out
@@ -448,7 +447,7 @@ func TestNegativeControlVectorOnly(t *testing.T) {
 			cd.result = byID[id]
 		}
 		ranked := dedupeNearDuplicates(rankCandidates(cands), nearDuplicateThreshold)
-		for _, cd := range selectDiverse(ranked, 5, fc) {
+		for _, cd := range selectDiverse(ranked, 5, fc.grouper(), nil) {
 			if cd.result.Source == c.wantSource {
 				hits++
 				break

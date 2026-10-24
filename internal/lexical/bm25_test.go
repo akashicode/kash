@@ -140,3 +140,34 @@ func TestFindByAnyRefIgnoresTheKeyName(t *testing.T) {
 	assert.Len(t, ix.FindByAnyRef("25"), 1, "a comma-joined list must still match")
 	assert.Empty(t, ix.FindByAnyRef("999"), "a value nothing carries must not match")
 }
+
+func TestContainingAll(t *testing.T) {
+	ix := New()
+	ix.Add("aow_0", "The Art of War. Sun Tzu. Translated by Lionel Giles.", map[string]string{"source": "aow.md"})
+	ix.Add("aow_1", "All warfare is based on deception.", map[string]string{"source": "aow.md"})
+	ix.Add("aow_2", "Sun Tzu said: the general who wins makes many calculations.", map[string]string{"source": "aow.md"})
+	ix.Add("p_0", "The Prince. Niccolo Machiavelli.", map[string]string{"source": "prince.md"})
+	ix.Finalize()
+
+	tests := []struct {
+		name string
+		text string
+		want []string
+	}{
+		{name: "every term must occur", text: "Sun Tzu", want: []string{"aow_0", "aow_2"}},
+		{name: "case and repeats ignored", text: "machiavelli MACHIAVELLI", want: []string{"p_0"}},
+		{name: "one missing term excludes", text: "Sun Machiavelli", want: nil},
+		{name: "no terms", text: "?", want: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []string
+			for _, r := range ix.ContainingAll(tt.text) {
+				got = append(got, r.ID)
+				assert.NotEmpty(t, r.Metadata["source"], "results carry their metadata")
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
