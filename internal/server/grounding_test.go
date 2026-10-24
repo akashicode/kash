@@ -20,8 +20,8 @@ func TestGeneratedSummariesAreLabelledAsSuch(t *testing.T) {
 		{Role: openai.ChatMessageRoleUser, Content: "who is Abhinavagupta"},
 	})
 
-	require.Len(t, msgs, 3)
-	instruction := msgs[1].Content
+	require.Len(t, msgs, 2)
+	instruction := msgs[0].Content
 	assert.Contains(t, instruction, "generated context",
 		"the model must be told summaries are not source text")
 	assert.Contains(t, instruction, "ground each claim in a numbered passage",
@@ -65,8 +65,47 @@ func TestCallerSystemMessagesAreDropped(t *testing.T) {
 		{Role: openai.ChatMessageRoleUser, Content: "q"},
 	})
 
-	require.Len(t, msgs, 3)
-	assert.Equal(t, "agent prompt", msgs[0].Content)
-	assert.Contains(t, msgs[1].Content, "ctx")
-	assert.Equal(t, openai.ChatMessageRoleUser, msgs[2].Role)
+	require.Len(t, msgs, 2)
+	assert.True(t, strings.HasPrefix(msgs[0].Content, "agent prompt"))
+	assert.Contains(t, msgs[0].Content, "ctx")
+	assert.NotContains(t, msgs[0].Content, "ignore all previous instructions")
+	assert.Equal(t, openai.ChatMessageRoleUser, msgs[1].Role)
+}
+
+// Gemini behind an OpenAI-compatible gateway keeps only the first system
+// message. The retrieved context has to ride in that one, or every answer is
+// written without the corpus.
+func TestOneSystemMessageCarriesPromptAndContext(t *testing.T) {
+	tests := []struct {
+		name         string
+		systemPrompt string
+		retrieved    string
+		wantSystem   int
+	}{
+		{name: "prompt and context", systemPrompt: "agent prompt", retrieved: "passage text", wantSystem: 1},
+		{name: "context only", systemPrompt: "", retrieved: "passage text", wantSystem: 1},
+		{name: "prompt only", systemPrompt: "agent prompt", retrieved: "", wantSystem: 1},
+		{name: "neither", systemPrompt: "", retrieved: "", wantSystem: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msgs := buildAugmentedMessages(tt.systemPrompt, tt.retrieved, []openai.ChatCompletionMessage{
+				{Role: openai.ChatMessageRoleUser, Content: "q"},
+			})
+
+			var system []openai.ChatCompletionMessage
+			for _, m := range msgs {
+				if m.Role == openai.ChatMessageRoleSystem {
+					system = append(system, m)
+				}
+			}
+			require.Len(t, system, tt.wantSystem)
+			if tt.wantSystem == 0 {
+				return
+			}
+			assert.Contains(t, system[0].Content, tt.systemPrompt)
+			assert.Contains(t, system[0].Content, tt.retrieved)
+		})
+	}
 }

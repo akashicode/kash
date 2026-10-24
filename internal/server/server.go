@@ -1169,29 +1169,33 @@ func (s *Server) buildRetrievalQuery(ctx context.Context, messages []openai.Chat
 }
 
 func buildAugmentedMessages(systemPrompt, retrievedCtx string, original []openai.ChatCompletionMessage) []openai.ChatCompletionMessage {
-	augmented := make([]openai.ChatCompletionMessage, 0, len(original)+2)
+	augmented := make([]openai.ChatCompletionMessage, 0, len(original)+1)
 
-	// Add agent system prompt
+	// The agent prompt and the retrieved context travel in ONE system message.
+	// Gemini behind an OpenAI-compatible gateway keeps only the first system
+	// message, so a second one carrying the context is silently dropped and
+	// the model answers from its own priors.
+	var system []string
 	if systemPrompt != "" {
-		augmented = append(augmented, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: systemPrompt,
-		})
+		system = append(system, systemPrompt)
 	}
 
 	// Add retrieved context with citation instructions — the sources are
 	// attached to every chunk and fact, but the model must be told to use them
 	if retrievedCtx != "" {
+		system = append(system, "Here is relevant context from the knowledge base:\n\n"+retrievedCtx+
+			"\n\nCite inline from the numbered passages above, e.g. (source: book.pdf [1]). "+
+			"Each passage opens with its structural location in brackets — book, chapter, "+
+			"verse or section number — so include that when a claim rests on a specific one, "+
+			"e.g. (source: book.pdf [1], Dharana 49). Cite only sources and passage numbers "+
+			"that appear above; never invent either. Entity summaries are generated context: "+
+			"use them to orient, but ground each claim in a numbered passage or a "+
+			"knowledge-graph fact, and say plainly when the context does not answer the question.")
+	}
+	if len(system) > 0 {
 		augmented = append(augmented, openai.ChatCompletionMessage{
-			Role: openai.ChatMessageRoleSystem,
-			Content: "Here is relevant context from the knowledge base:\n\n" + retrievedCtx +
-				"\n\nCite inline from the numbered passages above, e.g. (source: book.pdf [1]). " +
-				"Each passage opens with its structural location in brackets — book, chapter, " +
-				"verse or section number — so include that when a claim rests on a specific one, " +
-				"e.g. (source: book.pdf [1], Dharana 49). Cite only sources and passage numbers " +
-				"that appear above; never invent either. Entity summaries are generated context: " +
-				"use them to orient, but ground each claim in a numbered passage or a " +
-				"knowledge-graph fact, and say plainly when the context does not answer the question.",
+			Role:    openai.ChatMessageRoleSystem,
+			Content: strings.Join(system, "\n\n"),
 		})
 	}
 
