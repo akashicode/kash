@@ -21,6 +21,12 @@
 
 </div>
 
+### 🎬 See it in 72 seconds
+
+Two books, *The Art of War* and *The Prince*, compiled into one agent and asked to compare them.
+
+https://github.com/user-attachments/assets/a77ee606-016f-448e-95f7-b9dca069a1e3
+
 ---
 
 ## 💡 Why Kash?
